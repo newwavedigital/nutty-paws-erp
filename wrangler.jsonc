@@ -15,8 +15,9 @@
     {
       "binding": "DB",
       "database_name": "nut-house-portal-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2fe7ce2c-5699-4594-8a63-a111e118f443",
       "migrations_dir": "migrations"
     }
   ]
 }
+
