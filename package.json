@@ -1,0 +1,36 @@
+{
+    "name": "nut-house-portal",
+    "version": "1.0.0",
+    "description": "Nut House ERP Phase 2A Cloudflare Worker backend foundation",
+    "main": "src/index.ts",
+    "scripts": {
+        "dev": "wrangler dev",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "typecheck": "tsc --noEmit",
+        "cf:types": "wrangler types",
+        "deploy": "wrangler deploy"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/newwavedigital/nutty-paws-erp.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "bugs": {
+        "url": "https://github.com/newwavedigital/nutty-paws-erp/issues"
+    },
+    "homepage": "https://github.com/newwavedigital/nutty-paws-erp#readme",
+    "dependencies": {
+        "hono": "^4.12.25"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260609.1",
+        "@types/node": "^25.9.2",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8",
+        "wrangler": "^4.98.0"
+    }
+}
