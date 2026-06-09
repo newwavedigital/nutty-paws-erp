@@ -931,6 +931,7 @@
     <a data-page="suppliers"><span class="icon">&#9650;</span> Suppliers</a>
     <a data-page="customers"><span class="icon">&#9679;</span> Customers</a>
     <a data-page="food-safety"><span class="icon">&#9873;</span> Food Safety</a>
+    <a data-page="rd"><span class="icon">&#9874;</span> Research &amp; Development</a>
     <a data-page="machinery"><span class="icon">&#9881;</span> Machinery</a>
     <a data-page="content-library"><span class="icon">&#9698;</span> Content Library</a>
     <a data-page="slack"><span class="icon">&#9993;</span> Team Chat</a>
@@ -979,6 +980,7 @@ const SAMPLE_DATA = {
   moveLog: [],
   shippingLog: [],
   productionLog: [],
+  rdRequests: [],
   suppliers: [
     { id: 's1', name: 'Georgia Peanut Co.', contact: 'Mark Stevens', email: 'mark@gapeanut.com', phone: '912-555-2114', website: 'gapeanut.com', moq: 500, products: 'Raw peanuts (lb), Roasted peanuts (lb)', notes: 'Net 30 terms. Ship LTL pallets.' },
     { id: 's2', name: 'PackRight Containers', contact: 'Sarah Lin', email: 'sarah@packright.com', phone: '404-555-0023', website: 'packright.com', moq: 1000, products: '8oz jars, 16oz jars, lids', notes: 'Lead time 2 weeks.' },
@@ -1200,7 +1202,7 @@ function loadState() {
     if (raw) {
       const s = JSON.parse(raw);
       // migration: ensure new collections exist
-      const defaults = ['libraryFolders','libraryFiles','channels','messages','complaints','lots','sanitationLogs','ccpLogs','ncrs','recalls','procurementOrders','users','specSheets','publicLinks','feedback','pickPackOrders','maintenanceEvents','equipmentIssues','swabRecords','productionRequests','receivingLog','moveLog','shippingLog','productionLog'];
+      const defaults = ['libraryFolders','libraryFiles','channels','messages','complaints','lots','sanitationLogs','ccpLogs','ncrs','recalls','procurementOrders','users','specSheets','publicLinks','feedback','pickPackOrders','maintenanceEvents','equipmentIssues','swabRecords','productionRequests','receivingLog','moveLog','shippingLog','productionLog','rdRequests'];
       // ensure pick-and-pack customer records exist (auto-create if missing)
       s.customers = s.customers || [];
       PICK_PACK_CUSTOMER_NAMES.forEach(name => {
@@ -1531,6 +1533,24 @@ function scPOsNeedingIngredient(ingId) {
     return (poRequirements(po)[ingId] || 0) > 0;
   });
 }
+// DISPLAY-ONLY total allocation per ingredient for the Inventory page:
+// anything tied up by a PO that hasn't shipped yet — Supply Chain reviews +
+// approved + in-production. Includes the 5% planning loss buffer.
+// (Does NOT affect Supply Chain approval gating, which still uses allocatedInventory().)
+function inventoryAllocation() {
+  const total = {};
+  const prod = allocatedInventory();           // approved_for_production + in_production
+  const sc = supplyChainDemand();              // pending / in_supply_chain
+  Object.keys(prod).forEach(id => { total[id] = (total[id] || 0) + prod[id]; });
+  Object.keys(sc).forEach(id => { total[id] = (total[id] || 0) + sc[id]; });
+  return total;
+}
+// Per-ingredient breakdown for the Allocation cell.
+function inventoryAllocationBreakdown(ingredientId) {
+  const sc = supplyChainDemand()[ingredientId] || 0;
+  const prod = allocatedInventory()[ingredientId] || 0;
+  return { sc, prod, total: sc + prod };
+}
 // List of inventory conflicts: any ingredient where total allocations exceed on-hand stock.
 function inventoryConflicts() {
   const alloc = allocatedInventory();
@@ -1626,7 +1646,8 @@ const PAGE_TITLES = {
   'feedback': 'Feedback',
   'pick-pack': 'Pick & Pack',
   'quality-assurance': 'Quality Assurance',
-  'machinery': 'Machinery'
+  'machinery': 'Machinery',
+  'rd': 'Research & Development'
 };
 
 const SHAREPOINT_INVENTORY_URL = 'https://bnutty2.sharepoint.com/:x:/s/Bnutty/IQD6NhKAgj2HR6N9vJGV9POQARgkf7S9r8zLdjYh4WMkb6g?e=ZJ4swm';
@@ -1730,6 +1751,7 @@ function router(page) {
     case 'pick-pack': renderPickPack(c); break;
     case 'quality-assurance': renderQualityAssurance(c); break;
     case 'machinery': renderMachinery(c); break;
+    case 'rd': renderRD(c); break;
     default: c.innerHTML = '<p>Not found</p>';
   }
   // mobile: auto-close sidebar after nav
@@ -6190,12 +6212,20 @@ function renderInventory(el) {
   // build column headers based on tab
   const headers = ['Item', 'Lot #(s)'];
   if (showCustomer) headers.push('Customer');
-  headers.push('Supplier', 'On Hand', 'Allocated', 'Net Available', 'Unit', 'Reorder At');
+  headers.push('Supplier', 'On Hand', 'Allocation', 'Net Available', 'Unit', 'Reorder At');
   if (showLeadTime) headers.push('Lead Time');
   if (showCoa) headers.push('CoA');
   headers.push('Locations', 'Status', '');
   const colCount = headers.length;
-  const allocMap = allocatedInventory();
+  // Allocation column includes BOTH Supply Chain (in-review) POs AND
+  // approved/in-production POs, so the qty tied up while a PO awaits
+  // review is visible. allocatedInventory() (approved/in-prod only) is
+  // intentionally left unchanged so SC approval gating math doesn't shift.
+  const scMap = supplyChainDemand();
+  const prodMap = allocatedInventory();
+  const allocMap = {};
+  Object.keys(scMap).forEach(id => { allocMap[id] = (allocMap[id]||0) + scMap[id]; });
+  Object.keys(prodMap).forEach(id => { allocMap[id] = (allocMap[id]||0) + prodMap[id]; });
 
   el.innerHTML = `
     <div class="card">
@@ -6231,10 +6261,22 @@ function renderInventory(el) {
               const cells = [`<td><strong>${escapeHtml(i.name)}</strong></td>`];
               cells.push(`<td>${lotPills || '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>`);
               if (showCustomer) cells.push(`<td>${inventoryCustomer(i)}</td>`);
+              const scAlloc = scMap[i.id] || 0;
+              const prodAlloc = prodMap[i.id] || 0;
+              const allocCell = allocated > 0
+                ? `<div style="color:var(--brown);font-weight:600">${allocated.toFixed(2)}</div>`
+                  + ((scAlloc > 0 || prodAlloc > 0)
+                      ? `<div style="font-size:11px;color:var(--brown-light);margin-top:2px">`
+                          + (scAlloc > 0 ? `<span title="Pending Supply Chain review">SC ${scAlloc.toFixed(2)}</span>` : '')
+                          + (scAlloc > 0 && prodAlloc > 0 ? ' &middot; ' : '')
+                          + (prodAlloc > 0 ? `<span title="Approved / In Production">Prod ${prodAlloc.toFixed(2)}</span>` : '')
+                          + `</div>`
+                      : '')
+                : '<span style="color:var(--brown-light)">—</span>';
               cells.push(
                 `<td>${escapeHtml(getSupplier(i.supplierId)?.name || '—')}</td>`,
                 `<td>${i.stock}</td>`,
-                `<td>${allocated > 0 ? '<span style="color:var(--brown);font-weight:600">'+allocated.toFixed(2)+'</span>' : '<span style="color:var(--brown-light)">—</span>'}</td>`,
+                `<td>${allocCell}</td>`,
                 `<td><strong style="color:${conflict ? 'var(--danger)' : (low ? '#a0470c' : 'var(--success)')}">${net.toFixed(2)}</strong></td>`,
                 `<td>${escapeHtml(i.unit)}</td>`,
                 `<td>${i.reorderLevel}</td>`
@@ -9663,6 +9705,279 @@ function viewFeedback(id) {
       <button class="btn btn-secondary" onclick="closeModal()">Close</button>
     </div>
   `);
+}
+
+/* =========================================================================
+   RESEARCH & DEVELOPMENT
+   - Submit a request (Customer, Packaging Type, Units Requested, Product Description)
+   - Queue tab lists active requests, Completed tab lists finished ones
+   - Each request supports working Notes (during R&D) and post-Production Comments
+   - "Mark Complete" moves a request to the Completed tab
+   ========================================================================= */
+let rdTab = 'Queue';
+function setRdTab(t) { rdTab = t; renderRD(document.getElementById('content')); }
+
+function nextRdId() {
+  let maxNum = 0;
+  (state.rdRequests || []).forEach(r => {
+    const m = (r.rdId || '').match(/RD-(\d+)/);
+    if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+  });
+  return 'RD-' + String(maxNum + 1).padStart(4, '0');
+}
+
+function rdTabsHtml() {
+  const qN = (state.rdRequests || []).filter(r => r.status !== 'completed').length;
+  const cN = (state.rdRequests || []).filter(r => r.status === 'completed').length;
+  return `<div class="tabs" style="margin-bottom:14px">
+    <button class="tab ${rdTab==='Queue'?'active':''}" onclick="setRdTab('Queue')">Queue <span class="tab-count">${qN}</span></button>
+    <button class="tab ${rdTab==='Completed'?'active':''}" onclick="setRdTab('Completed')">Completed <span class="tab-count">${cN}</span></button>
+  </div>`;
+}
+
+function renderRD(el) {
+  const isCompleted = rdTab === 'Completed';
+  const list = (state.rdRequests || [])
+    .filter(r => isCompleted ? r.status === 'completed' : r.status !== 'completed')
+    .slice()
+    .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h2>Research &amp; Development</h2>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="exportCsv('rd_requests.csv', (state.rdRequests||[]).map(r=>({rd_id:r.rdId,customer:getCustomer(r.customerId)?.name||'',packaging:r.packagingType,units:r.unitsRequested,description:r.productDescription,status:r.status,submitted:(r.submittedAt||'').slice(0,10),completed:(r.completedAt||'').slice(0,10)})))">Export CSV</button>
+          <button class="btn" onclick="editRdRequest()">+ New R&amp;D Request</button>
+        </div>
+      </div>
+      <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
+        Submit a product or packaging concept for R&amp;D. Active requests sit in the <strong>Queue</strong> tab; mark complete to move them to <strong>Completed</strong>. Each request supports working <strong>Notes</strong> (during R&amp;D) and post-production <strong>Comments</strong>.
+      </div>
+      ${rdTabsHtml()}
+      ${list.length === 0
+        ? `<div class="empty">${isCompleted ? 'No completed R&D requests yet.' : 'No active R&D requests. Click "+ New R&D Request" to add one.'}</div>`
+        : list.map(r => rdCardHtml(r, isCompleted)).join('')
+      }
+    </div>
+  `;
+}
+
+function rdCardHtml(r, isCompleted) {
+  const cust = getCustomer(r.customerId);
+  const submitted = r.submittedAt ? fmtDate(r.submittedAt.slice(0,10)) : '—';
+  const completed = r.completedAt ? fmtDate(r.completedAt.slice(0,10)) : '';
+  const statusBadge = isCompleted
+    ? `<span class="badge badge-prod">Completed</span>`
+    : `<span class="badge">In Queue</span>`;
+  const notes = (r.notes || []).slice().sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
+  const comments = (r.comments || []).slice().sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
+
+  return `
+    <div style="border:1px solid var(--grey-light);border-radius:8px;padding:14px;margin-bottom:14px;background:var(--white)">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-weight:700;color:var(--brown)">${escapeHtml(r.rdId||'')} &middot; ${escapeHtml(cust?.name || '—')}</div>
+          <div style="font-size:12px;color:var(--brown-light);margin-top:2px">
+            Submitted ${submitted}${completed ? ' &middot; Completed ' + completed : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${statusBadge}
+          <button class="btn btn-icon btn-sm" onclick="editRdRequest('${r.id}')">Edit</button>
+          ${isCompleted
+            ? `<button class="btn btn-icon btn-sm" onclick="reopenRdRequest('${r.id}')">Reopen</button>`
+            : `<button class="btn btn-sm" onclick="completeRdRequest('${r.id}')">Mark Complete</button>`
+          }
+          <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteRdRequest('${r.id}')">Delete</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:12px">
+        <div><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Packaging Type</div><div style="font-weight:600">${escapeHtml(r.packagingType || '—')}</div></div>
+        <div><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Units Requested</div><div style="font-weight:600">${escapeHtml(String(r.unitsRequested ?? '—'))}</div></div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:4px">Product Description</div>
+        <div style="white-space:pre-wrap;font-size:14px;color:var(--black);background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 10px">${escapeHtml(r.productDescription || '—')}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:6px">Notes (during R&amp;D)</div>
+          <div style="min-height:30px;margin-bottom:8px">
+            ${notes.length === 0
+              ? '<div style="font-size:12px;color:var(--brown-light)">No notes yet.</div>'
+              : notes.map(n => `
+                  <div style="background:var(--beige-light);border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:13px">
+                    <div style="font-size:10px;color:var(--brown-light)">${fmtDate((n.ts||'').slice(0,10))}</div>
+                    <div style="white-space:pre-wrap">${escapeHtml(n.text||'')}</div>
+                  </div>`).join('')
+            }
+          </div>
+          <div style="display:flex;gap:6px">
+            <input id="rd_note_${r.id}" type="text" placeholder="Add a note…" style="flex:1" />
+            <button class="btn btn-secondary btn-sm" onclick="addRdNote('${r.id}')">Add Note</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:6px">Post-Production Comments</div>
+          <div style="min-height:30px;margin-bottom:8px">
+            ${comments.length === 0
+              ? '<div style="font-size:12px;color:var(--brown-light)">No comments yet.</div>'
+              : comments.map(c => `
+                  <div style="background:#f4f1ea;border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:13px">
+                    <div style="font-size:10px;color:var(--brown-light)">${fmtDate((c.ts||'').slice(0,10))}</div>
+                    <div style="white-space:pre-wrap">${escapeHtml(c.text||'')}</div>
+                  </div>`).join('')
+            }
+          </div>
+          <div style="display:flex;gap:6px">
+            <input id="rd_cmt_${r.id}" type="text" placeholder="Add a comment…" style="flex:1" />
+            <button class="btn btn-secondary btn-sm" onclick="addRdComment('${r.id}')">Add Comment</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function editRdRequest(id) {
+  const isNew = !id;
+  const r = isNew
+    ? { id: uid('rd'), rdId: nextRdId(), customerId: '', packagingType: '', unitsRequested: '', productDescription: '', submittedAt: new Date().toISOString(), status: 'queue', notes: [], comments: [], completedAt: null }
+    : (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  const custOpts = state.customers.map(c => `<option value="${c.id}" ${c.id===r.customerId?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+  const pkgSuggest = ['8oz jar','16oz jar','Squeeze pouch 1.15oz','Squeeze pouch 32oz','Tub','Stick pack','Bulk pail','Bag-in-box','Other'];
+  const datalistOpts = pkgSuggest.map(p => `<option value="${escapeHtml(p)}">`).join('');
+  openModal(isNew ? `New R&D Request — ${r.rdId}` : `Edit ${r.rdId}`, `
+    <div class="form-grid">
+      <div class="form-row">
+        <label>R&amp;D ID</label>
+        <input type="text" value="${escapeHtml(r.rdId)}" disabled />
+      </div>
+      <div class="form-row">
+        <label>Customer</label>
+        <select id="rd_customer">
+          <option value="">— Pick a customer —</option>
+          ${custOpts}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Packaging Type</label>
+        <input type="text" id="rd_packaging" list="rd_pkg_list" value="${escapeHtml(r.packagingType||'')}" placeholder="e.g. 8oz jar, squeeze pouch, tub…" />
+        <datalist id="rd_pkg_list">${datalistOpts}</datalist>
+      </div>
+      <div class="form-row">
+        <label>Units Requested</label>
+        <input type="number" id="rd_units" min="0" step="1" value="${escapeHtml(String(r.unitsRequested ?? ''))}" />
+      </div>
+      <div class="form-row">
+        <label>Product Description</label>
+        <textarea id="rd_desc" rows="5" placeholder="Describe the product concept, formulation goals, target attributes…">${escapeHtml(r.productDescription||'')}</textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveRdRequest('${r.id}', ${isNew})">${isNew ? 'Submit Request' : 'Save Changes'}</button>
+    </div>
+  `);
+}
+
+function saveRdRequest(id, isNew) {
+  const customerId = document.getElementById('rd_customer').value;
+  if (!customerId) { toast('Customer is required.'); return; }
+  const packagingType = (document.getElementById('rd_packaging').value || '').trim();
+  if (!packagingType) { toast('Packaging Type is required.'); return; }
+  const unitsRaw = document.getElementById('rd_units').value;
+  const unitsRequested = unitsRaw === '' ? '' : parseInt(unitsRaw, 10);
+  if (unitsRaw === '' || isNaN(unitsRequested) || unitsRequested < 0) { toast('Units Requested must be 0 or more.'); return; }
+  const productDescription = (document.getElementById('rd_desc').value || '').trim();
+  if (!productDescription) { toast('Product Description is required.'); return; }
+
+  state.rdRequests = state.rdRequests || [];
+  if (isNew) {
+    state.rdRequests.push({
+      id,
+      rdId: nextRdId(),
+      customerId, packagingType, unitsRequested, productDescription,
+      submittedAt: new Date().toISOString(),
+      status: 'queue',
+      notes: [], comments: [],
+      completedAt: null
+    });
+    toast('R&D request submitted.');
+  } else {
+    const r = state.rdRequests.find(x => x.id === id);
+    if (r) {
+      Object.assign(r, { customerId, packagingType, unitsRequested, productDescription });
+      toast('R&D request updated.');
+    }
+  }
+  try { saveState(); } catch(e) { toast('Storage full — try removing files or older entries.'); return; }
+  closeModal();
+  rdTab = 'Queue';
+  router('rd');
+}
+
+function addRdNote(id) {
+  const inp = document.getElementById('rd_note_'+id);
+  const text = (inp?.value || '').trim();
+  if (!text) { toast('Type a note first.'); return; }
+  const r = (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  r.notes = r.notes || [];
+  r.notes.push({ id: uid('rdn'), text, ts: new Date().toISOString() });
+  saveState();
+  router('rd');
+}
+
+function addRdComment(id) {
+  const inp = document.getElementById('rd_cmt_'+id);
+  const text = (inp?.value || '').trim();
+  if (!text) { toast('Type a comment first.'); return; }
+  const r = (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  r.comments = r.comments || [];
+  r.comments.push({ id: uid('rdc'), text, ts: new Date().toISOString() });
+  saveState();
+  router('rd');
+}
+
+function completeRdRequest(id) {
+  const r = (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`Mark ${r.rdId} as complete? It will move to the Completed tab.`)) return;
+  r.status = 'completed';
+  r.completedAt = new Date().toISOString();
+  saveState();
+  rdTab = 'Completed';
+  router('rd');
+  toast(`${r.rdId} marked complete.`);
+}
+
+function reopenRdRequest(id) {
+  const r = (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`Reopen ${r.rdId}? It will move back to the Queue.`)) return;
+  r.status = 'queue';
+  r.completedAt = null;
+  saveState();
+  rdTab = 'Queue';
+  router('rd');
+  toast(`${r.rdId} reopened.`);
+}
+
+function deleteRdRequest(id) {
+  const r = (state.rdRequests || []).find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`Delete ${r.rdId}? This can't be undone.`)) return;
+  state.rdRequests = (state.rdRequests || []).filter(x => x.id !== id);
+  saveState();
+  router('rd');
+  toast(`${r.rdId} deleted.`);
 }
 
 /* =========================================================================
