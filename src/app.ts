@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { ApiError, toApiError } from "./api/errors";
 import { fail, ok } from "./api/responses";
+import { registerInventoryRoutes } from "./inventory/routes";
 
 export type AppBindings = { Bindings: Env; Variables: { requestId?: string } };
 
@@ -25,6 +26,8 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void) {
   });
 
   configure?.(app);
+
+  registerInventoryRoutes(app);
 
   app.notFound((c) => {
     return fail(c, new ApiError("NOT_FOUND", "Route not found", 404));
