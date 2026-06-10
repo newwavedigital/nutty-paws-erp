@@ -1,11 +1,40 @@
-﻿import { Hono } from "hono";
+import { Hono } from "hono";
+import { ApiError, toApiError } from "./api/errors";
+import { fail, ok } from "./api/responses";
 
-export const app = new Hono<{ Bindings: Env }>();
+export type AppBindings = { Bindings: Env; Variables: { requestId?: string } };
 
-app.get("/api/health", (c) => {
-  return c.json({
-    ok: true,
-    service: "nut-house-portal-api",
-    environment: c.env?.ENVIRONMENT ?? "test",
+export function createApp(configure?: (app: Hono<AppBindings>) => void) {
+  const app = new Hono<AppBindings>();
+
+  app.use("*", async (c, next) => {
+    const requestId = c.req.header("x-request-id") ?? c.req.header("cf-ray");
+
+    if (requestId) {
+      c.set("requestId", requestId);
+    }
+
+    await next();
   });
-});
+
+  app.get("/api/health", (c) => {
+    return ok(c, {
+      service: "nut-house-portal-api",
+      environment: c.env?.ENVIRONMENT ?? "test",
+    });
+  });
+
+  configure?.(app);
+
+  app.notFound((c) => {
+    return fail(c, new ApiError("NOT_FOUND", "Route not found", 404));
+  });
+
+  app.onError((error, c) => {
+    return fail(c, toApiError(error));
+  });
+
+  return app;
+}
+
+export const app = createApp();
