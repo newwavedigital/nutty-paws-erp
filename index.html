@@ -1195,6 +1195,8 @@ const MASTER_UOMS = ['LBS', 'Each'];
 const ALLERGENS = ['Peanut', 'Almond', 'Cashew', 'Walnut', 'Pecan', 'Hazelnut', 'Pistachio', 'Soy', 'Wheat', 'Milk', 'Sesame'];
 
 let state = loadState();
+const backendApiState = { status: 'unknown', lastError: '', loadedPurchaseOrders: false, loadingPurchaseOrders: false };
+const BACKEND_ACTOR_USER_ID = 'phase-2a-frontend';
 
 function loadState() {
   try {
@@ -1378,6 +1380,223 @@ function ensureMasterItems(s) {
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+
+
+/* =========================================================================
+   BACKEND API BRIDGE - Phase 2A targeted PO wiring
+   ========================================================================= */
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Accept': 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {})
+    }
+  });
+
+  let envelope = null;
+  try { envelope = await response.json(); } catch (err) {}
+
+  if (!response.ok || !envelope || envelope.ok !== true) {
+    const message = envelope?.error?.message || `Backend request failed (${response.status})`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.envelope = envelope;
+    throw error;
+  }
+
+  backendApiState.status = 'connected';
+  backendApiState.lastError = '';
+  return envelope.data;
+}
+
+function markBackendUnavailable(error) {
+  backendApiState.status = 'local';
+  backendApiState.lastError = error?.message || 'Backend unavailable';
+}
+
+function renderBackendStatusBanner(context = 'purchase-orders') {
+  const connected = backendApiState.status === 'connected';
+  const loading = backendApiState.loadingPurchaseOrders;
+  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Local demo mode / backend unavailable';
+  const detail = connected
+    ? 'Purchase Orders are reading from the Phase 2A API when available.'
+    : 'The prototype keeps working from localStorage until D1 is migrated/deployed.';
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${context}" style="border-left-color:${color}">
+    <strong>${label}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}${backendApiState.lastError ? ' Last API message: '+escapeHtml(backendApiState.lastError) : ''}</div>
+  </div>`;
+}
+
+function backendPurchaseOrderId(po) {
+  return po?._backendId || po?.id || '';
+}
+
+function mergeBackendPurchaseOrders(records) {
+  const backendPos = (records || []).map(mapBackendPurchaseOrderToPrototype);
+  const backendIds = new Set(backendPos.map(po => po._backendId));
+  state.purchaseOrders = [
+    ...backendPos,
+    ...state.purchaseOrders.filter(po => !po._backendId || !backendIds.has(po._backendId))
+  ];
+  try { saveState(); } catch (err) {}
+  return backendPos;
+}
+
+function mapBackendPurchaseOrderToPrototype(po) {
+  const backendStatus = po.status || 'draft';
+  const prototypeStatus = backendStatus === 'approved_for_production'
+    ? 'approved_for_production'
+    : backendStatus === 'completed'
+      ? 'completed'
+      : 'in_supply_chain';
+  return {
+    id: po.poNumber || po.id,
+    _backendId: po.id,
+    _backendSource: true,
+    _backendStatus: backendStatus,
+    _backendLines: po.lines || [],
+    brand: '',
+    customerId: po.customerId || '',
+    poDate: new Date().toISOString().slice(0, 10),
+    requestedDate: po.requestedShipDate || '',
+    requestedShipDate: po.requestedShipDate || '',
+    notes: po.notes || '',
+    lines: (po.lines || []).map(line => ({
+      id: line.id,
+      productId: line.productId || '',
+      qty: line.quantity || 0,
+      price: 0,
+      description: line.description || '',
+      masterItemId: line.masterItemId || null,
+      supply_chain_status: line.supplyChainStatus || 'pending'
+    })),
+    status: prototypeStatus,
+    depositStatus: mapBackendDepositToPrototype(po.depositStatus),
+    poFile: null,
+    scOverrides: {}
+  };
+}
+
+function mapBackendDepositToPrototype(status) {
+  return ['not_required', 'received', 'waived'].includes(status) ? 'ok' : 'on_hold';
+}
+
+function mapPrototypeDepositToBackend(status) {
+  return status === 'ok' ? 'received' : 'required';
+}
+
+function buildBackendPurchaseOrderPayload(localPo) {
+  return {
+    poNumber: localPo.id,
+    customerId: localPo.customerId,
+    requestedShipDate: localPo.requestedDate || null,
+    notes: localPo.notes || null,
+    actorUserId: BACKEND_ACTOR_USER_ID,
+    lines: (localPo.lines || []).map(line => {
+      const product = getProduct(line.productId);
+      return {
+        description: product?.name || line.description || line.productId || 'Purchase order line',
+        quantity: Number(line.qty || line.quantity || 0),
+        unitOfMeasure: 'Each',
+        productId: line.productId || null,
+        masterItemId: line.masterItemId || null
+      };
+    })
+  };
+}
+
+async function ensureBackendPurchaseOrdersLoaded() {
+  if (backendApiState.loadedPurchaseOrders || backendApiState.loadingPurchaseOrders) return;
+  backendApiState.loadingPurchaseOrders = true;
+  try {
+    const records = await apiRequest('/api/purchase-orders');
+    mergeBackendPurchaseOrders(records);
+    backendApiState.loadedPurchaseOrders = true;
+    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
+    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
+  } catch (error) {
+    markBackendUnavailable(error);
+    backendApiState.loadedPurchaseOrders = true;
+  } finally {
+    backendApiState.loadingPurchaseOrders = false;
+    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
+    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
+  }
+}
+
+async function refreshBackendPurchaseOrders() {
+  backendApiState.loadedPurchaseOrders = false;
+  await ensureBackendPurchaseOrdersLoaded();
+}
+
+async function createBackendPurchaseOrder(localPo) {
+  const created = await apiRequest('/api/purchase-orders', {
+    method: 'POST',
+    body: JSON.stringify(buildBackendPurchaseOrderPayload(localPo))
+  });
+  const submitted = await apiRequest(`/api/purchase-orders/${encodeURIComponent(created.id)}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendPurchaseOrders([submitted]);
+  return submitted;
+}
+
+async function updateBackendPurchaseOrder(localPo) {
+  const purchaseOrderId = backendPurchaseOrderId(localPo);
+  const updated = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      notes: localPo.notes || null,
+      requestedShipDate: localPo.requestedDate || null,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  return updated;
+}
+
+async function readBackendPurchaseOrder(po) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  const record = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}`);
+  return mergeBackendPurchaseOrders([record])[0];
+}
+
+async function updateBackendDepositStatus(po, status) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  const updated = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}/deposit-status`, {
+    method: 'POST',
+    body: JSON.stringify({ depositStatus: mapPrototypeDepositToBackend(status), actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  return updated;
+}
+
+async function reviewBackendSupplyChainLines(po, supplyChainStatus) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  const lines = po?._backendLines || [];
+  for (const line of lines) {
+    await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}/lines/${encodeURIComponent(line.id)}/supply-chain-review`, {
+      method: 'POST',
+      body: JSON.stringify({ supplyChainStatus, actorUserId: BACKEND_ACTOR_USER_ID })
+    });
+  }
+  await refreshBackendPurchaseOrders();
+}
+
+async function approveBackendPurchaseOrder(po) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  const approved = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}/approve-for-production`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendPurchaseOrders([approved]);
+  return approved;
+}
+
 function resetAllData() {
   if (!confirm('Reset all data back to sample demo? This cannot be undone.')) return;
   state = JSON.parse(JSON.stringify(SAMPLE_DATA));
@@ -1409,6 +1628,9 @@ function fmtDate(d) {
 }
 function statusBadge(s) {
   const map = {
+    draft: ['Draft', 'badge-pending'],
+    submitted: ['Submitted', 'badge-supply'],
+    supply_chain_review: ['Supply Chain', 'badge-supply'],
     pending: ['Pending Review', 'badge-pending'],
     in_supply_chain: ['Supply Chain', 'badge-supply'],
     approved_for_production: ['Approved', 'badge-prod'],
@@ -1926,7 +2148,8 @@ let poTab = 'open';
 function setPoTab(t) { poTab = t; renderPurchaseOrders(document.getElementById('content')); }
 
 function renderPurchaseOrders(el) {
-  const all = state.purchaseOrders.slice().sort((a,b)=>b.poDate.localeCompare(a.poDate));
+  ensureBackendPurchaseOrdersLoaded();
+  const all = state.purchaseOrders.slice().sort((a,b)=>(b.poDate || '').localeCompare(a.poDate || ''));
   const open = all.filter(p => p.status !== 'completed');
   const completed = all.filter(p => p.status === 'completed');
   const pos = poTab === 'completed' ? completed : open;
@@ -1937,6 +2160,7 @@ function renderPurchaseOrders(el) {
         <button class="tab ${poTab==='open'?'active':''}" onclick="setPoTab('open')">Open PO's <span class="tab-count">${open.length}</span></button>
         <button class="tab ${poTab==='completed'?'active':''}" onclick="setPoTab('completed')">Completed PO's <span class="tab-count">${completed.length}</span></button>
       </div>
+      ${renderBackendStatusBanner('purchase-orders')}
       <div class="card-header" style="margin-top:14px">
         <h2>${poTab==='completed' ? 'Completed Purchase Orders' : 'Open Purchase Orders'}</h2>
         <div>
@@ -2151,7 +2375,7 @@ function clearPoFile() {
   info.classList.remove('has');
 }
 
-function savePO(isNew, oldId) {
+async function savePO(isNew, oldId) {
   const id = document.getElementById('po_id').value.trim();
   const brand = document.getElementById('po_brand').value;
   const customerId = document.getElementById('po_customer').value;
@@ -2175,23 +2399,55 @@ function savePO(isNew, oldId) {
   });
   if (!lines.length) { toast('At least one line item required.'); return; }
 
+  const localPo = {
+    id, brand, customerId, poDate, requestedDate, notes, lines,
+    status: 'in_supply_chain',
+    productionDate: null, productionRoom: null, shipping: null,
+    poFile, scOverrides: {}
+  };
+
+  if (isNew && backendApiState.status !== 'local') {
+    try {
+      await createBackendPurchaseOrder(localPo);
+      toast(`${id} submitted to Supply Chain through backend.`);
+      closeModal();
+      router(currentPage);
+      return;
+    } catch (error) {
+      markBackendUnavailable(error);
+      toast('Backend unavailable ? saved PO locally instead.');
+    }
+  }
+
+  if (!isNew) {
+    const existing = state.purchaseOrders.find(p => p.id === oldId);
+    if (existing?._backendId && backendApiState.status !== 'local') {
+      try {
+        await updateBackendPurchaseOrder({ ...existing, ...localPo, _backendId: existing._backendId });
+        toast(`${id} updated through backend.`);
+        closeModal();
+        router(currentPage);
+        return;
+      } catch (error) {
+        markBackendUnavailable(error);
+        toast('Backend update unavailable ? saved editable fields locally.');
+      }
+    }
+  }
+
   if (isNew) {
-    state.purchaseOrders.push({
-      id, brand, customerId, poDate, requestedDate, notes, lines,
-      status: 'in_supply_chain',
-      productionDate: null, productionRoom: null, shipping: null,
-      poFile, scOverrides: {}
-    });
+    state.purchaseOrders.push(localPo);
     toast(`${id} submitted to Supply Chain.`);
   } else {
     const po = state.purchaseOrders.find(p => p.id === oldId);
     Object.assign(po, { id, brand, customerId, poDate, requestedDate, notes, lines, poFile });
     toast(`${id} updated.`);
   }
-  try { saveState(); } catch(e) { toast('Storage full — try removing the PO file or using smaller files.'); return; }
+  try { saveState(); } catch(e) { toast('Storage full ? try removing the PO file or using smaller files.'); return; }
   closeModal();
   router(currentPage);
 }
+
 function deletePO(id) {
   if (!confirm(`Delete ${id}?`)) return;
   state.purchaseOrders = state.purchaseOrders.filter(p => p.id !== id);
@@ -2199,9 +2455,17 @@ function deletePO(id) {
   router(currentPage);
   toast(`${id} deleted.`);
 }
-function viewPO(id) {
-  const po = state.purchaseOrders.find(p => p.id === id);
+async function viewPO(id) {
+  let po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
+  if (po._backendId && backendApiState.status !== 'local') {
+    try {
+      po = await readBackendPurchaseOrder(po);
+    } catch (error) {
+      markBackendUnavailable(error);
+      toast('Backend detail unavailable ? showing local copy.');
+    }
+  }
   const cust = getCustomer(po.customerId);
   const total = po.lines.reduce((s,l)=>s+l.qty*l.price,0);
   openModal(`${po.id} — ${escapeHtml(cust?.name || '')}`, `
@@ -2498,18 +2762,31 @@ function setLineStatus(poId, ingId, status) {
   saveState();
   renderSupplyChain(document.getElementById('content'));
 }
-function setDepositStatus(poId, status) {
+async function setDepositStatus(poId, status) {
   const po = state.purchaseOrders.find(p => p.id === poId);
   if (!po) return;
+  if (po._backendId && backendApiState.status !== 'local') {
+    try {
+      await updateBackendDepositStatus(po, status);
+      toast(`Deposit status synced to backend.`);
+      renderSupplyChain(document.getElementById('content'));
+      return;
+    } catch (error) {
+      markBackendUnavailable(error);
+      toast('Backend unavailable ? deposit status saved locally.');
+    }
+  }
   po.depositStatus = status;
   saveState();
   renderSupplyChain(document.getElementById('content'));
 }
 
 function renderSupplyChain(el) {
-  const queue = state.purchaseOrders.filter(p => p.status === 'pending' || p.status === 'in_supply_chain');
+  ensureBackendPurchaseOrdersLoaded();
+  const queue = state.purchaseOrders.filter(p => p.status === 'pending' || p.status === 'in_supply_chain' || p.status === 'submitted' || p.status === 'supply_chain_review');
   el.innerHTML = `
     <div class="card">
+      ${renderBackendStatusBanner('supply-chain')}
       <div class="card-header">
         <h2>POs Awaiting Review</h2>
         <span style="font-size:13px;color:var(--brown-light)">${queue.length} order(s)</span>
@@ -2624,10 +2901,10 @@ function renderSupplyChain(el) {
     </div>
   `;
 }
-function approveForProduction(id) {
+async function approveForProduction(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
-  if (po.depositStatus !== 'ok') { toast('Cannot approve — Customer Deposit must be set to OK.'); return; }
+  if (po.depositStatus !== 'ok') { toast('Cannot approve ? Customer Deposit must be set to OK.'); return; }
   // re-validate against Net Available: all ingredients must be OK after subtracting other PO allocations
   const req = poRequirements(po, false, true); // include 5% waste buffer
   const ingIds = Object.keys(req);
@@ -2637,7 +2914,21 @@ function approveForProduction(id) {
     const net = (ing?.stock || 0) - (otherAlloc[ingId] || 0);
     return lineStatus(po, ingId, req[ingId], net) === 'ok';
   });
-  if (!allOk) { toast('Cannot approve — every item must be set to OK.'); return; }
+  if (!allOk) { toast('Cannot approve ? every item must be set to OK.'); return; }
+  if (po._backendId && backendApiState.status !== 'local') {
+    try {
+      await reviewBackendSupplyChainLines(po, 'available');
+      await approveBackendPurchaseOrder(po);
+      toast(`${id} approved through backend. Schedule it on the Production calendar.`);
+      router('production');
+      return;
+    } catch (error) {
+      markBackendUnavailable(error);
+      toast(error?.message || 'Backend approval failed ? local PO was not approved.');
+      renderSupplyChain(document.getElementById('content'));
+      return;
+    }
+  }
   po.status = 'approved_for_production';
   saveState();
   toast(`${id} approved. Schedule it on the Production calendar.`);
