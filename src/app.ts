@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { ApiError, toApiError } from "./api/errors";
 import { fail, ok } from "./api/responses";
 import { registerInventoryRoutes } from "./inventory/routes";
+import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
 
 export type AppBindings = { Bindings: Env; Variables: { requestId?: string } };
 
@@ -27,6 +28,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void) {
 
   configure?.(app);
 
+  registerPurchaseOrderRoutes(app);
   registerInventoryRoutes(app);
 
   app.notFound((c) => {

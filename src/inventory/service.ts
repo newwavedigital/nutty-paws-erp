@@ -1,3 +1,5 @@
+import { ApiError } from "../api/errors";
+
 export type InventoryItemRecord = {
   id: string;
   onHandQuantity: number;
@@ -192,4 +194,3 @@ function assertPositiveQuantity(quantity: number) {
     throw new InventoryError("INVALID_QUANTITY", "Quantity must be greater than zero");
   }
 }
-import { ApiError } from "../api/errors";
