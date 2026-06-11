@@ -1,12 +1,16 @@
 import { Hono } from "hono";
 import { ApiError, toApiError } from "./api/errors";
 import { fail, ok } from "./api/responses";
+import { registerAuthRoutes } from "./auth/routes";
 import { registerInventoryRoutes } from "./inventory/routes";
 import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
+import { registerUserRoutes } from "./users/routes";
+import type { AuthContext } from "./auth/service";
 
-export type AppBindings = { Bindings: Env; Variables: { requestId?: string } };
+export type AppBindings = { Bindings: Env; Variables: { requestId?: string; auth?: AuthContext } };
+export type AppTestEnv = Partial<{ AUTH_REQUIRED: "true" | "false"; ENVIRONMENT: string }>;
 
-export function createApp(configure?: (app: Hono<AppBindings>) => void) {
+export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv: AppTestEnv = {}) {
   const app = new Hono<AppBindings>();
 
   app.use("*", async (c, next) => {
@@ -14,6 +18,11 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void) {
 
     if (requestId) {
       c.set("requestId", requestId);
+    }
+
+    if (Object.keys(testEnv).length > 0) {
+      const mutableContext = c as unknown as { env?: AppTestEnv };
+      mutableContext.env = { ...(mutableContext.env ?? {}), ...testEnv };
     }
 
     await next();
@@ -28,6 +37,8 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void) {
 
   configure?.(app);
 
+  registerAuthRoutes(app);
+  registerUserRoutes(app);
   registerPurchaseOrderRoutes(app);
   registerInventoryRoutes(app);
 
