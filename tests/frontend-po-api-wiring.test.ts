@@ -27,4 +27,19 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("requestedDate");
     expect(html).toContain("supply_chain_status");
   });
+
+  test("includes optional auth and Account Management backend wiring while preserving local fallback", () => {
+    expect(html).toContain("const AUTH_STORAGE_KEY");
+    expect(html).toContain("function authHeaders");
+    expect(html).toContain("Authorization");
+    expect(html).toContain("Bearer ${backendAuthState.token}");
+    expect(html).toContain("/api/auth/setup-status");
+    expect(html).toContain("/api/auth/setup");
+    expect(html).toContain("/api/auth/login");
+    expect(html).toContain("/api/auth/me");
+    expect(html).toContain("/api/users");
+    expect(html).toContain("data-auth-panel");
+    expect(html).toContain("Backend auth is available when AUTH_REQUIRED is enabled");
+    expect(html).toContain("Account Management could not reach the backend user API; keeping local demo users active.");
+  });
 });

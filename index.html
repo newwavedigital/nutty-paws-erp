@@ -1196,6 +1196,9 @@ const ALLERGENS = ['Peanut', 'Almond', 'Cashew', 'Walnut', 'Pecan', 'Hazelnut', 
 
 let state = loadState();
 const backendApiState = { status: 'unknown', lastError: '', loadedPurchaseOrders: false, loadingPurchaseOrders: false };
+const AUTH_STORAGE_KEY = `${STORAGE_KEY}_auth`;
+const backendUserState = { status: 'local', lastError: '', loadingUsers: false };
+let backendAuthState = loadAuthState();
 const BACKEND_ACTOR_USER_ID = 'phase-2a-frontend';
 
 function loadState() {
@@ -1381,9 +1384,49 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function loadAuthState() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return { token: '', user: null, roles: [], customerAccess: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      token: parsed.token || '',
+      user: parsed.user || null,
+      roles: Array.isArray(parsed.roles) ? parsed.roles : [],
+      customerAccess: Array.isArray(parsed.customerAccess) ? parsed.customerAccess : []
+    };
+  } catch (err) {
+    return { token: '', user: null, roles: [], customerAccess: [] };
+  }
+}
+
+function saveAuthState() {
+  if (!backendAuthState.token) localStorage.removeItem(AUTH_STORAGE_KEY);
+  else localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(backendAuthState));
+}
+
+function setBackendAuth(data) {
+  backendAuthState = {
+    token: data?.token || backendAuthState.token || '',
+    user: data?.user || null,
+    roles: data?.roles || data?.user?.roles || [],
+    customerAccess: data?.customerAccess || data?.user?.customerAccess || []
+  };
+  saveAuthState();
+}
+
+function clearBackendAuth() {
+  backendAuthState = { token: '', user: null, roles: [], customerAccess: [] };
+  saveAuthState();
+  backendUserState.status = 'local';
+}
+
+function authHeaders() {
+  return backendAuthState.token ? { Authorization: `Bearer ${backendAuthState.token}` } : {};
+}
 
 /* =========================================================================
-   BACKEND API BRIDGE - Phase 2A targeted PO wiring
+   BACKEND API BRIDGE - Phase 2A targeted PO/auth wiring
    ========================================================================= */
 async function apiRequest(path, options = {}) {
   const response = await fetch(path, {
@@ -1391,6 +1434,7 @@ async function apiRequest(path, options = {}) {
     headers: {
       'Accept': 'application/json',
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...authHeaders(),
       ...(options.headers || {})
     }
   });
@@ -6200,8 +6244,188 @@ function resetCalc() {
 /* =========================================================================
    ACCOUNT MANAGEMENT (Users)
    ========================================================================= */
+function backendAuthPanelHtml() {
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const roles = signedIn ? (backendAuthState.roles || []).join(', ') : '';
+  const userLabel = signedIn ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}` : 'Not signed in';
+  const statusText = backendUserState.status === 'connected'
+    ? 'Backend user API connected.'
+    : backendUserState.status === 'error'
+      ? escapeHtml(backendUserState.lastError || 'Account Management could not reach the backend user API; keeping local demo users active.')
+      : 'Backend auth is available when AUTH_REQUIRED is enabled; local demo users stay active for stakeholder review.';
+  return `
+    <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+        <div>
+          <strong>Auth / account backend</strong>
+          <div class="help-text">${statusText}</div>
+          <div style="font-size:12px;color:var(--brown);margin-top:4px">${userLabel}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="openBackendSetup()">First Admin Setup</button>
+          ${signedIn ? `<button class="btn btn-secondary btn-sm" onclick="refreshBackendAuth()">Refresh Session</button><button class="btn btn-secondary btn-sm" onclick="logoutBackendAuth()">Logout</button>` : `<button class="btn btn-sm" onclick="openBackendLogin()">Login</button>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function refreshBackendAuth() {
+  if (!backendAuthState.token) { openBackendLogin(); return; }
+  try {
+    const data = await apiRequest('/api/auth/me');
+    setBackendAuth({ token: backendAuthState.token, ...data });
+    await loadBackendUsers();
+    toast('Backend session refreshed.');
+    if (currentPage === 'users') router('users');
+  } catch (err) {
+    clearBackendAuth();
+    backendUserState.status = 'error';
+    backendUserState.lastError = 'Backend auth session expired or unavailable; local demo users remain active.';
+    toast('Backend session unavailable. Local demo mode remains active.');
+    if (currentPage === 'users') router('users');
+  }
+}
+
+async function checkBackendSetupStatus() {
+  return apiRequest('/api/auth/setup-status');
+}
+
+function openBackendSetup() {
+  openModal('First Admin Setup', `
+    <div id="auth_setup_status" class="help-text" style="margin-bottom:12px">Checking backend setup status...</div>
+    <div class="help-text" style="margin-bottom:12px">Creates the first backend Admin only when the D1 users table is empty. If setup is already complete, use Login instead.</div>
+    <form onsubmit="event.preventDefault();submitBackendSetup()">
+      <div class="form-grid">
+        <div class="form-row"><label>Full Name</label><input id="auth_setup_name" required /></div>
+        <div class="form-row"><label>Email</label><input type="email" id="auth_setup_email" required /></div>
+        <div class="form-row"><label>Password</label><input type="password" id="auth_setup_password" minlength="8" required /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn">Create Admin</button>
+      </div>
+    </form>
+  `);
+  checkBackendSetupStatus()
+    .then(status => {
+      const el = document.getElementById('auth_setup_status');
+      if (el) el.textContent = status.needsSetup ? 'First admin setup is available.' : 'Backend setup is already complete; use Login.';
+    })
+    .catch(() => {
+      const el = document.getElementById('auth_setup_status');
+      if (el) el.textContent = 'Setup status is unavailable right now; local demo mode remains safe.';
+    });
+}
+
+async function submitBackendSetup() {
+  try {
+    const data = await apiRequest('/api/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify({
+        displayName: document.getElementById('auth_setup_name').value,
+        email: document.getElementById('auth_setup_email').value,
+        password: document.getElementById('auth_setup_password').value
+      })
+    });
+    setBackendAuth(data);
+    closeModal();
+    await loadBackendUsers();
+    router('users');
+    toast('Backend Admin created and signed in.');
+  } catch (err) {
+    toast(err.message || 'Backend setup failed.');
+  }
+}
+
+function openBackendLogin() {
+  openModal('Backend Login', `
+    <div class="help-text" style="margin-bottom:12px">Optional for Phase 2A review. When AUTH_REQUIRED=false, the prototype still works without login.</div>
+    <form onsubmit="event.preventDefault();submitBackendLogin()">
+      <div class="form-grid">
+        <div class="form-row"><label>Email</label><input type="email" id="auth_login_email" required /></div>
+        <div class="form-row"><label>Password</label><input type="password" id="auth_login_password" required /></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn">Login</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitBackendLogin() {
+  try {
+    const data = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('auth_login_email').value,
+        password: document.getElementById('auth_login_password').value
+      })
+    });
+    setBackendAuth(data);
+    closeModal();
+    await loadBackendUsers();
+    router('users');
+    toast('Signed in to backend account API.');
+  } catch (err) {
+    toast(err.message || 'Login failed.');
+  }
+}
+
+async function logoutBackendAuth() {
+  try {
+    if (backendAuthState.token) await apiRequest('/api/auth/logout', { method: 'POST' });
+  } catch (err) {}
+  clearBackendAuth();
+  router('users');
+  toast('Logged out. Local demo users remain available.');
+}
+
+function backendUserToLocalUser(user) {
+  const role = (user.roles || [])[0] || 'Sales';
+  return {
+    id: user.id,
+    _backendUserId: user.id,
+    name: user.displayName || user.email,
+    email: user.email || '',
+    role,
+    customerId: role === 'Customer' ? (user.customerAccess?.[0]?.customerId || '') : '',
+    addedAt: new Date().toISOString().slice(0,10),
+    isActive: user.isActive !== false
+  };
+}
+
+function upsertLocalUserFromBackend(user) {
+  const mapped = backendUserToLocalUser(user);
+  state.users = state.users || [];
+  const existing = state.users.find(u => u._backendUserId === user.id || u.id === user.id || (u.email && u.email.toLowerCase() === (user.email || '').toLowerCase()));
+  if (existing) Object.assign(existing, mapped, { addedAt: existing.addedAt || mapped.addedAt });
+  else state.users.push(mapped);
+}
+
+async function loadBackendUsers() {
+  if (!backendAuthState.token || backendUserState.loadingUsers) return;
+  backendUserState.loadingUsers = true;
+  try {
+    const users = await apiRequest('/api/users');
+    (users || []).forEach(upsertLocalUserFromBackend);
+    backendUserState.status = 'connected';
+    backendUserState.lastError = '';
+    saveState();
+  } catch (err) {
+    backendUserState.status = 'error';
+    backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+  } finally {
+    backendUserState.loadingUsers = false;
+  }
+}
+
 function renderUsers(el) {
+  if (backendAuthState.token && backendUserState.status !== 'connected' && !backendUserState.loadingUsers) {
+    loadBackendUsers().then(() => { if (currentPage === 'users') router('users'); });
+  }
   el.innerHTML = `
+    ${backendAuthPanelHtml()}
     <div class="card">
       <div class="card-header">
         <h2>Account Management</h2>
@@ -6210,7 +6434,7 @@ function renderUsers(el) {
           <button class="btn" onclick="editUser()">+ Add User</button>
         </div>
       </div>
-      <div class="help-text" style="margin-bottom:8px">Add team members and assign permissions. Roles control which areas of the ERP a user can access.</div>
+      <div class="help-text" style="margin-bottom:8px">Add team members and assign permissions. Roles now match the Phase 2A backend model; server-side enforcement is active when AUTH_REQUIRED=true.</div>
       <div class="table-wrap"><table>
         <thead><tr>
           <th>Name</th><th>Email</th><th>Role</th><th>Linked Customer</th><th>Added</th><th></th>
@@ -6278,6 +6502,7 @@ function editUser(id) {
           </select>
         </div>
         <div class="form-row"><label>Added Date</label><input type="date" id="usr_added" value="${u.addedAt}" /></div>
+        <div class="form-row"><label>Temporary Password</label><input type="password" id="usr_password" minlength="8" placeholder="Required for new backend users" /></div>
       </div>
       <div class="form-row" id="usr_customer_row" style="margin-top:12px;display:${u.role==='Customer'?'flex':'none'}">
         <label>Linked Customer Account *</label>
@@ -6298,7 +6523,7 @@ function toggleCustomerLink() {
   const role = document.getElementById('usr_role').value;
   document.getElementById('usr_customer_row').style.display = (role === 'Customer') ? 'flex' : 'none';
 }
-function saveUser(id, isNew) {
+async function saveUser(id, isNew) {
   const role = document.getElementById('usr_role').value;
   const customerId = document.getElementById('usr_customer')?.value || '';
   if (role === 'Customer' && !customerId) { toast('Pick a customer to link this account to.'); return; }
@@ -6310,13 +6535,47 @@ function saveUser(id, isNew) {
     customerId: role === 'Customer' ? customerId : '',
     addedAt: document.getElementById('usr_added').value
   };
+
+  if (backendAuthState.token) {
+    try {
+      const existing = (state.users || []).find(u => u.id === id);
+      const password = document.getElementById('usr_password')?.value || '';
+      let saved;
+      if (isNew) {
+        if (password.length < 8) { toast('Temporary password must be at least 8 characters for backend users.'); return; }
+        saved = await apiRequest('/api/users', {
+          method: 'POST',
+          body: JSON.stringify({ email: data.email, displayName: data.name, password, roles: [role], customerId: data.customerId || undefined })
+        });
+      } else {
+        const backendId = existing?._backendUserId || id;
+        saved = await apiRequest(`/api/users/${encodeURIComponent(backendId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ displayName: data.name, roles: [role], customerId: data.customerId || undefined, isActive: true })
+        });
+      }
+      upsertLocalUserFromBackend(saved);
+      backendUserState.status = 'connected';
+      backendUserState.lastError = '';
+      saveState();
+      closeModal();
+      router('users');
+      toast('User saved to backend.');
+      return;
+    } catch (err) {
+      backendUserState.status = 'error';
+      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+      toast(backendUserState.lastError);
+    }
+  }
+
   state.users = state.users || [];
   if (isNew) state.users.push(data);
   else Object.assign(state.users.find(u=>u.id===id), data);
   saveState();
   closeModal();
   router('users');
-  toast('User saved.');
+  toast('User saved locally.');
 }
 
 /* ----- Customer Portal preview ----- */
@@ -6341,7 +6600,7 @@ function viewCustomerPortal(customerId) {
 
   openModal(`Customer Portal Preview — ${escapeHtml(cust.name)}`, `
     <div style="background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--brown)">
-      <strong>Preview only.</strong> This is what a Customer-role user linked to <strong>${escapeHtml(cust.name)}</strong> would see when they log in. Real permission enforcement happens server-side once the backend is built.
+      <strong>Preview only.</strong> This is what a Customer-role user linked to <strong>${escapeHtml(cust.name)}</strong> would see when they log in. Backend customer scoping is available when AUTH_REQUIRED=true; this preview stays local for stakeholder review.
     </div>
     <h3 style="margin:0 0 6px;color:var(--brown)">Account Info</h3>
     <table style="margin-bottom:14px">
@@ -6434,8 +6693,23 @@ function viewCustomerPortal(customerId) {
     </div>
   `);
 }
-function deleteUser(id) {
+async function deleteUser(id) {
   if (!confirm('Remove this user?')) return;
+  const existing = (state.users || []).find(u => u.id === id);
+  if (backendAuthState.token && existing?._backendUserId) {
+    try {
+      await apiRequest(`/api/users/${encodeURIComponent(existing._backendUserId)}`, { method: 'DELETE' });
+      existing.isActive = false;
+      saveState();
+      router('users');
+      toast('User deactivated in backend.');
+      return;
+    } catch (err) {
+      backendUserState.status = 'error';
+      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+      toast(backendUserState.lastError);
+    }
+  }
   state.users = state.users.filter(u => u.id !== id);
   saveState();
   router('users');

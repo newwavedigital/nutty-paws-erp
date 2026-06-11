@@ -1,8 +1,11 @@
-import type { Context, Hono } from "hono";
+﻿import type { Context, Hono } from "hono";
 import { ok } from "../api/responses";
 import { ValidationError } from "../api/errors";
 import { parseJsonObject, requireFields } from "../api/validation";
 import type { AppBindings } from "../app";
+import { D1AuthStore } from "../auth/d1-store";
+import { hasCustomerAccess, requireAnyRole, requireAuthWhenEnabled, requireCustomerAccess } from "../auth/guards";
+import type { AuthContext, AuthStore } from "../auth/service";
 import { D1InventoryStore } from "../inventory/d1-store";
 import type { InventoryStore } from "../inventory/service";
 import { D1PurchaseOrderStore } from "./d1-store";
@@ -16,12 +19,14 @@ import {
   updatePurchaseOrderDepositStatus,
   updatePurchaseOrderSafeFields,
   type DepositStatus,
+  type PurchaseOrderRecord,
   type PurchaseOrderStore,
   type SupplyChainStatus,
 } from "./service";
 
 type POStoreFactory = (db: D1Database) => PurchaseOrderStore;
 type InventoryStoreFactory = (db: D1Database) => InventoryStore;
+type AuthStoreFactory = (db: D1Database) => AuthStore;
 
 const depositStatuses = new Set<DepositStatus>(["not_required", "required", "requested", "received", "waived"]);
 const supplyChainStatuses = new Set<SupplyChainStatus>(["pending", "available", "needs_ordering", "blocked"]);
@@ -30,20 +35,29 @@ export function registerPurchaseOrderRoutes(
   app: Hono<AppBindings>,
   createPOStore: POStoreFactory = (db) => new D1PurchaseOrderStore(db),
   createInventoryStore: InventoryStoreFactory = (db) => new D1InventoryStore(db),
+  createAuthStore: AuthStoreFactory = (db) => new D1AuthStore(db),
 ) {
   app.get("/api/purchase-orders", async (c) => {
-    return ok(c, await listPurchaseOrders(createPOStore(c.env?.DB)));
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const records = await listPurchaseOrders(createPOStore(db));
+    return ok(c, scopePurchaseOrdersForAuth(records, auth));
   });
 
   app.post("/api/purchase-orders", async (c) => {
+    const db = c.env?.DB;
     const body = await parseJsonObject(c);
     const fields = requireFields(body, ["poNumber", "customerId", "lines"]);
-    const po = await createPurchaseOrder(createPOStore(c.env?.DB), {
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const customerId = asString(fields.customerId, "customerId");
+    if (auth) authorizePurchaseOrderCreate(auth, customerId);
+
+    const po = await createPurchaseOrder(createPOStore(db), {
       poNumber: asString(fields.poNumber, "poNumber"),
-      customerId: asString(fields.customerId, "customerId"),
+      customerId,
       requestedShipDate: optionalString(body.requestedShipDate, "requestedShipDate") ?? null,
       notes: optionalString(body.notes, "notes") ?? null,
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
       lines: asLines(fields.lines),
     });
 
@@ -51,65 +65,86 @@ export function registerPurchaseOrderRoutes(
   });
 
   app.get("/api/purchase-orders/:purchaseOrderId", async (c) => {
-    return ok(c, await readPurchaseOrder(createPOStore(c.env?.DB), c.req.param("purchaseOrderId")));
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const po = await readPurchaseOrder(createPOStore(db), c.req.param("purchaseOrderId"));
+    if (auth) authorizePurchaseOrderRead(auth, po.customerId);
+    return ok(c, po);
   });
 
   app.patch("/api/purchase-orders/:purchaseOrderId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const existing = auth ? await readPurchaseOrder(createPOStore(db), c.req.param("purchaseOrderId")) : null;
+    if (auth && existing) authorizePurchaseOrderCreate(auth, existing.customerId);
+
     const body = await parseJsonObject(c);
     const safeKeys = new Set(["notes", "requestedShipDate", "actorUserId"]);
     const ignoredUnsafeFields = Object.keys(body).filter((key) => !safeKeys.has(key));
-    const po = await updatePurchaseOrderSafeFields(createPOStore(c.env?.DB), {
+    const po = await updatePurchaseOrderSafeFields(createPOStore(db), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
       notes: optionalString(body.notes, "notes") ?? null,
       requestedShipDate: optionalString(body.requestedShipDate, "requestedShipDate") ?? null,
       ignoredUnsafeFields,
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
     });
 
     return ok(c, po);
   });
 
   app.post("/api/purchase-orders/:purchaseOrderId/submit", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const existing = auth ? await readPurchaseOrder(createPOStore(db), c.req.param("purchaseOrderId")) : null;
+    if (auth && existing) authorizePurchaseOrderCreate(auth, existing.customerId);
     const body = await optionalJsonObject(c);
-    const po = await submitPurchaseOrder(createPOStore(c.env?.DB), {
+    const po = await submitPurchaseOrder(createPOStore(db), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
     });
 
     return ok(c, po);
   });
 
   app.post("/api/purchase-orders/:purchaseOrderId/lines/:lineId/supply-chain-review", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireAnyRole(auth, ["Supply Chain & Procurement"]);
     const body = await parseJsonObject(c);
     const fields = requireFields(body, ["supplyChainStatus"]);
-    const po = await reviewPurchaseOrderLineSupplyChain(createPOStore(c.env?.DB), {
+    const po = await reviewPurchaseOrderLineSupplyChain(createPOStore(db), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
       lineId: c.req.param("lineId"),
       supplyChainStatus: asSupplyChainStatus(fields.supplyChainStatus),
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
     });
 
     return ok(c, po);
   });
 
   app.post("/api/purchase-orders/:purchaseOrderId/deposit-status", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireAnyRole(auth, ["Supply Chain & Procurement"]);
     const body = await parseJsonObject(c);
     const fields = requireFields(body, ["depositStatus"]);
-    const po = await updatePurchaseOrderDepositStatus(createPOStore(c.env?.DB), {
+    const po = await updatePurchaseOrderDepositStatus(createPOStore(db), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
       depositStatus: asDepositStatus(fields.depositStatus),
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
     });
 
     return ok(c, po);
   });
 
   app.post("/api/purchase-orders/:purchaseOrderId/approve-for-production", async (c) => {
-    const body = await optionalJsonObject(c);
     const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireAnyRole(auth, ["Supply Chain & Procurement"]);
+    const body = await optionalJsonObject(c);
     const po = await approvePurchaseOrderForProduction(createPOStore(db), createInventoryStore(db), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
-      actorUserId: optionalString(body.actorUserId, "actorUserId"),
+      actorUserId: actorUserId(auth, body),
     });
 
     return ok(c, po);
@@ -122,6 +157,27 @@ async function optionalJsonObject(c: Context<AppBindings>) {
   }
 
   return parseJsonObject(c);
+}
+
+function actorUserId(auth: AuthContext | null, body: Record<string, unknown>) {
+  return auth?.user.id ?? optionalString(body.actorUserId, "actorUserId");
+}
+
+function scopePurchaseOrdersForAuth(records: PurchaseOrderRecord[], auth: AuthContext | null) {
+  if (!auth || auth.user.userType !== "customer") return records;
+  return records.filter((po) => hasCustomerAccess(auth, po.customerId));
+}
+
+function authorizePurchaseOrderRead(auth: AuthContext, customerId: string) {
+  if (auth.user.userType === "customer") requireCustomerAccess(auth, customerId);
+}
+
+function authorizePurchaseOrderCreate(auth: AuthContext, customerId: string) {
+  if (auth.user.userType === "customer") {
+    requireCustomerAccess(auth, customerId);
+    return;
+  }
+  requireAnyRole(auth, ["Sales"]);
 }
 
 function asString(value: unknown, field: string) {
