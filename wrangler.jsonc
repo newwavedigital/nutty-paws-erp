@@ -1,6 +1,6 @@
 ﻿{
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "nut-house-portal",
+  "name": "nutty-paws-erp",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-09",
   "compatibility_flags": ["nodejs_compat"],
