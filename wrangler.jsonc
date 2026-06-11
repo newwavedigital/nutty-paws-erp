@@ -9,7 +9,7 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "ENVIRONMENT": "local"
+    "ENVIRONMENT": "staging"
   },
   "d1_databases": [
     {
