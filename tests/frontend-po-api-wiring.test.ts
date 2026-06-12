@@ -9,7 +9,7 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("async function apiRequest");
     expect(html).toContain("function renderBackendStatusBanner");
     expect(html).toContain("Backend connected");
-    expect(html).toContain("Local demo mode / backend unavailable");
+    expect(html).toContain("Demo data active");
   });
 
   test("uses the purchase-order API endpoints for list/create/read/update and workflow commands", () => {
@@ -39,7 +39,7 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("/api/auth/me");
     expect(html).toContain("/api/users");
     expect(html).toContain("data-auth-panel");
-    expect(html).toContain("Backend auth is available when AUTH_REQUIRED is enabled");
-    expect(html).toContain("Account Management could not reach the backend user API; keeping local demo users active.");
+    expect(html).toContain("Create the first admin or log in to manage backend users");
+    expect(html).toContain("Backend Account Management is unavailable, so local demo users remain visible.");
   });
 });

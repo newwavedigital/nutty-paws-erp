@@ -73,12 +73,12 @@
     letter-spacing: 0.3px;
   }
   .sidebar-subtitle { font-size: 11px; opacity: 0.7; }
-  .sidebar nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+  .sidebar nav { flex: 1; padding: 4px 0; overflow-y: auto; }
   .sidebar nav a {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 11px 22px;
+    gap: 10px;
+    padding: 5px 18px;
     color: var(--beige);
     text-decoration: none;
     font-size: 14px;
@@ -94,10 +94,10 @@
     font-weight: 600;
   }
   .sidebar nav a .icon {
-    width: 18px; text-align: center; font-size: 16px;
+    width: 17px; text-align: center; font-size: 14px;
   }
   .sidebar-footer {
-    padding: 12px 20px;
+    padding: 7px 16px;
     border-top: 1px solid var(--brown-dark);
     font-size: 11px;
     opacity: 0.7;
@@ -1463,14 +1463,17 @@ function markBackendUnavailable(error) {
 function renderBackendStatusBanner(context = 'purchase-orders') {
   const connected = backendApiState.status === 'connected';
   const loading = backendApiState.loadingPurchaseOrders;
-  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Local demo mode / backend unavailable';
+  const authWaiting = backendApiState.lastError === 'Authentication is required';
+  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
   const detail = connected
-    ? 'Purchase Orders are reading from the Phase 2A API when available.'
-    : 'The prototype keeps working from localStorage until D1 is migrated/deployed.';
+    ? 'This page is reading from the Phase 2A API when available.'
+    : authWaiting
+      ? 'Sign in from Account Management to connect this page to protected backend data.'
+      : 'This preview is using local demo data while the backend connection is unavailable.';
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${context}" style="border-left-color:${color}">
     <strong>${label}</strong>
-    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}${backendApiState.lastError ? ' Last API message: '+escapeHtml(backendApiState.lastError) : ''}</div>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}</div>
   </div>`;
 }
 
@@ -6247,17 +6250,19 @@ function resetCalc() {
 function backendAuthPanelHtml() {
   const signedIn = !!backendAuthState.token && !!backendAuthState.user;
   const roles = signedIn ? (backendAuthState.roles || []).join(', ') : '';
-  const userLabel = signedIn ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}` : 'Not signed in';
+  const userLabel = signedIn
+    ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}`
+    : 'Backend session inactive';
   const statusText = backendUserState.status === 'connected'
-    ? 'Backend user API connected.'
+    ? 'Backend Account Management is connected.'
     : backendUserState.status === 'error'
-      ? escapeHtml(backendUserState.lastError || 'Account Management could not reach the backend user API; keeping local demo users active.')
-      : 'Backend auth is available when AUTH_REQUIRED is enabled; local demo users stay active for stakeholder review.';
+      ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so local demo users remain visible.')
+      : 'Create the first admin or log in to manage backend users. Local demo users remain visible for this preview.';
   return `
     <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
         <div>
-          <strong>Auth / account backend</strong>
+          <strong>Account access</strong>
           <div class="help-text">${statusText}</div>
           <div style="font-size:12px;color:var(--brown);margin-top:4px">${userLabel}</div>
         </div>
