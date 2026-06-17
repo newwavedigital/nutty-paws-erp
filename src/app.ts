@@ -3,6 +3,7 @@ import { ApiError, toApiError } from "./api/errors";
 import { fail, ok } from "./api/responses";
 import { registerAuthRoutes } from "./auth/routes";
 import { registerInventoryRoutes } from "./inventory/routes";
+import { registerFileRoutes } from "./files/routes";
 import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
 import { registerUserRoutes } from "./users/routes";
 import type { AuthContext } from "./auth/service";
@@ -39,6 +40,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
 
   registerAuthRoutes(app);
   registerUserRoutes(app);
+  registerFileRoutes(app);
   registerPurchaseOrderRoutes(app);
   registerInventoryRoutes(app);
 
