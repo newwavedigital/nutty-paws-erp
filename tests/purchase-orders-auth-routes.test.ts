@@ -2,6 +2,8 @@
 import { createApp } from "../src/app";
 import { registerAuthRoutes } from "../src/auth/routes";
 import { hashPassword, type AuthSessionRecord, type AuthStore, type AuthUserRecord, type CustomerAccessRecord, type RoleName } from "../src/auth/service";
+import { registerFileRoutes } from "../src/files/routes";
+import type { FileMetadataRecord, FileStore } from "../src/files/service";
 import { registerPurchaseOrderRoutes } from "../src/purchase-orders/routes";
 import type { InventoryStore } from "../src/inventory/service";
 import type { PurchaseOrderRecord, PurchaseOrderStore } from "../src/purchase-orders/service";
@@ -91,8 +93,84 @@ function createRouteApp(authStore: AuthStore, poStore: PurchaseOrderStore = crea
   }, { AUTH_REQUIRED: "true" });
 }
 
+function createR2() {
+  const objects = new Map<string, ArrayBuffer>();
+  return {
+    async put(key: string, value: ArrayBuffer | Blob) {
+      objects.set(key, value instanceof Blob ? await value.arrayBuffer() : value);
+      return { key };
+    },
+    async get(key: string) {
+      const object = objects.get(key);
+      if (!object) return null;
+      return {
+        body: new Blob([object]).stream(),
+        httpMetadata: { contentType: "application/pdf" },
+      };
+    },
+  } as unknown as R2Bucket;
+}
+
+function createFileStore(poStore: PurchaseOrderStore) {
+  const files = new Map<string, FileMetadataRecord>();
+  const store: FileStore = {
+    async createFileMetadata(record) {
+      files.set(record.id, record);
+    },
+    async listFilesByOwner(ownerType, ownerId) {
+      return [...files.values()].filter((record) => record.ownerType === ownerType && record.ownerId === ownerId && record.status === "active");
+    },
+    async getFileMetadata(fileId) {
+      return files.get(fileId) ?? null;
+    },
+    async softDeleteFile(fileId, input) {
+      const existing = files.get(fileId);
+      if (!existing || existing.status === "deleted") return null;
+      const updated = {
+        ...existing,
+        status: "deleted" as const,
+        deletedAt: "2026-06-17T00:00:00.000Z",
+        deletedByUserId: input.deletedByUserId ?? null,
+      };
+      files.set(fileId, updated);
+      return updated;
+    },
+    async createAuditEvent() {},
+    async resolveOwnerCustomerId(ownerType, ownerId) {
+      if (ownerType === "customer") return ownerId;
+      if (ownerType === "purchase_order") return (await poStore.getPurchaseOrder(ownerId))?.customerId ?? null;
+      if (ownerType === "purchase_order_line") {
+        const purchaseOrders = await poStore.listPurchaseOrders();
+        return purchaseOrders.find((po) => po.lines.some((line) => line.id === ownerId))?.customerId ?? null;
+      }
+      return null;
+    },
+  };
+  return { store, files };
+}
+
+function createPOAndFileRouteApp(authStore: AuthStore, poStore: PurchaseOrderStore, fileStore: FileStore, bucket: R2Bucket) {
+  const app = createApp((route) => {
+    registerAuthRoutes(route, () => authStore);
+    registerPurchaseOrderRoutes(route, () => poStore, () => createInventoryStore(), () => authStore);
+    registerFileRoutes(route, () => fileStore, () => authStore);
+  }, { AUTH_REQUIRED: "true" });
+
+  return (request: Request) => app.fetch(request, { FILES: bucket } as Env);
+}
+
 async function login(app: ReturnType<typeof createApp>, email: string) {
   const response = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: "secret123" }) });
+  const body = await response.json() as { data: { token: string } };
+  return body.data.token;
+}
+
+async function loginViaFetch(app: ReturnType<typeof createPOAndFileRouteApp>, email: string) {
+  const response = await app(new Request("http://test.local/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password: "secret123" }),
+  }));
   const body = await response.json() as { data: { token: string } };
   return body.data.token;
 }
@@ -158,5 +236,76 @@ describe("protected purchase order routes", () => {
 
     const approved = await app.request("/api/purchase-orders/po-1/approve-for-production", { method: "POST", headers: { authorization: `Bearer ${scToken}` } });
     expect(approved.status).toBe(200);
+  });
+
+  it("allows linked customers to create a PO, attach a PO file, and blocks cross-customer file access", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    await seedUser(data, { id: "other-customer-user", email: "other@example.com", role: "Customer", customerId: "customer-2" });
+    await seedUser(data, { id: "sales-user", email: "sales@example.com", role: "Sales" });
+    const poStore = createPOStore();
+    const fileStore = createFileStore(poStore);
+    const bucket = createR2();
+    const app = createPOAndFileRouteApp(data.store, poStore, fileStore.store, bucket);
+    const customerToken = await loginViaFetch(app, "customer@example.com");
+    const otherCustomerToken = await loginViaFetch(app, "other@example.com");
+    const salesToken = await loginViaFetch(app, "sales@example.com");
+
+    const create = await app(new Request("http://test.local/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({
+        poNumber: "PO-CUSTOMER-FILE",
+        customerId: "customer-1",
+        actorUserId: "spoofed-user",
+        lines: [{ description: "Custom packed cashews", quantity: 12, unitOfMeasure: "case" }],
+      }),
+    }));
+    expect(create.status).toBe(200);
+    const createBody = await create.json() as { data: PurchaseOrderRecord };
+    const createdPoId = createBody.data.id;
+    expect(poStore.calls).toContainEqual(expect.stringContaining("customer-user"));
+
+    const form = new FormData();
+    form.set("ownerType", "purchase_order");
+    form.set("ownerId", createdPoId);
+    form.set("fileCategory", "po_file");
+    form.set("file", new File(["customer po"], "customer-po.pdf", { type: "application/pdf" }));
+    const upload = await app(new Request("http://test.local/api/files", {
+      method: "POST",
+      headers: { authorization: `Bearer ${customerToken}` },
+      body: form,
+    }));
+    expect(upload.status).toBe(200);
+    const uploadBody = await upload.json() as { data: FileMetadataRecord };
+
+    const ownList = await app(new Request(`http://test.local/api/files?ownerType=purchase_order&ownerId=${createdPoId}`, {
+      headers: { authorization: `Bearer ${customerToken}` },
+    }));
+    expect(ownList.status).toBe(200);
+    await expect(ownList.json()).resolves.toMatchObject({ data: [{ fileName: "customer-po.pdf" }] });
+
+    const ownDownload = await app(new Request(`http://test.local/api/files/${uploadBody.data.id}/download`, {
+      headers: { authorization: `Bearer ${customerToken}` },
+    }));
+    expect(ownDownload.status).toBe(200);
+    await expect(ownDownload.text()).resolves.toBe("customer po");
+
+    const forbiddenList = await app(new Request(`http://test.local/api/files?ownerType=purchase_order&ownerId=${createdPoId}`, {
+      headers: { authorization: `Bearer ${otherCustomerToken}` },
+    }));
+    expect(forbiddenList.status).toBe(403);
+
+    const forbiddenDownload = await app(new Request(`http://test.local/api/files/${uploadBody.data.id}/download`, {
+      headers: { authorization: `Bearer ${otherCustomerToken}` },
+    }));
+    expect(forbiddenDownload.status).toBe(403);
+
+    const salesList = await app(new Request("http://test.local/api/purchase-orders", {
+      headers: { authorization: `Bearer ${salesToken}` },
+    }));
+    expect(salesList.status).toBe(200);
+    const salesBody = await salesList.json() as { data: PurchaseOrderRecord[] };
+    expect(salesBody.data.some((po) => po.id === createdPoId && po.customerId === "customer-1")).toBe(true);
   });
 });

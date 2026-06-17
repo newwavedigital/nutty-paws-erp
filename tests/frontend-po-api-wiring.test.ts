@@ -38,8 +38,24 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("/api/auth/login");
     expect(html).toContain("/api/auth/me");
     expect(html).toContain("/api/users");
+    expect(html).toContain("function canManageBackendUsers");
+    expect(html).toContain("Customer backend session active; admin user list is hidden.");
     expect(html).toContain("data-auth-panel");
     expect(html).toContain("Create the first admin or log in to manage backend users");
     expect(html).toContain("Backend Account Management is unavailable, so local demo users remain visible.");
+  });
+
+  test("includes Sprint 2 customer portal and PO file API wiring", () => {
+    expect(html).toContain("async function apiFormRequest");
+    expect(html).toContain("async function uploadBackendPurchaseOrderFile");
+    expect(html).toContain("async function downloadBackendFile");
+    expect(html).toContain("async function loadBackendPurchaseOrderFiles");
+    expect(html).toContain("/api/files?ownerType=purchase_order");
+    expect(html).toContain("Customer Portal");
+    expect(html).toContain("Backend connected");
+    expect(html).toContain("portal-card-list");
+    expect(html).toContain("Customer PO #");
+    expect(html).toContain("Line description");
+    expect(html).toContain("Unit of measure");
   });
 });
