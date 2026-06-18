@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 const migrationPaths = [
   "migrations/0001_phase_2a_baseline.sql",
   "migrations/0002_phase_2b_file_foundation.sql",
+  "migrations/0003_phase_2b_sprint_4_supply_chain.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -73,6 +74,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "inventory_movements",
         "inventory_reservations",
         "master_items",
+        "product_bom_items",
         "products",
         "purchase_order_lines",
         "purchase_order_status_events",
@@ -130,6 +132,31 @@ describe("Phase 2A D1 baseline schema migration", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "idx_file_metadata_active_owner" }),
           expect.objectContaining({ name: "idx_file_metadata_status" }),
+        ]),
+      );
+
+      const bomColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('product_bom_items');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(bomColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "product_id", notnull: 1 }),
+          expect.objectContaining({ name: "master_item_id", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_per_unit", notnull: 1 }),
+        ]),
+      );
+
+      const bomIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('product_bom_items');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(bomIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_product_bom_items_product_id" }),
+          expect.objectContaining({ name: "idx_product_bom_items_master_item_id" }),
         ]),
       );
     } finally {

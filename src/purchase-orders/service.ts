@@ -27,6 +27,12 @@ export type PurchaseOrderLineRecord = {
   supplyChainStatus: SupplyChainStatus;
 };
 
+export type ProductBomItemRecord = {
+  productId: string;
+  masterItemId: string;
+  quantityPerUnit: number;
+};
+
 export type PurchaseOrderRecord = {
   id: string;
   poNumber: string;
@@ -82,6 +88,7 @@ export type PurchaseOrderStore = {
     metadata: Record<string, unknown>;
   }): Promise<void>;
   findInventoryItemByMasterItemId(masterItemId: string): Promise<{ id: string } | null>;
+  listProductBomItems(productId: string): Promise<ProductBomItemRecord[]>;
 };
 
 export class POError extends ApiError {
@@ -189,6 +196,14 @@ export async function updatePurchaseOrderSafeFields(
     actorUserId?: string;
   },
 ) {
+  const existing = await requirePO(store, input.purchaseOrderId);
+  if (isOrdinaryEditLocked(existing.status)) {
+    throw new POError(
+      "PO_LOCKED_FOR_PRODUCTION",
+      "Approved-for-production purchase orders cannot be edited from ordinary PO entry",
+    );
+  }
+
   const updated = await store.updatePurchaseOrderSafeFields(input.purchaseOrderId, {
     notes: input.notes,
     requestedShipDate: input.requestedShipDate,
@@ -223,7 +238,7 @@ export async function submitPurchaseOrder(
     throw new POError("INVALID_STATUS_TRANSITION", "Only draft purchase orders can be submitted");
   }
 
-  await transitionPO(store, po, "submitted", "purchase_order.submitted", input.actorUserId);
+  await transitionPO(store, po, "supply_chain_review", "purchase_order.submitted", input.actorUserId);
   return requirePO(store, input.purchaseOrderId);
 }
 
@@ -291,12 +306,8 @@ export async function approvePurchaseOrderForProduction(
     throw new POError("LINES_NOT_AVAILABLE", "All purchase order lines must be available");
   }
 
-  for (const line of po.lines) {
-    if (!line.masterItemId) {
-      continue;
-    }
-
-    const inventoryItem = await store.findInventoryItemByMasterItemId(line.masterItemId);
+  for (const requirement of await resolveInventoryRequirements(store, po.lines)) {
+    const inventoryItem = await store.findInventoryItemByMasterItemId(requirement.masterItemId);
 
     if (!inventoryItem) {
       throw new POError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found for purchase order line");
@@ -304,8 +315,8 @@ export async function approvePurchaseOrderForProduction(
 
     await reserveInventory(inventoryStore, {
       inventoryItemId: inventoryItem.id,
-      purchaseOrderLineId: line.id,
-      quantity: line.quantity,
+      purchaseOrderLineId: requirement.purchaseOrderLineId,
+      quantity: requirement.quantity,
       actorUserId: input.actorUserId,
     });
   }
@@ -320,6 +331,43 @@ export async function approvePurchaseOrderForProduction(
 
   const refreshed = await requirePO(store, input.purchaseOrderId);
   return { ...refreshed, status: "approved_for_production" as const };
+}
+
+async function resolveInventoryRequirements(
+  store: PurchaseOrderStore,
+  lines: PurchaseOrderLineRecord[],
+) {
+  const requirements: Array<{ masterItemId: string; purchaseOrderLineId: string; quantity: number }> = [];
+
+  for (const line of lines) {
+    if (line.productId) {
+      const bomItems = await store.listProductBomItems(line.productId);
+      for (const bomItem of bomItems) {
+        requirements.push({
+          masterItemId: bomItem.masterItemId,
+          purchaseOrderLineId: line.id,
+          quantity: bomItem.quantityPerUnit * line.quantity * 1.05,
+        });
+      }
+      if (bomItems.length > 0) {
+        continue;
+      }
+    }
+
+    if (line.masterItemId) {
+      requirements.push({
+        masterItemId: line.masterItemId,
+        purchaseOrderLineId: line.id,
+        quantity: line.quantity,
+      });
+    }
+  }
+
+  return requirements;
+}
+
+function isOrdinaryEditLocked(status: PurchaseOrderStatus) {
+  return ["approved_for_production", "in_production", "completed"].includes(status);
 }
 
 async function transitionPO(
@@ -371,7 +419,8 @@ function poStatusFor(code: string) {
     code === "DEPOSIT_NOT_READY" ||
     code === "LINES_NOT_AVAILABLE" ||
     code === "INVALID_STATUS_TRANSITION" ||
-    code === "INVENTORY_ITEM_NOT_FOUND"
+    code === "INVENTORY_ITEM_NOT_FOUND" ||
+    code === "PO_LOCKED_FOR_PRODUCTION"
   ) {
     return 409;
   }

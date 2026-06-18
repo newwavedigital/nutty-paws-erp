@@ -1,5 +1,6 @@
 import type {
   DepositStatus,
+  ProductBomItemRecord,
   PurchaseOrderLineRecord,
   PurchaseOrderRecord,
   PurchaseOrderStatus,
@@ -27,6 +28,12 @@ type POLineRow = {
   product_id: string | null;
   master_item_id: string | null;
   supply_chain_status: SupplyChainStatus;
+};
+
+type ProductBomItemRow = {
+  product_id: string;
+  master_item_id: string;
+  quantity_per_unit: number;
 };
 
 export class D1PurchaseOrderStore implements PurchaseOrderStore {
@@ -274,6 +281,26 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
       .first<{ id: string }>();
 
     return row ? { id: row.id } : null;
+  }
+
+  async listProductBomItems(productId: string): Promise<ProductBomItemRecord[]> {
+    const rows = await this.db
+      .prepare(
+        `
+          SELECT product_id, master_item_id, quantity_per_unit
+          FROM product_bom_items
+          WHERE product_id = ?
+          ORDER BY master_item_id
+        `,
+      )
+      .bind(productId)
+      .all<ProductBomItemRow>();
+
+    return (rows.results ?? []).map((row) => ({
+      productId: row.product_id,
+      masterItemId: row.master_item_id,
+      quantityPerUnit: row.quantity_per_unit,
+    }));
   }
 
   private async hydratePO(row: PORow): Promise<PurchaseOrderRecord> {

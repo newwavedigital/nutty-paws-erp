@@ -94,6 +94,12 @@ function createPOStore(overrides: Partial<PurchaseOrderStore> = {}) {
       calls.push(`findInventoryItemByMasterItemId:${masterItemId}`);
       return { id: "inv-1" };
     },
+    async listProductBomItems(productId) {
+      calls.push(`listProductBomItems:${productId}`);
+      return [
+        { productId, masterItemId: "master-almond", quantityPerUnit: 2 },
+      ];
+    },
     ...overrides,
   };
 
@@ -205,14 +211,33 @@ describe("purchase order workflow service", () => {
       actorUserId: "user-1",
     });
 
-    expect(result.status).toBe("submitted");
+    expect(result.status).toBe("supply_chain_review");
     expect(store.calls).toEqual([
       "getPurchaseOrder:po-1",
-      "updatePurchaseOrderStatus:po-1:submitted",
-      "createStatusEvent:draft->submitted:purchase_order.submitted",
+      "updatePurchaseOrderStatus:po-1:supply_chain_review",
+      "createStatusEvent:draft->supply_chain_review:purchase_order.submitted",
       "createAuditEvent:purchase_order.submitted",
       "getPurchaseOrder:po-1",
     ]);
+  });
+
+  it("blocks ordinary edits after a purchase order is approved for production", async () => {
+    const store = createPOStore();
+    store.setPO(makePurchaseOrder({ status: "approved_for_production" }));
+
+    await expect(
+      updatePurchaseOrderSafeFields(store, {
+        purchaseOrderId: "po-1",
+        notes: "late change",
+        requestedShipDate: "2026-08-01",
+      }),
+    ).rejects.toEqual(
+      new POError(
+        "PO_LOCKED_FOR_PRODUCTION",
+        "Approved-for-production purchase orders cannot be edited from ordinary PO entry",
+      ),
+    );
+    expect(store.calls).not.toContain("updatePurchaseOrderSafeFields:po-1:late change:2026-08-01");
   });
 
   it("reviews a purchase order line for Supply Chain and writes an audit event", async () => {
@@ -248,7 +273,7 @@ describe("purchase order workflow service", () => {
     const poStore = createPOStore({
       async getPurchaseOrder(id) {
         poStore.calls.push(`getPurchaseOrder:${id}`);
-        return makePurchaseOrder({ status: "submitted", depositStatus: "received" });
+        return makePurchaseOrder({ status: "supply_chain_review", depositStatus: "received" });
       },
     });
     const inventoryStore = createInventoryStore();
@@ -263,7 +288,7 @@ describe("purchase order workflow service", () => {
       "getPurchaseOrder:po-1",
       "findInventoryItemByMasterItemId:master-1",
       "updatePurchaseOrderStatus:po-1:approved_for_production",
-      "createStatusEvent:submitted->approved_for_production:purchase_order.approved_for_production",
+      "createStatusEvent:supply_chain_review->approved_for_production:purchase_order.approved_for_production",
       "createAuditEvent:purchase_order.approved_for_production",
       "getPurchaseOrder:po-1",
     ]);
@@ -276,10 +301,46 @@ describe("purchase order workflow service", () => {
     ]);
   });
 
+  it("reserves BOM quantities times ordered units plus the 5 percent planning buffer", async () => {
+    const poStore = createPOStore();
+    poStore.setPO(
+      makePurchaseOrder({
+        status: "supply_chain_review",
+        depositStatus: "received",
+        lines: [
+          {
+            ...makePurchaseOrder().lines[0],
+            productId: "product-1",
+            masterItemId: null,
+            quantity: 10,
+            supplyChainStatus: "available",
+          },
+        ],
+      }),
+    );
+    const inventoryStore = createInventoryStore({
+      async getInventoryItem(id) {
+        inventoryStore.calls.push(`getInventoryItem:${id}`);
+        return { id, onHandQuantity: 100, allocatedQuantity: 79, unitOfMeasure: "lb" };
+      },
+    });
+
+    const result = await approvePurchaseOrderForProduction(poStore, inventoryStore, {
+      purchaseOrderId: "po-1",
+      actorUserId: "user-1",
+    });
+
+    expect(result.status).toBe("approved_for_production");
+    expect(poStore.calls).toContain("listProductBomItems:product-1");
+    expect(poStore.calls).toContain("findInventoryItemByMasterItemId:master-almond");
+    expect(inventoryStore.calls).toContain("allocateInventoryItem:inv-1:21");
+    expect(inventoryStore.calls).toContain("createReservation:line-1:21");
+  });
+
   it("blocks approval when deposit status is not acceptable", async () => {
     const poStore = createPOStore({
       async getPurchaseOrder() {
-        return makePurchaseOrder({ status: "submitted", depositStatus: "required" });
+        return makePurchaseOrder({ status: "supply_chain_review", depositStatus: "required" });
       },
     });
 
@@ -297,7 +358,7 @@ describe("purchase order workflow service", () => {
     };
     const poStore = createPOStore({
       async getPurchaseOrder() {
-        return makePurchaseOrder({ status: "submitted", depositStatus: "received", lines: [line] });
+        return makePurchaseOrder({ status: "supply_chain_review", depositStatus: "received", lines: [line] });
       },
     });
 
@@ -311,7 +372,7 @@ describe("purchase order workflow service", () => {
   it("does not approve when inventory reservation fails", async () => {
     const poStore = createPOStore({
       async getPurchaseOrder() {
-        return makePurchaseOrder({ status: "submitted", depositStatus: "received" });
+        return makePurchaseOrder({ status: "supply_chain_review", depositStatus: "received" });
       },
     });
     const inventoryStore = createInventoryStore({

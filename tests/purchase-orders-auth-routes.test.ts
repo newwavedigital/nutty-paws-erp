@@ -41,6 +41,7 @@ function createPOStore() {
     async createStatusEvent(input) { calls.push(`statusEvent:${input.actorUserId}`); },
     async createAuditEvent(input) { calls.push(`audit:${input.actorUserId}:${input.action}`); },
     async findInventoryItemByMasterItemId() { return { id: "inv-1" }; },
+    async listProductBomItems() { return []; },
   };
   return store;
 }

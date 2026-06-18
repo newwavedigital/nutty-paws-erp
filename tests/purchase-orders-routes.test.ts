@@ -62,6 +62,9 @@ function createPOStore(overrides: Partial<PurchaseOrderStore> = {}) {
     async findInventoryItemByMasterItemId() {
       return { id: "inv-1" };
     },
+    async listProductBomItems() {
+      return [];
+    },
     ...overrides,
   };
 
@@ -181,6 +184,44 @@ describe("purchase order routes", () => {
     await expect(approve.json()).resolves.toMatchObject({
       ok: true,
       data: { status: "approved_for_production" },
+    });
+  });
+
+  it("returns Supply Chain queue status when a purchase order is submitted", async () => {
+    const app = createRouteApp();
+
+    const response = await app.request("/api/purchase-orders/po-1/submit", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: { status: "supply_chain_review" },
+    });
+  });
+
+  it("blocks ordinary edits to approved-for-production purchase orders", async () => {
+    const app = createRouteApp(
+      createPOStore({
+        async getPurchaseOrder(id) {
+          return id === "po-1" ? makePO({ status: "approved_for_production" }) : null;
+        },
+      }),
+    );
+
+    const response = await app.request("/api/purchase-orders/po-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ notes: "late change" }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "PO_LOCKED_FOR_PRODUCTION",
+        message: "Approved-for-production purchase orders cannot be edited from ordinary PO entry",
+      },
+      meta: { requestId: null },
     });
   });
 
