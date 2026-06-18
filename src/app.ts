@@ -6,6 +6,7 @@ import { registerCatalogRoutes } from "./catalog/routes";
 import { registerCustomerRoutes } from "./customers/routes";
 import { registerInventoryRoutes } from "./inventory/routes";
 import { registerFileRoutes } from "./files/routes";
+import { registerProcurementRoutes } from "./procurement/routes";
 import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
 import { registerUserRoutes } from "./users/routes";
 import type { AuthContext } from "./auth/service";
@@ -47,6 +48,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
   registerFileRoutes(app);
   registerPurchaseOrderRoutes(app);
   registerInventoryRoutes(app);
+  registerProcurementRoutes(app);
 
   app.notFound((c) => {
     return fail(c, new ApiError("NOT_FOUND", "Route not found", 404));

@@ -9,6 +9,7 @@ const migrationPaths = [
   "migrations/0002_phase_2b_file_foundation.sql",
   "migrations/0003_phase_2b_sprint_4_supply_chain.sql",
   "migrations/0004_phase_2b_sprint_5_inventory_foundations.sql",
+  "migrations/0005_phase_2b_sprint_6_procurement_automation.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -76,6 +77,10 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "inventory_reservations",
         "master_items",
         "move_entries",
+        "procurement_order_lines",
+        "procurement_orders",
+        "procurement_receipt_lines",
+        "procurement_receipts",
         "product_bom_items",
         "products",
         "purchase_order_lines",
@@ -212,6 +217,32 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "move_id", notnull: 1 }),
           expect.objectContaining({ name: "receiving_id", notnull: 1 }),
           expect.objectContaining({ name: "quantity_moved", notnull: 1 }),
+        ]),
+      );
+
+      const procurementOrderColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('procurement_orders');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(procurementOrderColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "procurement_order_number", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "supplier_id" }),
+        ]),
+      );
+
+      const procurementLineColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('procurement_order_lines');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(procurementLineColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "quantity_ordered", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_received", notnull: 1 }),
+          expect.objectContaining({ name: "source_reason", notnull: 1 }),
         ]),
       );
     } finally {

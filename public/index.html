@@ -1625,8 +1625,7 @@
     <a data-page="users"><span class="icon">&#9786;</span> Account Management</a>
   </nav>
   <div class="sidebar-footer">
-    <span>v1.0</span>
-    <button onclick="resetAllData()">Reset Demo</button>
+    <span>Phase 2B Alpha</span>
   </div>
 </aside>
 
@@ -1888,6 +1887,7 @@ const backendCustomerState = { status: 'local', lastError: '', loading: false, l
 const backendProductState = { status: 'local', lastError: '', loading: false, loaded: false };
 const backendMasterItemState = { status: 'local', lastError: '', loading: false, loaded: false };
 const backendInventoryState = { status: 'local', lastError: '', loading: false, loaded: false, signals: null };
+const backendProcurementState = { status: 'local', lastError: '', loading: false, loaded: false, needRows: [] };
 let confirmModalResolver = null;
 let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
@@ -2120,13 +2120,14 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
     s.loaded = false;
   });
   backendInventoryState.signals = null;
+  backendProcurementState.needRows = [];
 }
 
 function authHeaders() {
@@ -2359,6 +2360,20 @@ function renderBackendDataStatusBanner(kind, dataState) {
   </div>`;
 }
 
+function renderBackendProcurementBanner() {
+  const connected = backendProcurementState.status === 'connected';
+  const loading = backendProcurementState.loading;
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const detail = connected
+    ? 'Need To Order, supplier POs, and receipt updates are reading from protected backend records when available.'
+    : (backendProcurementState.lastError || 'Local procurement demo data remains visible while backend data is unavailable.');
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="procurement" style="border-left-color:${color}">
+    <strong>${title}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
+  </div>`;
+}
+
 function backendCustomerToLocalCustomer(customer, existing = {}) {
   return {
     ...existing,
@@ -2493,6 +2508,91 @@ function backendMoveToLocal(entry, existing = {}) {
   };
 }
 
+function backendNeedRowToLocalIngredient(row, existing = {}) {
+  return {
+    ...existing,
+    id: row.inventoryItemId,
+    _backendNeedRow: row,
+    _backendSource: true,
+    masterItemId: row.masterItemId,
+    name: row.name,
+    supplierId: row.supplierId || '',
+    stock: row.onHandQuantity || 0,
+    allocatedQuantity: row.allocatedQuantity || 0,
+    netAvailableQuantity: row.netAvailableQuantity || 0,
+    reorderLevel: row.reorderPointQuantity || 0,
+    unit: row.unitOfMeasure || existing.unit || 'lb',
+    cost: typeof row.unitCostCents === 'number' ? row.unitCostCents / 100 : (existing.cost || 0),
+    leadTimeDays: row.leadTimeDays || 0
+  };
+}
+
+function backendProcurementStatusToLocal(status) {
+  if (status === 'completed') return 'Received';
+  if (status === 'partially_received') return 'Partial Receipt';
+  if (status === 'draft') return 'Draft';
+  return 'In Order';
+}
+
+function localProcurementStatusToBackend(status) {
+  if (status === 'Received') return 'completed';
+  if (status === 'Partial Receipt') return 'partially_received';
+  if (status === 'Draft') return 'draft';
+  return 'ordered';
+}
+
+function backendProcurementOrderToLocal(order, existing = {}) {
+  return {
+    ...existing,
+    id: order.procurementOrderNumber || order.id,
+    _backendId: order.id,
+    _backendSource: true,
+    qbPoNumber: order.quickBooksPoNumber || '',
+    supplierId: order.supplierId || '',
+    supplierNameSnapshot: order.supplierNameSnapshot || '',
+    dateOrdered: order.dateOrdered || existing.dateOrdered || '',
+    expectedDate: order.expectedDate || existing.expectedDate || '',
+    receivedDate: order.receivedDate || existing.receivedDate || '',
+    status: backendProcurementStatusToLocal(order.status),
+    notes: order.notes || '',
+    items: (order.lines || []).map(line => ({
+      ingredientId: line.inventoryItemId || line.masterItemId,
+      masterItemId: line.masterItemId,
+      _backendLineId: line.id,
+      qty: line.quantityOrdered || 0,
+      receivedQty: line.quantityReceived || 0,
+      unitCost: typeof line.unitCostCents === 'number' ? line.unitCostCents / 100 : 0,
+      suggestedQuantity: line.suggestedQuantity || line.quantityOrdered || 0,
+      sourceReason: line.sourceReason || 'low_stock'
+    }))
+  };
+}
+
+function procurementItemToNeedRow(item) {
+  if (item._needRow) return item._needRow;
+  const inv = state.ingredients.find(i => i.id === item.ingredientId || i.masterItemId === item.masterItemId) || {};
+  const stock = inv.stock || 0;
+  const allocated = inv.allocatedQuantity || 0;
+  const reorder = inv.reorderLevel || 0;
+  return {
+    inventoryItemId: inv._backendId || inv.id || item.ingredientId,
+    masterItemId: inv.masterItemId || item.masterItemId || item.ingredientId,
+    name: inv.name || item.ingredientId,
+    supplierId: inv.supplierId || null,
+    onHandQuantity: stock,
+    allocatedQuantity: allocated,
+    netAvailableQuantity: stock - allocated,
+    reorderPointQuantity: reorder,
+    shortageQuantity: 0,
+    suggestedQuantity: item.qty || reorder || 1,
+    unitOfMeasure: inv.unit || 'lb',
+    unitCostCents: Math.round((item.unitCost || inv.cost || 0) * 100),
+    leadTimeDays: inv.leadTimeDays || 0,
+    reason: 'low_stock',
+    sourcePurchaseOrderLineId: null
+  };
+}
+
 function parseJsonFallback(value, fallback) {
   if (!value) return fallback;
   try {
@@ -2544,6 +2644,101 @@ function mergeBackendReceivingEntries(entries) {
 
 function mergeBackendMoveEntries(entries) {
   state.moveLog = mergeByBackendId(state.moveLog || [], entries || [], backendMoveToLocal);
+}
+
+function mergeBackendProcurementOrders(orders) {
+  state.procurementOrders = mergeByBackendId(state.procurementOrders || [], orders || [], backendProcurementOrderToLocal);
+}
+
+async function loadBackendProcurement() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendProcurementState.loading || backendProcurementState.loaded) return;
+  backendProcurementState.loading = true;
+  try {
+    await loadBackendProcurementNeedToOrder();
+    await loadBackendProcurementOrders();
+    backendProcurementState.status = 'connected';
+    backendProcurementState.lastError = '';
+    backendProcurementState.loaded = true;
+  } catch (error) {
+    backendProcurementState.status = 'error';
+    backendProcurementState.lastError = 'Procurement backend data is unavailable, so local demo procurement remains visible.';
+  } finally {
+    backendProcurementState.loading = false;
+  }
+}
+
+async function loadBackendProcurementNeedToOrder() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return [];
+  const rows = await apiRequest('/api/procurement/need-to-order');
+  backendProcurementState.needRows = rows || [];
+  return rows;
+}
+
+async function loadBackendProcurementOrders() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return [];
+  const orders = await apiRequest('/api/procurement/orders');
+  mergeBackendProcurementOrders(orders);
+  return orders;
+}
+
+async function saveBackendProcurementOrder(id, isNew, data) {
+  if (isNew) {
+    const supplier = getSupplier(data.supplierId);
+    const order = await apiRequest('/api/procurement/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        supplierId: data.supplierId || null,
+        supplierNameSnapshot: supplier?.name || data.supplierNameSnapshot || null,
+        quickBooksPoNumber: data.qbPoNumber || null,
+        dateOrdered: data.dateOrdered || null,
+        expectedDate: data.expectedDate || null,
+        notes: data.notes || null,
+        rows: (data.items || []).map(procurementItemToNeedRow)
+      })
+    });
+    const desiredStatus = localProcurementStatusToBackend(data.status);
+    const submitted = desiredStatus === 'draft'
+      ? order
+      : await submitBackendProcurementOrder(order.id);
+    mergeBackendProcurementOrders([submitted]);
+    return submitted;
+  }
+
+  const backendId = data._backendId || state.procurementOrders.find(p => p.id === id)?._backendId || id;
+  const order = await apiRequest(`/api/procurement/orders/${encodeURIComponent(backendId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      quickBooksPoNumber: data.qbPoNumber || null,
+      dateOrdered: data.dateOrdered || null,
+      expectedDate: data.expectedDate || null,
+      notes: data.notes || null
+    })
+  });
+  mergeBackendProcurementOrders([order]);
+  return order;
+}
+
+async function submitBackendProcurementOrder(id) {
+  const order = await apiRequest(`/api/procurement/orders/${encodeURIComponent(id)}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  mergeBackendProcurementOrders([order]);
+  return order;
+}
+
+async function receiveBackendProcurementOrder(id, lines) {
+  const order = await apiRequest(`/api/procurement/orders/${encodeURIComponent(id)}/receive`, {
+    method: 'POST',
+    body: JSON.stringify({
+      receiptDate: new Date().toISOString().slice(0,10),
+      lines
+    })
+  });
+  mergeBackendProcurementOrders([order]);
+  backendInventoryState.loaded = false;
+  await loadBackendInventory();
+  return order;
 }
 
 async function loadBackendCustomers() {
@@ -3044,22 +3239,6 @@ async function approveBackendPurchaseOrder(po) {
   });
   mergeBackendPurchaseOrders([approved]);
   return approved;
-}
-
-async function resetAllData() {
-  const ok = await openConfirmModal({
-    title: 'Reset demo data',
-    record: 'Local demo workspace',
-    message: 'Reset all local records back to the sample demo set?',
-    risk: 'This only affects local demo data, but it cannot be undone from the browser.',
-    confirmLabel: 'Reset Demo',
-    tone: 'danger'
-  });
-  if (!ok) return;
-  state = JSON.parse(JSON.stringify(SAMPLE_DATA));
-  saveState();
-  router(currentPage);
-  toast('Demo data reset.');
 }
 
 /* =========================================================================
@@ -4680,11 +4859,15 @@ function nextProcId() {
 }
 
 function renderProcurement(el) {
-  const needCount = state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendProcurementState.loaded && !backendProcurementState.loading) {
+    loadBackendProcurement().then(() => { if (currentPage === 'procurement') router('procurement'); });
+  }
+  const needCount = procurementNeedItems().length;
   const ordered = (state.procurementOrders||[]).filter(p => p.status !== 'Received').length;
   const completed = (state.procurementOrders||[]).filter(p => p.status === 'Received').length;
   el.innerHTML = `
     <div class="card">
+      ${renderBackendProcurementBanner()}
       <div class="tabs">
         <button class="tab ${procTab==='need'?'active':''}" onclick="setProcTab('need')">Need To Order <span class="tab-count">${needCount}</span></button>
         <button class="tab ${procTab==='in'?'active':''}" onclick="setProcTab('in')">Ordered <span class="tab-count">${ordered}</span></button>
@@ -4696,6 +4879,19 @@ function renderProcurement(el) {
   if (procTab === 'need') renderProcNeed(document.getElementById('procBody'));
   else if (procTab === 'completed') renderProcCompleted(document.getElementById('procBody'));
   else renderProcInOrder(document.getElementById('procBody'));
+}
+
+function procurementNeedItems() {
+  if (backendProcurementState.needRows && backendProcurementState.needRows.length) {
+    return backendProcurementState.needRows.map(row => backendNeedRowToLocalIngredient(row, state.ingredients.find(i => i._backendId === row.inventoryItemId || i.id === row.inventoryItemId)));
+  }
+  const alloc = allocatedInventory();
+  const scDemand = supplyChainDemand();
+  return state.ingredients.filter(i => {
+    const net = (i.stock || 0) - (alloc[i.id] || 0);
+    const scNeed = scDemand[i.id] || 0;
+    return i.stock <= i.reorderLevel || net <= i.reorderLevel || (scNeed > 0 && net < scNeed);
+  });
 }
 
 // IDs of inventory items that are already on an active (non-Received) procurement PO
@@ -4725,15 +4921,7 @@ function renderProcNeed(el) {
   const ordersByIng = activeOrdersByIngredient();
   const alloc = allocatedInventory();
   const scDemand = supplyChainDemand();
-  // an item needs ordering if:
-  //  - physical stock at/below reorder level, OR
-  //  - net-available (on hand minus approved-PO allocations) at/below reorder level, OR
-  //  - a PO awaiting Supply Chain approval needs more than net-available (the new rule)
-  const allLow = state.ingredients.filter(i => {
-    const net = (i.stock || 0) - (alloc[i.id] || 0);
-    const scNeed = scDemand[i.id] || 0;
-    return i.stock <= i.reorderLevel || net <= i.reorderLevel || (scNeed > 0 && net < scNeed);
-  });
+  const allLow = procurementNeedItems();
   const low = allLow.filter(i => !onOrder.has(i.id));
   const alreadyOrdered = allLow.filter(i => onOrder.has(i.id));
   const bySupplier = {};
@@ -4840,6 +5028,17 @@ function renderProcNeed(el) {
 // Items that need ordering for a supplier — matches the Need To Order display logic
 // (low stock OR net below reorder OR short for a PO awaiting Supply Chain approval), excluding already-ordered.
 function needToOrderItemsForSupplier(supplierId) {
+  if (backendProcurementState.needRows && backendProcurementState.needRows.length) {
+    return backendProcurementState.needRows
+      .filter(row => (row.supplierId || '') === supplierId)
+      .map(row => ({
+        ingredientId: row.inventoryItemId,
+        masterItemId: row.masterItemId,
+        qty: row.suggestedQuantity,
+        unitCost: typeof row.unitCostCents === 'number' ? row.unitCostCents / 100 : 0,
+        _needRow: row
+      }));
+  }
   const alloc = allocatedInventory();
   const scDemand = supplyChainDemand();
   const onOrder = activelyOrderedIngredientIds();
@@ -4854,7 +5053,7 @@ function needToOrderItemsForSupplier(supplierId) {
       const net = (i.stock || 0) - (alloc[i.id] || 0);
       const scShort = Math.max(0, (scDemand[i.id] || 0) - net);
       const qty = Math.max(i.reorderLevel * 2 - i.stock, i.reorderLevel, scShort + (i.reorderLevel||0));
-      return { ingredientId: i.id, qty, unitCost: i.cost };
+      return { ingredientId: i.id, masterItemId: i.masterItemId, qty, unitCost: i.cost };
     });
 }
 function createProcFromNeed(supplierId) {
@@ -4887,6 +5086,17 @@ async function quickMoveToOrdered(supplierId) {
   };
   state.procurementOrders = state.procurementOrders || [];
   state.procurementOrders.push(newOrder);
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
+    try {
+      const saved = await saveBackendProcurementOrder(newOrder.id, true, newOrder);
+      backendProcurementState.status = 'connected';
+      backendProcurementState.loaded = false;
+      mergeBackendProcurementOrders([saved]);
+    } catch (error) {
+      backendProcurementState.status = 'error';
+      backendProcurementState.lastError = 'Procurement backend save failed, so this supplier PO stayed local/demo only.';
+    }
+  }
   saveState();
   procTab = 'in';
   router('procurement');
@@ -4988,8 +5198,8 @@ function procFormHtml(id, prefill) {
     <form onsubmit="event.preventDefault();saveProc('${p.id}', ${isNew})">
       <div class="form-grid">
         <div class="form-row"><label>Internal ID</label><input id="prc_id" value="${escapeHtml(p.id)}" readonly /></div>
-        <div class="form-row"><label>QuickBooks PO # *</label>
-          <input id="prc_qb" value="${escapeHtml(p.qbPoNumber||'')}" placeholder="e.g. QB-5544" required />
+        <div class="form-row"><label>QuickBooks PO #</label>
+          <input id="prc_qb" value="${escapeHtml(p.qbPoNumber||'')}" placeholder="Optional, e.g. QB-5544" />
         </div>
         <div class="form-row"><label>Supplier *</label>
           <select id="prc_sup" required onchange="prcSupplierChange()">
@@ -5090,7 +5300,7 @@ function recalcPrcTotal() {
   const t = document.getElementById('prcTotal');
   if (t) t.textContent = 'Total: ' + fmtMoney(total);
 }
-function saveProc(id, isNew) {
+async function saveProc(id, isNew) {
   const items = [];
   document.querySelectorAll('#prcItems .po-line').forEach(row => {
     const sel = row.querySelector('select');
@@ -5115,6 +5325,17 @@ function saveProc(id, isNew) {
     state.procurementOrders.push(data);
   } else {
     Object.assign(state.procurementOrders.find(p=>p.id===id), data);
+  }
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
+    try {
+      const saved = await saveBackendProcurementOrder(id, isNew, data);
+      backendProcurementState.status = 'connected';
+      backendProcurementState.loaded = false;
+      mergeBackendProcurementOrders([saved]);
+    } catch (error) {
+      backendProcurementState.status = 'error';
+      backendProcurementState.lastError = 'Procurement backend save failed, so this supplier PO stayed local/demo only.';
+    }
   }
   saveState();
   closeModal();
@@ -5149,6 +5370,31 @@ async function receiveProc(id) {
     tone: 'workflow'
   });
   if (!ok) return;
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && p._backendId) {
+    try {
+      const receiptLines = (p.items || [])
+        .filter(it => it._backendLineId && (it.qty || 0) > (it.receivedQty || 0))
+        .map(it => ({
+          procurementOrderLineId: it._backendLineId,
+          receivedQuantity: +(it.qty - (it.receivedQty || 0)).toFixed(2),
+          lotNumber: null,
+          location: null
+        }));
+      if (!receiptLines.length) { toast('Nothing remains to receive for this supplier PO.'); return; }
+      await receiveBackendProcurementOrder(p._backendId, receiptLines);
+      backendProcurementState.status = 'connected';
+      backendProcurementState.loaded = false;
+      saveState();
+      procTab = 'completed';
+      router('procurement');
+      toast(`${p.id} marked as arrived. Backend inventory updated.`);
+      return;
+    } catch (error) {
+      backendProcurementState.status = 'error';
+      backendProcurementState.lastError = 'Procurement backend receipt failed, so inventory was not changed in backend.';
+      toast('Backend receipt failed. Local demo fallback remains available.');
+    }
+  }
   p.items.forEach(it => {
     const ing = state.ingredients.find(i=>i.id===it.ingredientId);
     if (ing) ing.stock = (ing.stock || 0) + it.qty;
