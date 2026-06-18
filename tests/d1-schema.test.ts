@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migrationPath = "migrations/0001_phase_2a_baseline.sql";
+const migrationPaths = [
+  "migrations/0001_phase_2a_baseline.sql",
+  "migrations/0002_phase_2b_file_foundation.sql",
+];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
 type D1JsonResult = {
@@ -41,7 +44,9 @@ describe("Phase 2A D1 baseline schema migration", () => {
     const persistDir = mkdtempSync(join(tmpdir(), "nut-house-d1-"));
 
     try {
-      d1Execute(persistDir, ["--file", migrationPath]);
+      for (const migrationPath of migrationPaths) {
+        d1Execute(persistDir, ["--file", migrationPath]);
+      }
 
       const tableResult = d1Execute(persistDir, [
         "--command",
@@ -101,8 +106,34 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "allocated_quantity", notnull: 1 }),
         ]),
       );
+
+      const fileColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('file_metadata');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(fileColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "file_category", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "deleted_at" }),
+          expect.objectContaining({ name: "deleted_by_user_id" }),
+        ]),
+      );
+
+      const fileIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('file_metadata');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(fileIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_file_metadata_active_owner" }),
+          expect.objectContaining({ name: "idx_file_metadata_status" }),
+        ]),
+      );
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }
-  });
+  }, 20000);
 });

@@ -25,6 +25,12 @@
       "database_id": "2fe7ce2c-5699-4594-8a63-a111e118f443",
       "migrations_dir": "migrations"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "nut-house-files"
+    }
   ]
 }
 

@@ -73,12 +73,12 @@
     letter-spacing: 0.3px;
   }
   .sidebar-subtitle { font-size: 11px; opacity: 0.7; }
-  .sidebar nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+  .sidebar nav { flex: 1; padding: 6px 0; overflow-y: auto; }
   .sidebar nav a {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 11px 22px;
+    gap: 11px;
+    padding: 7px 20px;
     color: var(--beige);
     text-decoration: none;
     font-size: 14px;
@@ -94,10 +94,10 @@
     font-weight: 600;
   }
   .sidebar nav a .icon {
-    width: 18px; text-align: center; font-size: 16px;
+    width: 18px; text-align: center; font-size: 15px;
   }
   .sidebar-footer {
-    padding: 12px 20px;
+    padding: 7px 16px;
     border-top: 1px solid var(--brown-dark);
     font-size: 11px;
     opacity: 0.7;
@@ -165,6 +165,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    min-height: 36px;
   }
   .btn:hover { background: #c66a1f; }
   .btn:disabled, .btn[disabled] {
@@ -184,7 +185,7 @@
   .btn-dark:hover { background: var(--brown-dark); }
   .btn-danger { background: var(--danger); }
   .btn-danger:hover { background: #8c2929; }
-  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; min-height: 32px; }
   .btn-icon {
     background: transparent;
     color: var(--brown);
@@ -275,6 +276,19 @@
     border-color: var(--orange);
     box-shadow: 0 0 0 2px rgba(224,123,42,0.18);
   }
+  .form-row input.invalid,
+  .form-row select.invalid,
+  .form-row textarea.invalid,
+  .po-line input.invalid,
+  .po-line select.invalid {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 2px rgba(178,58,58,0.12);
+  }
+  .field-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 4px;
+  }
   .form-actions {
     margin-top: 14px;
     display: flex;
@@ -318,6 +332,12 @@
     overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0,0,0,0.25);
   }
+  .modal.portal-modal {
+    max-width: 1080px;
+    border-radius: 8px;
+    background: #fbfaf8;
+    max-height: 94vh;
+  }
   .modal-header {
     padding: 16px 22px;
     border-bottom: 1px solid var(--grey-light);
@@ -331,8 +351,27 @@
   .modal-close {
     background: transparent; border: none; color: var(--white);
     font-size: 22px; cursor: pointer; padding: 0 4px;
+    min-width: 32px; min-height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   .modal-body { padding: 22px; }
+  .modal.portal-modal .modal-header {
+    background: var(--white);
+    color: var(--black);
+    border-bottom: 0;
+    padding: 16px 22px 8px;
+  }
+  .modal.portal-modal .modal-header h2 {
+    color: var(--black);
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .modal.portal-modal .modal-close {
+    color: #5a5249;
+    font-size: 28px;
+    font-weight: 300;
+  }
+  .modal.portal-modal .modal-body { padding: 12px 22px 18px; }
 
   /* ---------- Dashboard ---------- */
   .stat-grid {
@@ -693,6 +732,311 @@
   }
   .file-upload .file-info { font-size: 12px; color: var(--brown-light); flex: 1; }
   .file-upload .file-info.has { color: var(--brown); font-weight: 600; }
+  .customer-portal {
+    display: grid;
+    gap: 14px;
+  }
+  .portal-status {
+    border: 1px solid var(--grey-light);
+    border-radius: 5px;
+    padding: 10px 14px 10px 38px;
+    background: var(--white);
+    font-size: 13px;
+    position: relative;
+  }
+  .portal-status::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 15px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--orange);
+  }
+  .portal-status.ok::before { background: #9bcf8c; }
+  .portal-panel {
+    border: 1px solid var(--grey-light);
+    border-radius: 5px;
+    background: var(--white);
+    overflow: hidden;
+  }
+  .portal-panel-header {
+    padding: 14px 16px 8px;
+    border-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .portal-panel-header h3 {
+    margin: 0;
+    color: var(--black);
+    font-size: 17px;
+    line-height: 1.2;
+  }
+  .portal-panel-body { padding: 8px 16px 14px; }
+  .portal-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .portal-side-stack {
+    display: grid;
+    gap: 12px;
+  }
+  .portal-form-main {
+    display: grid;
+    gap: 12px;
+  }
+  .portal-line-table {
+    border: 1px solid var(--grey-light);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--white);
+  }
+  .customer-portal .file-upload {
+    align-items: stretch;
+    flex-direction: column;
+    border-color: #d8c4b1;
+    background: #fffdfa;
+    padding: 0;
+  }
+  .customer-portal .file-upload input {
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    position: absolute;
+    pointer-events: none;
+  }
+  .portal-file-drop {
+    min-height: 104px;
+    border: 1px dashed #b89b82;
+    border-radius: 5px;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 6px;
+    padding: 18px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .portal-file-drop strong {
+    color: var(--black);
+    font-size: 13px;
+  }
+  .portal-file-drop span {
+    color: var(--brown-light);
+    font-size: 12px;
+  }
+  .portal-file-browse {
+    color: #b9550e;
+    text-decoration: underline;
+    font-weight: 600;
+  }
+  .portal-file-card {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--grey-light);
+    border-radius: 5px;
+    background: var(--white);
+  }
+  .portal-file-type {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 38px;
+    border-radius: 4px;
+    background: #d83a2e;
+    color: var(--white);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .portal-file-name {
+    color: var(--black);
+    font-size: 13px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .portal-file-meta {
+    color: var(--brown-light);
+    font-size: 12px;
+    margin-top: 3px;
+  }
+  .customer-portal label {
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--black);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .customer-portal .po-line {
+    grid-template-columns: minmax(190px, 1fr) 84px 112px 38px;
+    gap: 0;
+    margin: 0;
+    border-top: 1px solid var(--grey-light);
+    align-items: stretch;
+  }
+  .customer-portal .po-line input {
+    border: 0;
+    border-right: 1px solid var(--grey-light);
+    border-radius: 0;
+    min-height: 42px;
+  }
+  .customer-portal .po-line button {
+    border: 0;
+    border-radius: 0;
+    color: #65584e;
+  }
+  .portal-line-head {
+    font-size: 12px;
+    color: var(--black);
+    font-weight: 600;
+    background: #faf8f5;
+    border-top: 0;
+    min-height: 34px;
+  }
+  .portal-line-head div {
+    padding: 10px 12px;
+    border-right: 1px solid var(--grey-light);
+  }
+  .upload-progress {
+    display: block;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--grey-light);
+    overflow: hidden;
+    margin-top: 10px;
+  }
+  .upload-progress span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--orange);
+  }
+  .upload-progress span { width: 100%; background: var(--success); }
+  .upload-progress:not(.active) { display: none; }
+  .upload-progress.active span { width: 65%; transition: width 0.8s ease; }
+  .portal-submit-state {
+    min-height: 18px;
+    font-size: 12px;
+    color: var(--brown-light);
+    margin-top: 8px;
+  }
+  .portal-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .portal-kv {
+    width: 100%;
+    margin: 0;
+  }
+  .portal-kv td:first-child {
+    width: 132px;
+    color: var(--black);
+    font-weight: 600;
+  }
+  .portal-kv td {
+    padding: 5px 0;
+    border-bottom: 0;
+    background: transparent;
+    font-size: 13px;
+  }
+  .portal-orders-panel table th,
+  .portal-orders-panel table td {
+    font-size: 13px;
+  }
+  .portal-orders-panel table thead th {
+    color: var(--black);
+    background: #faf8f5;
+  }
+  .portal-download-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 5px 12px;
+    border: 1px solid #bba997;
+    border-radius: 4px;
+    background: var(--white);
+    color: var(--black);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .portal-download-btn:hover { background: #faf8f5; }
+  .customer-portal .form-grid { gap: 12px; }
+  .customer-portal textarea { min-height: 52px; }
+  .customer-portal .form-actions {
+    margin-top: 6px;
+  }
+  .customer-portal #customer_po_submit_btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .portal-card-list {
+    display: none;
+    gap: 10px;
+  }
+  .portal-card-row {
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--white);
+  }
+  .portal-card-row strong {
+    color: var(--brown);
+  }
+  .portal-card-meta {
+    display: grid;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--brown-light);
+  }
+  @media (max-width: 720px) {
+    .modal.portal-modal { max-width: 100%; }
+    .portal-form-grid,
+    .portal-summary-grid { grid-template-columns: 1fr; }
+    .modal.portal-modal .modal-header { padding: 16px 18px 8px; }
+    .modal.portal-modal .modal-body { padding: 12px 18px 18px; }
+    .portal-panel-header {
+      display: block;
+    }
+    .portal-panel-header .help-text {
+      margin-top: 6px;
+    }
+    .customer-portal .po-line {
+      grid-template-columns: 1fr;
+      padding: 10px;
+      border: 1px solid var(--grey-light);
+      border-radius: 8px;
+      background: var(--beige-light);
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .customer-portal .po-line input,
+    .customer-portal .po-line button {
+      border: 1px solid var(--grey);
+      border-radius: 4px;
+    }
+    .portal-line-head { display: none !important; }
+    .file-upload {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .portal-table-mobile-hide { display: none; }
+    .portal-card-list { display: grid; }
+  }
 
   /* ---------- Chat ---------- */
   .chat-layout {
@@ -1198,8 +1542,15 @@ let state = loadState();
 const backendApiState = { status: 'unknown', lastError: '', loadedPurchaseOrders: false, loadingPurchaseOrders: false };
 const AUTH_STORAGE_KEY = `${STORAGE_KEY}_auth`;
 const backendUserState = { status: 'local', lastError: '', loadingUsers: false };
+const backendCustomerState = { status: 'local', lastError: '', loading: false, loaded: false };
+const backendProductState = { status: 'local', lastError: '', loading: false, loaded: false };
+const backendMasterItemState = { status: 'local', lastError: '', loading: false, loaded: false };
 let backendAuthState = loadAuthState();
 const BACKEND_ACTOR_USER_ID = 'phase-2a-frontend';
+let pendingPoFile = null;
+let pendingCustomerPortalFile = null;
+let customerPortalDirty = false;
+let customerPortalSubmitting = false;
 
 function loadState() {
   try {
@@ -1412,6 +1763,7 @@ function setBackendAuth(data) {
     roles: data?.roles || data?.user?.roles || [],
     customerAccess: data?.customerAccess || data?.user?.customerAccess || []
   };
+  resetBackendDataStates();
   saveAuthState();
 }
 
@@ -1419,6 +1771,16 @@ function clearBackendAuth() {
   backendAuthState = { token: '', user: null, roles: [], customerAccess: [] };
   saveAuthState();
   backendUserState.status = 'local';
+  resetBackendDataStates();
+}
+
+function resetBackendDataStates() {
+  [backendCustomerState, backendProductState, backendMasterItemState].forEach(s => {
+    s.status = 'local';
+    s.lastError = '';
+    s.loading = false;
+    s.loaded = false;
+  });
 }
 
 function authHeaders() {
@@ -1455,6 +1817,34 @@ async function apiRequest(path, options = {}) {
   return envelope.data;
 }
 
+async function apiFormRequest(path, formData, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    method: options.method || 'POST',
+    body: formData,
+    headers: {
+      'Accept': 'application/json',
+      ...authHeaders(),
+      ...(options.headers || {})
+    }
+  });
+
+  let envelope = null;
+  try { envelope = await response.json(); } catch (err) {}
+
+  if (!response.ok || !envelope || envelope.ok !== true) {
+    const message = envelope?.error?.message || `Backend request failed (${response.status})`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.envelope = envelope;
+    throw error;
+  }
+
+  backendApiState.status = 'connected';
+  backendApiState.lastError = '';
+  return envelope.data;
+}
+
 function markBackendUnavailable(error) {
   backendApiState.status = 'local';
   backendApiState.lastError = error?.message || 'Backend unavailable';
@@ -1463,15 +1853,191 @@ function markBackendUnavailable(error) {
 function renderBackendStatusBanner(context = 'purchase-orders') {
   const connected = backendApiState.status === 'connected';
   const loading = backendApiState.loadingPurchaseOrders;
-  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Local demo mode / backend unavailable';
+  const authWaiting = backendApiState.lastError === 'Authentication is required';
+  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
   const detail = connected
-    ? 'Purchase Orders are reading from the Phase 2A API when available.'
-    : 'The prototype keeps working from localStorage until D1 is migrated/deployed.';
+    ? 'This page is reading from the Phase 2A API when available.'
+    : authWaiting
+      ? 'Sign in from Account Management to connect this page to protected backend data.'
+      : 'This preview is using local demo data while the backend connection is unavailable.';
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${context}" style="border-left-color:${color}">
     <strong>${label}</strong>
-    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}${backendApiState.lastError ? ' Last API message: '+escapeHtml(backendApiState.lastError) : ''}</div>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}</div>
   </div>`;
+}
+
+function renderBackendDataStatusBanner(kind, dataState) {
+  const connected = dataState.status === 'connected';
+  const loading = dataState.loading;
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const details = {
+    customers: connected
+      ? 'Customer data is reading from protected backend records when available.'
+      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+    products: connected
+      ? 'Product data is reading from protected backend records when available.'
+      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+    'master-items': connected
+      ? 'Master List data is reading from protected backend records when available.'
+      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.')
+  };
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${kind}" style="border-left-color:${color}">
+    <strong>${title}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(details[kind] || details.customers)}</div>
+  </div>`;
+}
+
+function backendCustomerToLocalCustomer(customer, existing = {}) {
+  return {
+    ...existing,
+    id: customer.id,
+    _backendId: customer.id,
+    _backendSource: true,
+    name: customer.name || existing.name || customer.id,
+    contact: customer.contactName || existing.contact || '',
+    email: customer.contactEmail || existing.email || '',
+    phone: customer.phone || existing.phone || '',
+    address: existing.address || '',
+    notes: existing.notes || '',
+    status: customer.status || existing.status || 'active',
+    specSheet: existing.specSheet || null,
+    copackingAgreement: existing.copackingAgreement || null
+  };
+}
+
+function backendProductToLocalProduct(product, existing = {}) {
+  return {
+    ...existing,
+    id: product.id,
+    _backendId: product.id,
+    _backendSource: true,
+    sku: product.sku || existing.sku || product.id,
+    name: product.name || existing.name || product.sku || product.id,
+    customerId: product.customerId || existing.customerId || '',
+    room: existing.room || 'Main',
+    size: existing.size || 0,
+    sizeUnit: existing.sizeUnit || 'oz',
+    price: existing.price || 0,
+    notes: product.description || existing.notes || '',
+    caseQty: existing.caseQty || 0,
+    caseSticker: existing.caseSticker || '',
+    kosher: existing.kosher || false,
+    dailyProductionRate: existing.dailyProductionRate || 0,
+    allergen: existing.allergen || false,
+    allergenDetails: existing.allergenDetails || '',
+    finishedGoodId: existing.finishedGoodId || '',
+    productImage: existing.productImage || null,
+    nfpImage: existing.nfpImage || null,
+    status: product.status || existing.status || 'active'
+  };
+}
+
+function backendMasterItemToLocalMasterItem(item, existing = {}) {
+  return {
+    ...existing,
+    id: item.id,
+    _backendId: item.id,
+    _backendSource: true,
+    name: item.name || existing.name || item.sku || item.id,
+    sku: item.sku || existing.sku || '',
+    itemType: item.itemType || existing.itemType || 'other',
+    uom: item.unitOfMeasure === 'lb' ? 'LBS' : item.unitOfMeasure === 'ea' ? 'Each' : (item.unitOfMeasure || existing.uom || 'LBS'),
+    allergens: existing.allergens || [],
+    customerId: existing.customerId || 'general'
+  };
+}
+
+function mergeByBackendId(localRows, backendRows, mapper) {
+  const mapped = backendRows.map(row => mapper(row, localRows.find(local => local._backendId === row.id || local.id === row.id)));
+  const backendIds = new Set(mapped.map(row => row._backendId || row.id));
+  return [
+    ...mapped,
+    ...localRows.filter(row => !row._backendId || !backendIds.has(row._backendId))
+  ];
+}
+
+function mergeBackendCustomers(customers) {
+  state.customers = mergeByBackendId(state.customers || [], customers || [], backendCustomerToLocalCustomer);
+}
+
+function mergeBackendProducts(products) {
+  state.products = mergeByBackendId(state.products || [], products || [], backendProductToLocalProduct);
+}
+
+function mergeBackendMasterItems(items) {
+  state.masterItems = mergeByBackendId(state.masterItems || [], items || [], backendMasterItemToLocalMasterItem);
+}
+
+async function loadBackendCustomers() {
+  if (!backendAuthState.token || backendCustomerState.loading || backendCustomerState.loaded) return;
+  backendCustomerState.loading = true;
+  try {
+    const customers = await apiRequest('/api/customers');
+    mergeBackendCustomers(customers);
+    backendCustomerState.status = 'connected';
+    backendCustomerState.lastError = '';
+    backendCustomerState.loaded = true;
+  } catch (error) {
+    backendCustomerState.status = 'error';
+    backendCustomerState.lastError = 'Customer backend data is unavailable, so local demo customers remain visible.';
+  } finally {
+    backendCustomerState.loading = false;
+  }
+}
+
+async function loadBackendCustomerProfile() {
+  if (!backendAuthState.token) return null;
+  backendCustomerState.loading = true;
+  try {
+    const customer = await apiRequest('/api/customers/me');
+    mergeBackendCustomers([customer]);
+    backendCustomerState.status = 'connected';
+    backendCustomerState.lastError = '';
+    backendCustomerState.loaded = true;
+    return customer;
+  } catch (error) {
+    backendCustomerState.status = 'error';
+    backendCustomerState.lastError = 'Customer profile backend data is unavailable, so local demo customer details remain visible.';
+    return null;
+  } finally {
+    backendCustomerState.loading = false;
+  }
+}
+
+async function loadBackendProducts() {
+  if (!backendAuthState.token || backendProductState.loading || backendProductState.loaded) return;
+  backendProductState.loading = true;
+  try {
+    const products = await apiRequest('/api/products');
+    mergeBackendProducts(products);
+    backendProductState.status = 'connected';
+    backendProductState.lastError = '';
+    backendProductState.loaded = true;
+  } catch (error) {
+    backendProductState.status = 'error';
+    backendProductState.lastError = 'Product backend data is unavailable, so local demo products remain visible.';
+  } finally {
+    backendProductState.loading = false;
+  }
+}
+
+async function loadBackendMasterItems() {
+  if (!backendAuthState.token || backendMasterItemState.loading || backendMasterItemState.loaded) return;
+  backendMasterItemState.loading = true;
+  try {
+    const items = await apiRequest('/api/master-items');
+    mergeBackendMasterItems(items);
+    backendMasterItemState.status = 'connected';
+    backendMasterItemState.lastError = '';
+    backendMasterItemState.loaded = true;
+  } catch (error) {
+    backendMasterItemState.status = 'error';
+    backendMasterItemState.lastError = 'Master List backend data is unavailable, so local demo master items remain visible.';
+  } finally {
+    backendMasterItemState.loading = false;
+  }
 }
 
 function backendPurchaseOrderId(po) {
@@ -1520,6 +2086,7 @@ function mapBackendPurchaseOrderToPrototype(po) {
     status: prototypeStatus,
     depositStatus: mapBackendDepositToPrototype(po.depositStatus),
     poFile: null,
+    _backendFiles: [],
     scOverrides: {}
   };
 }
@@ -1544,7 +2111,7 @@ function buildBackendPurchaseOrderPayload(localPo) {
       return {
         description: product?.name || line.description || line.productId || 'Purchase order line',
         quantity: Number(line.qty || line.quantity || 0),
-        unitOfMeasure: 'Each',
+        unitOfMeasure: line.unitOfMeasure || 'Each',
         productId: line.productId || null,
         masterItemId: line.masterItemId || null
       };
@@ -1552,12 +2119,81 @@ function buildBackendPurchaseOrderPayload(localPo) {
   };
 }
 
+async function uploadBackendPurchaseOrderFile(purchaseOrderId, file) {
+  if (!file) return null;
+  const form = new FormData();
+  form.set('ownerType', 'purchase_order');
+  form.set('ownerId', purchaseOrderId);
+  form.set('fileCategory', 'po_file');
+  form.set('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+async function loadBackendPurchaseOrderFiles(purchaseOrderId) {
+  return apiRequest(`/api/files?ownerType=purchase_order&ownerId=${encodeURIComponent(purchaseOrderId)}`);
+}
+
+async function attachBackendFilesToPurchaseOrder(localPo) {
+  const purchaseOrderId = backendPurchaseOrderId(localPo);
+  if (!purchaseOrderId) return localPo;
+  const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
+  localPo._backendFiles = files || [];
+  const firstPoFile = (files || []).find(file => file.fileCategory === 'po_file') || files?.[0] || null;
+  localPo.poFile = firstPoFile ? mapBackendFileToPrototype(firstPoFile) : localPo.poFile || null;
+  return localPo;
+}
+
+async function hydrateBackendPurchaseOrderFiles(localPos) {
+  for (const po of localPos || []) {
+    try {
+      await attachBackendFilesToPurchaseOrder(po);
+    } catch (error) {
+      po._backendFileError = error?.message || 'PO files unavailable';
+    }
+  }
+}
+
+function mapBackendFileToPrototype(file) {
+  return {
+    _backendFileId: file.id,
+    _backendOwnerId: file.ownerId,
+    _backendFile: true,
+    name: file.fileName,
+    type: file.contentType || '',
+    size: file.sizeBytes || 0,
+    uploadedAt: file.createdAt,
+    fileCategory: file.fileCategory,
+    dataUrl: ''
+  };
+}
+
+async function downloadBackendFile(fileId, fileName) {
+  const response = await fetch(`/api/files/${encodeURIComponent(fileId)}/download`, {
+    headers: {
+      ...authHeaders()
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`File download failed (${response.status})`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName || 'download';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function ensureBackendPurchaseOrdersLoaded() {
   if (backendApiState.loadedPurchaseOrders || backendApiState.loadingPurchaseOrders) return;
   backendApiState.loadingPurchaseOrders = true;
   try {
     const records = await apiRequest('/api/purchase-orders');
-    mergeBackendPurchaseOrders(records);
+    const backendPos = mergeBackendPurchaseOrders(records);
+    await hydrateBackendPurchaseOrderFiles(backendPos);
     backendApiState.loadedPurchaseOrders = true;
     if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
     if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
@@ -1581,11 +2217,20 @@ async function createBackendPurchaseOrder(localPo) {
     method: 'POST',
     body: JSON.stringify(buildBackendPurchaseOrderPayload(localPo))
   });
+  const uploadFile = localPo._pendingUploadFile || (localPo.poFile instanceof File ? localPo.poFile : null);
+  if (uploadFile) {
+    try {
+      await uploadBackendPurchaseOrderFile(created.id, uploadFile);
+    } catch (error) {
+      throw new Error(`Backend PO was created as draft, but file upload failed: ${error.message}`);
+    }
+  }
   const submitted = await apiRequest(`/api/purchase-orders/${encodeURIComponent(created.id)}/submit`, {
     method: 'POST',
     body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
   });
-  mergeBackendPurchaseOrders([submitted]);
+  const merged = mergeBackendPurchaseOrders([submitted]);
+  await hydrateBackendPurchaseOrderFiles(merged);
   return submitted;
 }
 
@@ -1606,7 +2251,9 @@ async function updateBackendPurchaseOrder(localPo) {
 async function readBackendPurchaseOrder(po) {
   const purchaseOrderId = backendPurchaseOrderId(po);
   const record = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}`);
-  return mergeBackendPurchaseOrders([record])[0];
+  const merged = mergeBackendPurchaseOrders([record]);
+  await hydrateBackendPurchaseOrderFiles(merged);
+  return merged[0];
 }
 
 async function updateBackendDepositStatus(po, status) {
@@ -2048,11 +2695,18 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
    MODAL
    ========================================================================= */
 function openModal(title, html) {
+  const modal = document.querySelector('.modal');
+  if (modal) modal.className = 'modal';
   document.getElementById('modalTitle').innerHTML = title;
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() {
+  if (customerPortalDirty && !customerPortalSubmitting) {
+    const discard = confirm('Discard this customer PO draft?');
+    if (!discard) return;
+  }
+  customerPortalDirty = false;
   document.getElementById('modal').classList.remove('open');
 }
 document.getElementById('modal').addEventListener('click', (e) => {
@@ -2230,7 +2884,7 @@ function renderPurchaseOrders(el) {
                 <td>${fmtDate(p.requestedDate)}</td>
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
-                <td>${p.poFile ? `<a href="${p.poFile.dataUrl}" download="${escapeHtml(p.poFile.name)}" style="color:var(--orange);font-size:12px">&#128206; ${escapeHtml(p.poFile.name.length>18?p.poFile.name.slice(0,16)+'..':p.poFile.name)}</a>` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+                <td>${poFileLinkHtml(p)}</td>
                 <td>${statusBadge(p.status)}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
@@ -2262,6 +2916,29 @@ function exportPOs() {
     Production_Room: p.productionRoom || ''
   }));
   exportCsv('purchase_orders.csv', rows);
+}
+
+function poFileLinkHtml(po) {
+  if (!po?.poFile) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
+  const file = po.poFile;
+  const label = escapeHtml(file.name.length > 18 ? file.name.slice(0, 16) + '..' : file.name);
+  if (file._backendFileId) {
+    return `<button class="portal-download-btn" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')" title="${escapeHtml(file.name)}">Download file</button>`;
+  }
+  return `<a class="portal-download-btn" href="${file.dataUrl}" download="${escapeHtml(file.name)}" title="${escapeHtml(file.name)}">Download file</a>`;
+}
+
+function poFileDetailHtml(po) {
+  if (!po?.poFile) return '';
+  const file = po.poFile;
+  if (file._backendFileId) {
+    return `<div style="margin-top:8px"><button class="btn btn-icon btn-sm" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')">File: ${escapeHtml(file.name)}</button></div>`;
+  }
+  return `<div style="margin-top:8px"><a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);font-size:13px">File: ${escapeHtml(file.name)}</a></div>`;
+}
+
+function escapeAttr(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
 
 function poFormHtml(po) {
@@ -2401,6 +3078,7 @@ function poFileSelected(e) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
+  pendingPoFile = f;
   const reader = new FileReader();
   reader.onload = () => {
     const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
@@ -2412,6 +3090,7 @@ function poFileSelected(e) {
   reader.readAsDataURL(f);
 }
 function clearPoFile() {
+  pendingPoFile = null;
   document.getElementById('po_file_data').value = '';
   document.getElementById('po_file').value = '';
   const info = document.getElementById('po_file_info');
@@ -2447,12 +3126,13 @@ async function savePO(isNew, oldId) {
     id, brand, customerId, poDate, requestedDate, notes, lines,
     status: 'in_supply_chain',
     productionDate: null, productionRoom: null, shipping: null,
-    poFile, scOverrides: {}
+    poFile, _pendingUploadFile: pendingPoFile, scOverrides: {}
   };
 
   if (isNew && backendApiState.status !== 'local') {
     try {
       await createBackendPurchaseOrder(localPo);
+      pendingPoFile = null;
       toast(`${id} submitted to Supply Chain through backend.`);
       closeModal();
       router(currentPage);
@@ -2468,6 +3148,7 @@ async function savePO(isNew, oldId) {
     if (existing?._backendId && backendApiState.status !== 'local') {
       try {
         await updateBackendPurchaseOrder({ ...existing, ...localPo, _backendId: existing._backendId });
+        pendingPoFile = null;
         toast(`${id} updated through backend.`);
         closeModal();
         router(currentPage);
@@ -2480,9 +3161,11 @@ async function savePO(isNew, oldId) {
   }
 
   if (isNew) {
+    delete localPo._pendingUploadFile;
     state.purchaseOrders.push(localPo);
     toast(`${id} submitted to Supply Chain.`);
   } else {
+    delete localPo._pendingUploadFile;
     const po = state.purchaseOrders.find(p => p.id === oldId);
     Object.assign(po, { id, brand, customerId, poDate, requestedDate, notes, lines, poFile });
     toast(`${id} updated.`);
@@ -2519,7 +3202,7 @@ async function viewPO(id) {
         <div>${po.brand ? `<span class="pill">${escapeHtml(po.brand)}</span>` : ''}</div>
         <div style="font-weight:600;margin-top:2px">${escapeHtml(cust?.name || '')}</div>
         <div style="font-size:12px;color:var(--brown-light)">${escapeHtml(cust?.address || '')}</div>
-        ${po.poFile ? `<div style="margin-top:8px"><a href="${po.poFile.dataUrl}" download="${escapeHtml(po.poFile.name)}" style="color:var(--orange);font-size:13px">&#128206; ${escapeHtml(po.poFile.name)}</a></div>` : ''}
+        ${poFileDetailHtml(po)}
       </div>
       <div>
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">PO Date</div>
@@ -5257,7 +5940,11 @@ function deleteSupplier(id) {
    CUSTOMERS & PRODUCTS
    ========================================================================= */
 function renderCustomers(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendCustomerState.loaded && !backendCustomerState.loading) {
+    loadBackendCustomers().then(() => { if (currentPage === 'customers') router('customers'); });
+  }
   el.innerHTML = `
+    ${renderBackendDataStatusBanner('customers', backendCustomerState)}
     <div class="card">
       <div class="card-header">
         <h2>Customers</h2>
@@ -5406,7 +6093,7 @@ function clearCustomerFile(kind) {
   info.textContent = kind === 'spec' ? 'No spec sheet uploaded.' : 'No co-packing agreement uploaded.';
   info.classList.remove('has');
 }
-function saveCustomer(id, isNew) {
+async function saveCustomer(id, isNew) {
   let specSheet = null, copackingAgreement = null;
   const sd = document.getElementById('cust_spec_data').value;
   const ad = document.getElementById('cust_agree_data').value;
@@ -5430,8 +6117,33 @@ function saveCustomer(id, isNew) {
       phone: document.getElementById('cust_'+r.key+'_phone').value
     };
   });
+  const existing = state.customers.find(c=>c.id===id);
+  if (backendAuthState.token && existing?._backendId) {
+    try {
+      const saved = await apiRequest(`/api/customers/${encodeURIComponent(existing._backendId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: data.name,
+          contactName: data.contact || data.salesContact?.name || null,
+          contactEmail: data.email || data.salesContact?.email || null,
+          phone: data.phone || null
+        })
+      });
+      mergeBackendCustomers([saved]);
+      backendCustomerState.status = 'connected';
+      backendCustomerState.lastError = '';
+      closeModal();
+      router('customers');
+      toast('Customer saved to backend.');
+      return;
+    } catch (error) {
+      backendCustomerState.status = 'error';
+      backendCustomerState.lastError = 'Customer backend update failed; local demo customer remains editable.';
+      toast(backendCustomerState.lastError);
+    }
+  }
   if (isNew) state.customers.push(data);
-  else Object.assign(state.customers.find(c=>c.id===id), data);
+  else Object.assign(existing, data);
   try { saveState(); }
   catch(err) { toast('Storage full — try smaller files.'); return; }
   closeModal();
@@ -5788,7 +6500,11 @@ let productsTab = 'list';
 function setProductsTab(t) { productsTab = t; renderProducts(document.getElementById('content')); }
 
 function renderProducts(el) {
+  if (backendAuthState.token && !backendProductState.loaded && !backendProductState.loading) {
+    loadBackendProducts().then(() => { if (currentPage === 'products') router('products'); });
+  }
   el.innerHTML = `
+    ${renderBackendDataStatusBanner('products', backendProductState)}
     <div class="card">
       <div class="tabs">
         <button class="tab ${productsTab==='list'?'active':''}" onclick="setProductsTab('list')">Products <span class="tab-count">${state.products.length}</span></button>
@@ -6247,22 +6963,28 @@ function resetCalc() {
 function backendAuthPanelHtml() {
   const signedIn = !!backendAuthState.token && !!backendAuthState.user;
   const roles = signedIn ? (backendAuthState.roles || []).join(', ') : '';
-  const userLabel = signedIn ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}` : 'Not signed in';
+  const customerPortalAccess = signedIn && backendAuthState.user?.userType === 'customer'
+    ? (backendAuthState.customerAccess || [])[0]
+    : null;
+  const userLabel = signedIn
+    ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}`
+    : 'Backend session inactive';
   const statusText = backendUserState.status === 'connected'
-    ? 'Backend user API connected.'
+    ? 'Backend Account Management is connected.'
     : backendUserState.status === 'error'
-      ? escapeHtml(backendUserState.lastError || 'Account Management could not reach the backend user API; keeping local demo users active.')
-      : 'Backend auth is available when AUTH_REQUIRED is enabled; local demo users stay active for stakeholder review.';
+      ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so local demo users remain visible.')
+      : 'Create the first admin or log in to manage backend users. Local demo users remain visible for this preview.';
   return `
     <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
         <div>
-          <strong>Auth / account backend</strong>
+          <strong>Account access</strong>
           <div class="help-text">${statusText}</div>
           <div style="font-size:12px;color:var(--brown);margin-top:4px">${userLabel}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="openBackendSetup()">First Admin Setup</button>
+          ${customerPortalAccess ? `<button class="btn btn-secondary btn-sm" onclick="viewSignedInCustomerPortal()">Open Customer Portal</button>` : ''}
           ${signedIn ? `<button class="btn btn-secondary btn-sm" onclick="refreshBackendAuth()">Refresh Session</button><button class="btn btn-secondary btn-sm" onclick="logoutBackendAuth()">Logout</button>` : `<button class="btn btn-sm" onclick="openBackendLogin()">Login</button>`}
         </div>
       </div>
@@ -6403,8 +7125,17 @@ function upsertLocalUserFromBackend(user) {
   else state.users.push(mapped);
 }
 
+function canManageBackendUsers() {
+  return (backendAuthState.roles || []).includes('Admin');
+}
+
 async function loadBackendUsers() {
   if (!backendAuthState.token || backendUserState.loadingUsers) return;
+  if (!canManageBackendUsers()) {
+    backendUserState.status = 'connected';
+    backendUserState.lastError = 'Customer backend session active; admin user list is hidden.';
+    return;
+  }
   backendUserState.loadingUsers = true;
   try {
     const users = await apiRequest('/api/users');
@@ -6579,7 +7310,7 @@ async function saveUser(id, isNew) {
 }
 
 /* ----- Customer Portal preview ----- */
-function viewCustomerPortal(customerId) {
+function viewCustomerPortalPreview(customerId) {
   const cust = getCustomer(customerId);
   if (!cust) { toast('Customer not found.'); return; }
   // POs for this customer
@@ -6692,6 +7423,337 @@ function viewCustomerPortal(customerId) {
       <button class="btn btn-secondary" onclick="closeModal()">Close Preview</button>
     </div>
   `);
+}
+
+function viewSignedInCustomerPortal() {
+  const access = (backendAuthState.customerAccess || [])[0];
+  if (!access?.customerId) { toast('No linked customer on this backend session.'); return; }
+  viewCustomerPortal(access.customerId);
+}
+
+async function viewCustomerPortal(customerId) {
+  let cust = getCustomer(customerId) || { id: customerId, name: customerId, contact: '', email: '', phone: '', address: '' };
+  openModal(`Customer Portal - ${escapeHtml(cust.name)}`, '<div class="empty">Loading customer portal...</div>');
+  let backendConnected = false;
+  let portalError = '';
+  if (backendAuthState.token) {
+    try {
+      if (backendAuthState.user?.userType === 'customer') {
+        const profile = await loadBackendCustomerProfile();
+        if (profile?.id) customerId = profile.id;
+      } else {
+        await loadBackendCustomers();
+      }
+      await loadBackendProducts();
+      await refreshBackendPurchaseOrders();
+      cust = getCustomer(customerId) || cust;
+      backendConnected = backendApiState.status === 'connected';
+    } catch (error) {
+      markBackendUnavailable(error);
+      portalError = error?.message || 'Backend portal data unavailable.';
+    }
+  }
+  renderCustomerPortalModal(customerId, cust, backendConnected, portalError);
+}
+
+function renderCustomerPortalModal(customerId, cust, backendConnected, portalError = '') {
+  customerPortalDirty = false;
+  customerPortalSubmitting = false;
+  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
+  const openPos = myPos.filter(p => p.status !== 'completed');
+  const donePos = myPos.filter(p => p.status === 'completed');
+  const myProducts = state.products.filter(p => p.customerId === customerId);
+  const ingIds = new Set();
+  myProducts.forEach(prod => ((state.boms || {})[prod.id] || []).forEach(b => ingIds.add(b.ingredientId)));
+  const myIngredients = state.ingredients.filter(i => ingIds.has(i.id));
+  const packaging = myIngredients.filter(i => i.unit === 'ea');
+  const rawIngs = myIngredients.filter(i => i.unit !== 'ea');
+
+  openModal(`Customer Portal - ${escapeHtml(cust.name)}`, `
+    <div class="customer-portal">
+      <div class="portal-status ${backendConnected ? 'ok' : ''}">
+        <strong>${backendConnected ? 'Backend connected' : 'Local preview'}</strong>
+        <div class="help-text">${backendConnected ? 'Customer profile, products, POs, and files are loading from protected backend records for this account.' : (portalError ? escapeHtml(portalError) : 'Sign in as a linked customer to submit durable POs and PO files. Local customer/product demo data remains visible while backend data is unavailable.')}</div>
+      </div>
+      <div class="portal-form-grid">
+        ${customerPortalPoFormHtml(customerId, backendConnected)}
+        <div class="portal-side-stack">
+          ${customerPortalUploadPanelHtml(backendConnected)}
+          ${customerPortalAccountPanelHtml(cust, openPos, donePos, myProducts, packaging.length + rawIngs.length)}
+        </div>
+      </div>
+      <section class="portal-panel portal-orders-panel">
+        <div class="portal-panel-header"><h3>Open Purchase Orders (${openPos.length})</h3></div>
+        <div class="portal-panel-body">${customerPortalPoTableHtml(openPos, false)}</div>
+      </section>
+      <section class="portal-panel portal-orders-panel">
+        <div class="portal-panel-header"><h3>Completed Purchase Orders (${donePos.length})</h3></div>
+        <div class="portal-panel-body">${customerPortalPoTableHtml(donePos, true)}</div>
+      </section>
+      <section class="portal-panel">
+        <div class="portal-panel-header"><h3>Finished Goods</h3></div>
+        <div class="portal-panel-body">${myProducts.length === 0 ? '<div class="empty" style="padding:14px">No products linked yet.</div>' : `<div class="table-wrap"><table><thead><tr><th>SKU</th><th>Name</th><th>Size</th><th>Production Room</th></tr></thead><tbody>${myProducts.map(p => `<tr><td><strong>${escapeHtml(p.sku)}</strong></td><td>${escapeHtml(p.name)}</td><td>${p.size ? escapeHtml(p.size+(p.sizeUnit||'oz')) : '-'}</td><td>${escapeHtml(p.room||'-')}</td></tr>`).join('')}</tbody></table></div>`}</div>
+      </section>
+      <div class="portal-summary-grid">
+        <section class="portal-panel">
+          <div class="portal-panel-header"><h3>Packaging Inventory</h3></div>
+          <div class="portal-panel-body">${customerPortalInventoryTableHtml(packaging, 'No packaging items linked to your products.')}</div>
+        </section>
+        <section class="portal-panel">
+          <div class="portal-panel-header"><h3>Raw Ingredient Inventory</h3></div>
+          <div class="portal-panel-body">${customerPortalInventoryTableHtml(rawIngs, 'No raw ingredients linked to your products.')}</div>
+        </section>
+      </div>
+      <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close Portal</button></div>
+    </div>
+  `);
+  document.querySelector('.modal')?.classList.add('portal-modal');
+  bindCustomerPortalDirtyTracking();
+}
+
+function customerPortalPoFormHtml(customerId, backendConnected) {
+  if (!backendConnected) {
+    return `<div class="inv-check" style="margin-bottom:14px"><strong>Customer PO submission requires backend login.</strong><div class="help-text">Sign in as a linked Customer user from Account Management to submit durable POs and PO files.</div></div>`;
+  }
+  return `<section class="portal-panel">
+    <div class="portal-panel-header"><h3>Submit Customer PO</h3></div>
+    <div class="portal-panel-body">
+    <form id="customerPortalPoForm" novalidate onsubmit="event.preventDefault(); submitCustomerPortalPO('${escapeAttr(customerId)}')">
+      <div class="portal-form-main">
+          <div class="form-grid">
+            <div class="form-row"><label for="customer_po_number">Customer PO #</label><input id="customer_po_number" placeholder="PO-12345" /><div class="field-error" id="customer_po_number_error"></div></div>
+            <div class="form-row"><label for="customer_po_requested">Requested ship date</label><input id="customer_po_requested" type="date" /></div>
+          </div>
+          <div>
+            <label style="font-weight:600;color:var(--brown);font-size:13px">Line items</label>
+            <div class="portal-line-table">
+              <div class="po-line portal-line-head"><div>Description</div><div>Qty</div><div>Unit</div><div></div></div>
+              <div id="customerPortalPoLines">${customerPortalPoLineHtml(0)}</div>
+            </div>
+            <div class="field-error" id="customer_po_lines_error"></div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addCustomerPortalPoLine()" style="margin-top:8px">+ Add Line</button>
+          </div>
+          <div class="form-row"><label for="customer_po_notes">Notes</label><textarea id="customer_po_notes" maxlength="500" placeholder="Delivery notes, labels, or timing requests."></textarea><div class="help-text">Notes are optional and visible to Nut House operations.</div></div>
+          <div class="portal-submit-state" id="customer_po_submit_state"></div>
+          <div class="form-actions"><button type="submit" class="btn" id="customer_po_submit_btn">Submit PO</button></div>
+      </div>
+    </form>
+    </div>
+  </section>`;
+}
+
+function customerPortalUploadPanelHtml(backendConnected) {
+  if (!backendConnected) return '';
+  return `<section class="portal-panel">
+    <div class="portal-panel-header"><h3>PO File Upload</h3></div>
+    <div class="portal-panel-body">
+      <div class="form-row">
+        <div class="file-upload">
+          <label class="portal-file-drop" for="customer_po_file">
+            <strong>Drag and drop your PO file here</strong>
+            <span>or <span class="portal-file-browse">browse</span> to select a file</span>
+          </label>
+          <input type="file" id="customer_po_file" accept=".pdf,application/pdf,image/*,.txt,text/plain" onchange="customerPortalFileSelected(event)" />
+        </div>
+        <div class="portal-file-card" id="customer_po_file_card">
+          <span class="portal-file-type">PDF</span>
+          <div>
+            <div class="portal-file-name" id="customer_po_file_info">No file attached</div>
+            <div class="portal-file-meta">PDF preferred, 5 MB max</div>
+          </div>
+          <button type="button" class="btn btn-icon btn-sm" aria-label="Remove selected file" onclick="clearCustomerPortalFile()">&times;</button>
+        </div>
+        <div class="upload-progress" id="customer_po_upload_progress"><span></span></div>
+      </div>
+    </div>
+  </section>`;
+}
+
+function customerPortalAccountPanelHtml(cust, openPos, donePos, myProducts, inventoryCount) {
+  return `<section class="portal-panel">
+    <div class="portal-panel-header"><h3>Account Summary</h3></div>
+    <div class="portal-panel-body">
+      <table class="portal-kv"><tbody>
+        <tr><td>Company</td><td>${escapeHtml(cust.name)}</td></tr>
+        <tr><td>Contact</td><td>${escapeHtml(cust.contact||'-')}</td></tr>
+        <tr><td>Email</td><td>${escapeHtml(cust.email||'-')}</td></tr>
+        <tr><td>Phone</td><td>${escapeHtml(cust.phone||'-')}</td></tr>
+        <tr><td>Open POs</td><td>${openPos.length}</td></tr>
+        <tr><td>Completed</td><td>${donePos.length}</td></tr>
+        <tr><td>Products</td><td>${myProducts.length}</td></tr>
+        <tr><td>Inventory</td><td>${inventoryCount} linked items</td></tr>
+      </tbody></table>
+    </div>
+  </section>`;
+}
+
+function customerPortalPoLineHtml(idx) {
+  return `<div class="po-line" data-customer-portal-line="${idx}"><input aria-label="Line description" placeholder="Line description" /><input aria-label="Quantity" type="number" min="1" value="1" /><input aria-label="Unit of measure" value="Each" /><button type="button" aria-label="Remove line" onclick="removeCustomerPortalPoLine(this)">&times;</button></div>`;
+}
+
+function addCustomerPortalPoLine() {
+  const cont = document.getElementById('customerPortalPoLines');
+  const div = document.createElement('div');
+  div.innerHTML = customerPortalPoLineHtml(cont.children.length);
+  cont.appendChild(div.firstElementChild);
+  customerPortalDirty = true;
+}
+
+function removeCustomerPortalPoLine(button) {
+  const rows = document.querySelectorAll('#customerPortalPoLines .po-line');
+  if (rows.length <= 1) { toast('At least one line item required.'); return; }
+  button.closest('.po-line')?.remove();
+  customerPortalDirty = true;
+}
+
+function bindCustomerPortalDirtyTracking() {
+  const form = document.getElementById('customerPortalPoForm');
+  if (!form) return;
+  form.querySelectorAll('input, textarea').forEach(el => {
+    el.addEventListener('input', () => {
+      customerPortalDirty = true;
+      clearCustomerPortalValidation(el);
+    });
+    el.addEventListener('change', () => {
+      customerPortalDirty = true;
+      clearCustomerPortalValidation(el);
+    });
+  });
+}
+
+function clearCustomerPortalValidation(el) {
+  if (el) el.classList.remove('invalid');
+  const numberError = document.getElementById('customer_po_number_error');
+  const linesError = document.getElementById('customer_po_lines_error');
+  if (el?.id === 'customer_po_number' && numberError) numberError.textContent = '';
+  if (el?.closest?.('#customerPortalPoLines') && linesError) linesError.textContent = '';
+}
+
+function setCustomerPortalError(el, errorId, message) {
+  if (el) el.classList.add('invalid');
+  const target = document.getElementById(errorId);
+  if (target) target.textContent = message;
+}
+
+function setCustomerPortalSubmitting(isSubmitting, message = '') {
+  customerPortalSubmitting = isSubmitting;
+  const button = document.getElementById('customer_po_submit_btn');
+  const progress = document.getElementById('customer_po_upload_progress');
+  const state = document.getElementById('customer_po_submit_state');
+  if (button) {
+    button.disabled = isSubmitting;
+    button.textContent = isSubmitting ? 'Submitting...' : 'Submit PO';
+  }
+  if (progress) progress.classList.toggle('active', isSubmitting);
+  if (state) state.textContent = message;
+}
+
+function customerPortalFileSelected(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
+  pendingCustomerPortalFile = f;
+  customerPortalDirty = true;
+  const info = document.getElementById('customer_po_file_info');
+  if (info) {
+    info.innerHTML = escapeHtml(f.name);
+    info.title = f.name;
+    info.classList.add('has');
+  }
+  const meta = document.querySelector('#customer_po_file_card .portal-file-meta');
+  if (meta) meta.textContent = `${(f.type || 'File').split('/').pop().toUpperCase()} - ${Math.max(1, Math.round(f.size/1024))} KB - Ready`;
+  const type = document.querySelector('#customer_po_file_card .portal-file-type');
+  if (type) type.textContent = (f.name.split('.').pop() || 'FILE').slice(0, 4).toUpperCase();
+}
+
+function clearCustomerPortalFile() {
+  pendingCustomerPortalFile = null;
+  customerPortalDirty = true;
+  const input = document.getElementById('customer_po_file');
+  if (input) input.value = '';
+  const info = document.getElementById('customer_po_file_info');
+  if (info) {
+    info.textContent = 'No file attached';
+    info.removeAttribute('title');
+    info.classList.remove('has');
+  }
+  const meta = document.querySelector('#customer_po_file_card .portal-file-meta');
+  if (meta) meta.textContent = 'PDF preferred, 5 MB max';
+  const type = document.querySelector('#customer_po_file_card .portal-file-type');
+  if (type) type.textContent = 'PDF';
+}
+
+async function submitCustomerPortalPO(customerId) {
+  const poNumberEl = document.getElementById('customer_po_number');
+  const poNumber = poNumberEl?.value.trim();
+  document.querySelectorAll('#customerPortalPoForm .invalid').forEach(el => el.classList.remove('invalid'));
+  const numberError = document.getElementById('customer_po_number_error');
+  const linesError = document.getElementById('customer_po_lines_error');
+  if (numberError) numberError.textContent = '';
+  if (linesError) linesError.textContent = '';
+  if (!poNumber) {
+    setCustomerPortalError(poNumberEl, 'customer_po_number_error', 'Enter the customer PO number.');
+    poNumberEl?.focus();
+    return;
+  }
+  const lines = [];
+  let firstInvalidLineInput = null;
+  document.querySelectorAll('#customerPortalPoLines .po-line').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const description = (inputs[0]?.value || '').trim();
+    const quantity = Number(inputs[1]?.value || 0);
+    const unitOfMeasure = (inputs[2]?.value || '').trim() || 'Each';
+    if (description && quantity > 0) lines.push({ description, quantity, qty: quantity, unitOfMeasure, price: 0, productId: '', masterItemId: null });
+    else if (!firstInvalidLineInput) firstInvalidLineInput = !description ? inputs[0] : inputs[1];
+  });
+  if (lines.length === 0) {
+    setCustomerPortalError(firstInvalidLineInput, 'customer_po_lines_error', 'Add at least one line with a description and quantity above zero.');
+    firstInvalidLineInput?.focus();
+    return;
+  }
+  const localPo = {
+    id: poNumber,
+    brand: '',
+    customerId,
+    poDate: new Date().toISOString().slice(0,10),
+    requestedDate: document.getElementById('customer_po_requested')?.value || '',
+    notes: document.getElementById('customer_po_notes')?.value || '',
+    lines,
+    status: 'in_supply_chain',
+    poFile: null,
+    _pendingUploadFile: pendingCustomerPortalFile,
+    scOverrides: {}
+  };
+  try {
+    setCustomerPortalSubmitting(true, pendingCustomerPortalFile ? 'Creating PO and uploading file...' : 'Creating PO...');
+    await createBackendPurchaseOrder(localPo);
+    pendingCustomerPortalFile = null;
+    customerPortalDirty = false;
+    toast(`${poNumber} submitted through backend.`);
+    await viewCustomerPortal(customerId);
+  } catch (error) {
+    markBackendUnavailable(error);
+    setCustomerPortalSubmitting(false, 'Submission failed. Review the message and try again.');
+    toast(error?.message || 'Customer PO submission failed.');
+    await viewCustomerPortal(customerId);
+  }
+}
+
+function customerPortalPoTableHtml(pos, completed) {
+  if (pos.length === 0) return `<div class="empty" style="padding:14px">${completed ? 'No completed POs.' : 'No open POs.'}</div>`;
+  const rows = pos.map(p => {
+    const total = fmtMoney(p.lines.reduce((s,l)=>s+(Number(l.qty || l.quantity || 0) * Number(l.price || 0)),0));
+    return { po: p, total };
+  });
+  return `
+    <div class="table-wrap portal-table-mobile-hide"><table><thead><tr><th>PO #</th><th>Date</th><th>Items</th><th>File</th><th>${completed ? 'BOL #' : 'Status'}</th></tr></thead><tbody>${rows.map(({ po:p }) => `<tr><td><strong>${escapeHtml(p.id)}</strong></td><td>${fmtDate(p.poDate)}</td><td>${p.lines.length} ${p.lines.length === 1 ? 'item' : 'items'}</td><td>${poFileLinkHtml(p)}</td><td>${completed ? escapeHtml(p.shipping?.bol||'-') : statusBadge(p.status)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="portal-card-list">${rows.map(({ po:p, total }) => `<div class="portal-card-row"><strong>${escapeHtml(p.id)}</strong><div class="portal-card-meta"><span>Date: ${fmtDate(p.poDate)}</span><span>Items: ${p.lines.length}</span><span>Total: ${total}</span><span>${completed ? 'BOL: ' + escapeHtml(p.shipping?.bol||'-') : 'Status: ' + statusBadge(p.status)}</span><span>${poFileLinkHtml(p)}</span></div></div>`).join('')}</div>
+  `;
+}
+
+function customerPortalInventoryTableHtml(items, emptyText) {
+  if (items.length === 0) return `<div class="empty" style="padding:14px">${emptyText}</div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>On Hand</th><th>Status</th></tr></thead><tbody>${items.map(i => `<tr><td>${escapeHtml(i.name)}</td><td>${i.stock} ${escapeHtml(i.unit)}</td><td>${i.stock <= i.reorderLevel ? '<span class="badge badge-low">Low</span>' : '<span class="badge badge-prod">OK</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 async function deleteUser(id) {
   if (!confirm('Remove this user?')) return;
@@ -6876,8 +7938,12 @@ function masterCustomerName(m) {
   return escapeHtml(getCustomer(m.customerId)?.name || '—');
 }
 function renderMasterList(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendMasterItemState.loaded && !backendMasterItemState.loading) {
+    loadBackendMasterItems().then(() => { if (currentPage === 'inventory' && invTab === 'Master List') router('inventory'); });
+  }
   const items = (state.masterItems || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
   el.innerHTML = `
+    ${renderBackendDataStatusBanner('master-items', backendMasterItemState)}
     <div class="card">
       ${inventoryTabsHtml()}
       <div class="card-header" style="margin-top:14px">
