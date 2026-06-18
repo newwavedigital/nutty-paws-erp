@@ -8,6 +8,7 @@ const migrationPaths = [
   "migrations/0001_phase_2a_baseline.sql",
   "migrations/0002_phase_2b_file_foundation.sql",
   "migrations/0003_phase_2b_sprint_4_supply_chain.sql",
+  "migrations/0004_phase_2b_sprint_5_inventory_foundations.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -74,6 +75,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "inventory_movements",
         "inventory_reservations",
         "master_items",
+        "move_entries",
         "product_bom_items",
         "products",
         "purchase_order_lines",
@@ -82,6 +84,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "rd_request_comments",
         "rd_request_notes",
         "rd_requests",
+        "receiving_entries",
         "roles",
         "sessions",
         "user_roles",
@@ -145,6 +148,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "product_id", notnull: 1 }),
           expect.objectContaining({ name: "master_item_id", notnull: 1 }),
           expect.objectContaining({ name: "quantity_per_unit", notnull: 1 }),
+          expect.objectContaining({ name: "percent_of_formula" }),
         ]),
       );
 
@@ -157,6 +161,57 @@ describe("Phase 2A D1 baseline schema migration", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "idx_product_bom_items_product_id" }),
           expect.objectContaining({ name: "idx_product_bom_items_master_item_id" }),
+        ]),
+      );
+
+      const productColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('products');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(productColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "production_room" }),
+          expect.objectContaining({ name: "case_quantity" }),
+          expect.objectContaining({ name: "unit_price_cents" }),
+          expect.objectContaining({ name: "daily_production_rate" }),
+        ]),
+      );
+
+      const masterItemColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('master_items');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(masterItemColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "customer_id", notnull: 1 }),
+          expect.objectContaining({ name: "allergens_json", notnull: 1 }),
+        ]),
+      );
+
+      const receivingColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('receiving_entries');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(receivingColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "receiving_id", notnull: 1 }),
+          expect.objectContaining({ name: "total_quantity", notnull: 1 }),
+        ]),
+      );
+
+      const moveColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('move_entries');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(moveColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "move_id", notnull: 1 }),
+          expect.objectContaining({ name: "receiving_id", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_moved", notnull: 1 }),
         ]),
       );
     } finally {

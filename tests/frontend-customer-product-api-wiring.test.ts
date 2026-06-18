@@ -6,7 +6,7 @@ const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
 
 describe("frontend customer/product API wiring", () => {
-  test("defines Sprint 3 backend data state and loaders", () => {
+  test("defines backend customer/product data state and loaders", () => {
     expect(rootHtml).toContain("const backendCustomerState");
     expect(rootHtml).toContain("const backendProductState");
     expect(rootHtml).toContain("const backendMasterItemState");
@@ -26,21 +26,21 @@ describe("frontend customer/product API wiring", () => {
     expect(rootHtml).toContain("_backendSource");
   });
 
-  test("uses Sprint 3 customer, product, and master-item API endpoints", () => {
+  test("uses customer, product, and master-item API endpoints", () => {
     expect(rootHtml).toContain("/api/customers");
     expect(rootHtml).toContain("/api/customers/me");
     expect(rootHtml).toContain("/api/products");
     expect(rootHtml).toContain("/api/master-items");
   });
 
-  test("keeps backend/local fallback messaging for Sprint 3 data views", () => {
+  test("keeps backend/local fallback messaging for customer/product data views", () => {
     expect(rootHtml).toContain("Customer data is reading from protected backend records when available.");
     expect(rootHtml).toContain("Product data is reading from protected backend records when available.");
     expect(rootHtml).toContain("Master List data is reading from protected backend records when available.");
     expect(rootHtml).toContain("Local customer/product demo data remains visible while backend data is unavailable.");
   });
 
-  test("keeps public entrypoint mirrored for Sprint 3 markers", () => {
+  test("keeps public entrypoint mirrored for customer/product data markers", () => {
     for (const marker of [
       "async function loadBackendCustomers",
       "async function loadBackendCustomerProfile",

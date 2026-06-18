@@ -166,7 +166,11 @@ export class D1FileStore implements FileStore {
       return this.lookupCustomer("SELECT customer_id FROM rd_requests WHERE id = ?", ownerId);
     }
 
-    return this.lookupCustomer("SELECT customer_id FROM products WHERE id = ?", ownerId);
+    if (ownerType === "product") {
+      return this.lookupCustomer("SELECT customer_id FROM products WHERE id = ?", ownerId);
+    }
+
+    return this.lookupCustomer("SELECT customer_id FROM inventory_items WHERE id = ?", ownerId);
   }
 
   private async lookupCustomer(query: string, id: string) {

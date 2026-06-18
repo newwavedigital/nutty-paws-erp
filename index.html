@@ -74,6 +74,15 @@
   }
   .sidebar-subtitle { font-size: 11px; opacity: 0.7; }
   .sidebar nav { flex: 1; padding: 6px 0; overflow-y: auto; }
+  .nav-section-label {
+    padding: 12px 20px 5px;
+    color: rgba(255,255,255,0.58);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+  }
+  .nav-section-label:first-child { padding-top: 8px; }
   .sidebar nav a {
     display: flex;
     align-items: center;
@@ -183,6 +192,8 @@
   .btn-secondary:hover { background: var(--grey-light); }
   .btn-dark { background: var(--brown); }
   .btn-dark:hover { background: var(--brown-dark); }
+  .btn-workflow { background: var(--success); }
+  .btn-workflow:hover { background: #3d6838; }
   .btn-danger { background: var(--danger); }
   .btn-danger:hover { background: #8c2929; }
   .btn-sm { padding: 5px 10px; font-size: 12px; min-height: 32px; }
@@ -238,11 +249,43 @@
   }
   tbody tr:hover { background: var(--beige-light); }
   .table-wrap { overflow-x: auto; }
+  .customer-table {
+    table-layout: fixed;
+    min-width: 1260px;
+  }
+  .customer-table col.customer-company-col { width: 17%; }
+  .customer-table col.customer-contact-col { width: 11%; }
+  .customer-table col.customer-file-col { width: 13%; }
+  .customer-table col.customer-actions-col { width: 150px; }
+  .customer-table .customer-actions-header {
+    text-align: right;
+  }
+  .customer-table .customer-actions-cell {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .customer-table .customer-actions-cell .row-actions {
+    justify-content: flex-end;
+  }
   .empty {
     text-align: center;
     padding: 30px;
     color: var(--brown-light);
     font-style: italic;
+  }
+  .ops-empty {
+    border: 1px dashed var(--grey);
+    border-radius: 8px;
+    background: #fffdf8;
+    padding: 24px;
+    text-align: center;
+    color: var(--brown-light);
+  }
+  .ops-empty strong {
+    display: block;
+    color: var(--brown);
+    font-style: normal;
+    margin-bottom: 4px;
   }
 
   /* ---------- Forms ---------- */
@@ -372,6 +415,46 @@
     font-weight: 300;
   }
   .modal.portal-modal .modal-body { padding: 12px 22px 18px; }
+  .modal.confirm-modal {
+    max-width: 520px;
+    border-radius: 10px;
+    background: var(--white);
+  }
+  .modal.confirm-modal .modal-header {
+    background: var(--white);
+    color: var(--black);
+    border-bottom: 1px solid var(--grey-light);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+  }
+  .modal.confirm-modal .modal-header h2 { color: var(--brown); }
+  .modal.confirm-modal .modal-close { color: var(--brown); }
+  .erp-confirm-modal {
+    display: grid;
+    gap: 12px;
+  }
+  .erp-confirm-modal .confirm-record {
+    border-left: 4px solid var(--orange);
+    background: #fff9ef;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--brown);
+    font-weight: 700;
+  }
+  .erp-confirm-modal .confirm-message {
+    color: var(--black);
+    line-height: 1.45;
+  }
+  .erp-confirm-modal .confirm-risk {
+    color: var(--brown-light);
+    font-size: 12px;
+  }
+  .erp-confirm-modal .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 8px;
+  }
 
   /* ---------- Dashboard ---------- */
   .stat-grid {
@@ -492,7 +575,28 @@
   .cal-event:hover { filter: brightness(1.1); }
 
   /* ---------- Misc ---------- */
-  .row-actions { display: flex; gap: 6px; }
+  .row-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  td.row-actions {
+    display: table-cell;
+    min-width: 140px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  td.row-actions .btn + .btn {
+    margin-left: 6px;
+  }
+  th:last-child {
+    text-align: right;
+  }
+  th:last-child:empty::after {
+    content: "Actions";
+  }
   .pill {
     background: var(--beige);
     color: var(--brown);
@@ -1235,6 +1339,239 @@
   .sev-med { background: #fff3cd; color: #8a6500; }
   .sev-high { background: #fcd7d3; color: #802020; }
 
+  /* ---------- Stitch operations redesign layer ---------- */
+  .content {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(250,243,227,0.88) 240px),
+      var(--beige-light);
+    min-height: calc(100vh - 61px);
+  }
+  .ops-page { display: flex; flex-direction: column; gap: 16px; }
+  .ops-panel {
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(62,38,19,0.06);
+    overflow: hidden;
+  }
+  .ops-panel-body { padding: 16px; }
+  .ops-panel .card-header,
+  .ops-header {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--grey-light);
+    background: var(--white);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .ops-title { margin: 0; color: var(--brown); font-size: 18px; line-height: 1.25; }
+  .ops-kicker {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--brown-light);
+    max-width: 760px;
+  }
+  .ops-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .ops-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(130px, 1fr));
+    gap: 10px;
+  }
+  .ops-metric {
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(62,38,19,0.04);
+  }
+  .ops-metric .label {
+    display: block;
+    color: var(--brown-light);
+    font-size: 11px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .ops-metric .value {
+    display: block;
+    color: var(--brown);
+    font-size: 20px;
+    font-weight: 800;
+    margin-top: 3px;
+  }
+  .ops-metric.warn .value { color: var(--orange); }
+  .ops-metric.danger .value { color: var(--danger); }
+  .ops-metric.ok .value { color: var(--success); }
+  .ops-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #fbfaf8;
+    border-bottom: 1px solid var(--grey-light);
+    flex-wrap: wrap;
+  }
+  .ops-toolbar-left,
+  .ops-toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ops-input,
+  .ops-select {
+    min-height: 34px;
+    border: 1px solid var(--grey);
+    border-radius: 6px;
+    background: var(--white);
+    color: var(--black);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 10px;
+  }
+  .ops-input { min-width: 220px; }
+  .ops-note {
+    background: #fbfaf8;
+    border: 1px solid var(--grey-light);
+    border-left: 4px solid var(--orange);
+    border-radius: 8px;
+    color: var(--brown);
+    font-size: 12px;
+    line-height: 1.45;
+    margin: 12px 16px 14px;
+    padding: 10px 12px;
+  }
+  .ops-panel .tabs {
+    padding: 12px 16px 0;
+    background: var(--white);
+    border-bottom: 1px solid var(--grey-light);
+    gap: 4px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  .ops-panel .tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--brown-light);
+    padding: 9px 12px;
+  }
+  .ops-panel .tab.active {
+    background: #fbfaf8;
+    color: var(--brown);
+    border-bottom-color: var(--orange);
+    font-weight: 700;
+  }
+  .tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--beige);
+    color: var(--brown);
+    font-size: 11px;
+  }
+  .ops-panel table thead th {
+    background: var(--beige);
+    color: var(--brown);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .ops-panel table tbody td { font-size: 13px; }
+  .ops-id {
+    color: var(--brown);
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+  .ops-subtext { display:block; color: var(--brown-light); font-size: 11px; margin-top: 2px; }
+  .ops-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .ops-status.ok { background: #d8e6d2; color: #2c5524; }
+  .ops-status.warn { background: #fff3cd; color: #8a6500; }
+  .ops-status.danger { background: #fcd7d3; color: #802020; }
+  .ops-status.info { background: #d3dffb; color: #1e3a8a; }
+  .modal.stitch-modal { max-width: 980px; border-radius: 8px; background: #fbfaf8; }
+  .modal.stitch-modal .modal-header {
+    background: var(--white);
+    color: var(--black);
+    border-bottom: 1px solid var(--grey-light);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+  }
+  .modal.stitch-modal .modal-header h2 { color: var(--brown); }
+  .modal.stitch-modal .modal-close { color: var(--brown); border-radius: 999px; }
+  .modal.stitch-modal .modal-close:hover { background: var(--beige); }
+  .modal.stitch-modal .modal-body { padding: 18px; }
+  .modal.stitch-modal form > .form-grid {
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .modal.stitch-modal .form-actions {
+    position: sticky;
+    bottom: -18px;
+    background: linear-gradient(180deg, rgba(251,250,248,0.85), #fbfaf8 42%);
+    padding: 14px 0 0;
+    border-top: 1px solid var(--grey-light);
+  }
+  .modal.stitch-modal input[readonly] {
+    background: #fbfaf8 !important;
+    border-color: var(--grey-light);
+    color: var(--brown);
+    font-weight: 700;
+  }
+  .modal.stitch-modal .file-upload,
+  .modal.stitch-modal [id$="_preview"] .file-drop,
+  .modal.stitch-modal .image-drop {
+    border-radius: 8px;
+  }
+  .stitch-modal-section {
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .stitch-modal-section h3 {
+    color: var(--brown);
+    font-size: 15px;
+    margin: 0 0 10px;
+  }
+  .stitch-modal-section .help-text { margin-top: 4px; }
+  .calc-output {
+    background: #fbfaf8 !important;
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    padding: 10px 12px !important;
+  }
+  @media (max-width: 900px) {
+    .ops-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ops-header { flex-direction: column; align-items: stretch; }
+    .ops-actions { justify-content: flex-start; }
+  }
+  @media (max-width: 720px) {
+    .ops-summary { display: flex; overflow-x: auto; padding-bottom: 2px; }
+    .ops-metric { min-width: 150px; }
+    .ops-input { min-width: 100%; }
+    .modal.stitch-modal { max-width: 100%; max-height: 94vh; }
+  }
+
   /* ---------- Print ---------- */
   @media print {
     .sidebar, .topbar, .no-print { display: none !important; }
@@ -1263,20 +1600,25 @@
     </div>
   </div>
   <nav id="nav">
+    <div class="nav-section-label">Orders</div>
     <a data-page="purchase-orders"><span class="icon">&#9776;</span> Purchase Orders</a>
     <a data-page="supply-chain"><span class="icon">&#9881;</span> Supply Chain</a>
+    <div class="nav-section-label">Production</div>
     <a data-page="production"><span class="icon">&#9632;</span> Production Schedule</a>
     <a data-page="quality-assurance"><span class="icon">&#9745;</span> Quality Assurance</a>
     <a data-page="shipping"><span class="icon">&#9654;</span> Shipping</a>
     <a data-page="pick-pack"><span class="icon">&#10063;</span> Pick &amp; Pack</a>
+    <div class="nav-section-label">Inventory</div>
     <a data-page="inventory"><span class="icon">&#9646;</span> Inventory</a>
     <a data-page="products"><span class="icon">&#9635;</span> Products</a>
     <a data-page="procurement"><span class="icon">&#9733;</span> Procurement</a>
     <a data-page="suppliers"><span class="icon">&#9650;</span> Suppliers</a>
+    <div class="nav-section-label">Records</div>
     <a data-page="customers"><span class="icon">&#9679;</span> Customers</a>
     <a data-page="food-safety"><span class="icon">&#9873;</span> Food Safety</a>
     <a data-page="rd"><span class="icon">&#9874;</span> Research &amp; Development</a>
     <a data-page="machinery"><span class="icon">&#9881;</span> Machinery</a>
+    <div class="nav-section-label">Admin / Support</div>
     <a data-page="content-library"><span class="icon">&#9698;</span> Content Library</a>
     <a data-page="slack"><span class="icon">&#9993;</span> Team Chat</a>
     <a data-page="feedback"><span class="icon">&#9755;</span> Feedback</a>
@@ -1545,6 +1887,9 @@ const backendUserState = { status: 'local', lastError: '', loadingUsers: false }
 const backendCustomerState = { status: 'local', lastError: '', loading: false, loaded: false };
 const backendProductState = { status: 'local', lastError: '', loading: false, loaded: false };
 const backendMasterItemState = { status: 'local', lastError: '', loading: false, loaded: false };
+const backendInventoryState = { status: 'local', lastError: '', loading: false, loaded: false, signals: null };
+let confirmModalResolver = null;
+let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
 const BACKEND_ACTOR_USER_ID = 'phase-2a-frontend';
 let pendingPoFile = null;
@@ -1775,12 +2120,13 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
     s.loaded = false;
   });
+  backendInventoryState.signals = null;
 }
 
 function authHeaders() {
@@ -1854,17 +2200,138 @@ function renderBackendStatusBanner(context = 'purchase-orders') {
   const connected = backendApiState.status === 'connected';
   const loading = backendApiState.loadingPurchaseOrders;
   const authWaiting = backendApiState.lastError === 'Authentication is required';
-  const label = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
-  const detail = connected
-    ? 'This page is reading from the Phase 2A API when available.'
-    : authWaiting
-      ? 'Sign in from Account Management to connect this page to protected backend data.'
-      : 'This preview is using local demo data while the backend connection is unavailable.';
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${context}" style="border-left-color:${color}">
-    <strong>${label}</strong>
-    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${detail}</div>
+  return renderDataStateBanner({
+    kind: context,
+    state: connected ? 'connected' : loading ? 'loading' : authWaiting ? 'auth' : 'local',
+    detail: connected
+      ? 'This screen is reading protected backend records when available.'
+      : authWaiting
+        ? 'Sign in from Account Management to connect this screen to protected backend data.'
+        : 'Showing local demo data. Changes may not be saved to the backend.'
+  });
+}
+
+function setStitchModal(enabled = true) {
+  const modal = document.querySelector('.modal');
+  if (modal) modal.className = enabled ? 'modal stitch-modal' : 'modal';
+}
+
+function opsMetric(label, value, tone = '') {
+  return `<div class="ops-metric ${tone}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(String(value))}</span></div>`;
+}
+
+function renderPageShellHeader(title, kicker = '', actions = '') {
+  return `<div class="ops-header">
+    <div>
+      ${kicker ? `<div class="ops-kicker">${escapeHtml(kicker)}</div>` : ''}
+      <h2 class="ops-title">${escapeHtml(title)}</h2>
+    </div>
+    ${actions ? `<div class="ops-actions">${actions}</div>` : ''}
   </div>`;
+}
+
+function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' } = {}) {
+  const config = {
+    connected: ['Backend connected', 'ok', 'var(--success)'],
+    loading: ['Checking backend...', '', 'var(--orange)'],
+    auth: ['Auth required', '', 'var(--orange)'],
+    error: ['Backend unavailable', 'bad', 'var(--danger)'],
+    local: ['Demo data active', '', 'var(--orange)']
+  }[state] || ['Demo data active', '', 'var(--orange)'];
+  return `<div class="inv-check ${config[1]}" data-backend-status="${escapeAttr(kind)}" style="border-left-color:${config[2]}">
+    <strong>${escapeHtml(config[0])}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail || 'Showing local demo data. Changes may not be saved to the backend.')}</div>
+  </div>`;
+}
+
+function renderOpsPanel({ title = '', kicker = '', actions = '', body = '', className = '' } = {}) {
+  return `<section class="ops-panel ${escapeAttr(className)}">
+    ${renderPageShellHeader(title, kicker, actions)}
+    <div class="ops-panel-body">${body}</div>
+  </section>`;
+}
+
+function renderOpsToolbar(options = {}) {
+  return opsToolbarHtml(options);
+}
+
+function renderEmptyState(title, detail = '', action = '') {
+  return `<div class="ops-empty">
+    <strong>${escapeHtml(title)}</strong>
+    ${detail ? `<div>${escapeHtml(detail)}</div>` : ''}
+    ${action ? `<div style="margin-top:12px">${action}</div>` : ''}
+  </div>`;
+}
+
+function renderStatusBadge(label, tone = 'info') {
+  const cls = tone === 'danger' ? 'badge-low' : tone === 'ok' ? 'badge-prod' : tone === 'warn' ? 'badge-pending' : 'badge-shipping';
+  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+}
+
+function renderActionButtons(actions = []) {
+  return `<div class="row-actions">${actions.map(action => {
+    const tone = action.tone === 'danger' ? 'btn-danger' : action.tone === 'workflow' ? 'btn-workflow' : action.tone === 'secondary' ? 'btn-secondary' : 'btn-icon';
+    const small = action.small === false ? '' : ' btn-sm';
+    const disabled = action.disabled ? ' disabled' : '';
+    const title = action.title ? ` title="${escapeAttr(action.title)}"` : '';
+    return `<button class="btn ${tone}${small}"${title}${disabled} onclick="${escapeAttr(action.onclick || '')}">${escapeHtml(action.label || '')}</button>`;
+  }).join('')}</div>`;
+}
+
+function setButtonLoading(buttonOrId, isLoading, loadingLabel = 'Saving...') {
+  const button = typeof buttonOrId === 'string' ? document.getElementById(buttonOrId) : buttonOrId;
+  if (!button) return;
+  if (isLoading) {
+    button.dataset.originalLabel = button.textContent;
+    button.textContent = loadingLabel;
+    button.disabled = true;
+  } else {
+    button.textContent = button.dataset.originalLabel || button.textContent;
+    button.disabled = false;
+    delete button.dataset.originalLabel;
+  }
+}
+
+function renderInlineFieldError(id, message = '') {
+  return `<div class="field-error" id="${escapeAttr(id)}">${escapeHtml(message)}</div>`;
+}
+
+function inventorySummaryHtml() {
+  const signals = backendInventoryState.signals;
+  const conflicts = inventoryConflicts();
+  const low = signals ? signals.lowStockCount : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
+  const over = signals ? signals.overAllocationCount : conflicts.length;
+  const netIssues = state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
+  const today = new Date().toISOString().slice(0,10);
+  const receiptsToday = (state.receivingLog || []).filter(r => r.date === today).length;
+  const movesToday = (state.moveLog || []).filter(m => m.date === today).length;
+  return `<div class="ops-summary">
+    ${opsMetric('Low Stock', low, low ? 'warn' : 'ok')}
+    ${opsMetric('Over-allocated', over, over ? 'danger' : 'ok')}
+    ${opsMetric('Net Available Issues', netIssues, netIssues ? 'warn' : 'ok')}
+    ${opsMetric('Receipts Today', receiptsToday, receiptsToday ? 'info' : '')}
+    ${opsMetric('Moves Today', movesToday, movesToday ? 'info' : '')}
+  </div>`;
+}
+
+function opsToolbarHtml({ search = true, filters = '', actions = '' } = {}) {
+  return `<div class="ops-toolbar">
+    <div class="ops-toolbar-left">
+      ${search ? '<input class="ops-input" type="search" placeholder="Search this view..." aria-label="Search this view" />' : ''}
+      ${filters}
+    </div>
+    <div class="ops-toolbar-right">${actions}</div>
+  </div>`;
+}
+
+function opsSelect(label, options) {
+  return `<select class="ops-select" aria-label="${escapeHtml(label)}">
+    ${options.map(o => `<option>${escapeHtml(o)}</option>`).join('')}
+  </select>`;
+}
+
+function opsStatus(label, tone) {
+  return `<span class="ops-status ${tone}">${escapeHtml(label)}</span>`;
 }
 
 function renderBackendDataStatusBanner(kind, dataState) {
@@ -1880,7 +2347,10 @@ function renderBackendDataStatusBanner(kind, dataState) {
       : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
     'master-items': connected
       ? 'Master List data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.')
+      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+    inventory: connected
+      ? 'Inventory, Receiving Log, Move Log, and stock signals are reading from protected backend records when available.'
+      : (dataState.lastError || 'Local inventory demo data remains visible while backend data is unavailable.')
   };
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${kind}" style="border-left-color:${color}">
@@ -1916,17 +2386,17 @@ function backendProductToLocalProduct(product, existing = {}) {
     sku: product.sku || existing.sku || product.id,
     name: product.name || existing.name || product.sku || product.id,
     customerId: product.customerId || existing.customerId || '',
-    room: existing.room || 'Main',
-    size: existing.size || 0,
-    sizeUnit: existing.sizeUnit || 'oz',
-    price: existing.price || 0,
-    notes: product.description || existing.notes || '',
-    caseQty: existing.caseQty || 0,
-    caseSticker: existing.caseSticker || '',
-    kosher: existing.kosher || false,
-    dailyProductionRate: existing.dailyProductionRate || 0,
-    allergen: existing.allergen || false,
-    allergenDetails: existing.allergenDetails || '',
+    room: product.productionRoom || existing.room || 'Main',
+    size: product.size ?? existing.size ?? 0,
+    sizeUnit: product.sizeUnit || existing.sizeUnit || 'oz',
+    price: typeof product.unitPriceCents === 'number' ? product.unitPriceCents / 100 : (existing.price || 0),
+    notes: product.notes || product.description || existing.notes || '',
+    caseQty: product.caseQuantity ?? existing.caseQty ?? 0,
+    caseSticker: product.caseSticker || existing.caseSticker || '',
+    kosher: !!(product.kosher ?? existing.kosher),
+    dailyProductionRate: product.dailyProductionRate ?? existing.dailyProductionRate ?? 0,
+    allergen: !!(product.allergen ?? existing.allergen),
+    allergenDetails: product.allergenDetails || existing.allergenDetails || '',
     finishedGoodId: existing.finishedGoodId || '',
     productImage: existing.productImage || null,
     nfpImage: existing.nfpImage || null,
@@ -1944,9 +2414,93 @@ function backendMasterItemToLocalMasterItem(item, existing = {}) {
     sku: item.sku || existing.sku || '',
     itemType: item.itemType || existing.itemType || 'other',
     uom: item.unitOfMeasure === 'lb' ? 'LBS' : item.unitOfMeasure === 'ea' ? 'Each' : (item.unitOfMeasure || existing.uom || 'LBS'),
-    allergens: existing.allergens || [],
-    customerId: existing.customerId || 'general'
+    allergens: Array.isArray(item.allergens) ? item.allergens : (existing.allergens || []),
+    customerId: item.customerId || existing.customerId || 'general'
   };
+}
+
+function backendInventoryItemToLocalIngredient(item, existing = {}) {
+  const lots = parseJsonFallback(item.lotsJson, existing.lots || []);
+  return {
+    ...existing,
+    id: item.id,
+    _backendId: item.id,
+    _backendSource: true,
+    masterItemId: item.masterItemId,
+    name: item.masterItemName || existing.name || item.masterItemId,
+    category: item.category || existing.category || 'Ingredient',
+    supplierId: item.supplierId || existing.supplierId || '',
+    customerId: item.customerId || existing.customerId || 'general',
+    stock: item.onHandQuantity ?? existing.stock ?? 0,
+    allocatedQuantity: item.allocatedQuantity ?? existing.allocatedQuantity ?? 0,
+    netAvailableQuantity: item.netAvailableQuantity ?? ((item.onHandQuantity || 0) - (item.allocatedQuantity || 0)),
+    reorderLevel: item.reorderPointQuantity ?? existing.reorderLevel ?? 0,
+    unit: item.unitOfMeasure || existing.unit || 'lb',
+    cost: typeof item.unitCostCents === 'number' ? item.unitCostCents / 100 : (existing.cost || 0),
+    leadTimeDays: item.leadTimeDays ?? existing.leadTimeDays ?? 0,
+    location: item.location || existing.location || '',
+    lotNumber: item.lotNumber || existing.lotNumber || '',
+    lots,
+    coa: existing.coa || null
+  };
+}
+
+function backendReceivingToLocal(entry, existing = {}) {
+  return {
+    ...existing,
+    id: entry.id,
+    _backendId: entry.id,
+    _backendSource: true,
+    receivingId: entry.receivingId,
+    date: entry.date,
+    time: entry.time,
+    masterItemId: entry.masterItemId,
+    inventoryItemId: entry.inventoryItemId || '',
+    itemName: entry.itemName,
+    packages: entry.packages,
+    qtyPerPackage: entry.quantityPerPackage,
+    totalQty: entry.totalQuantity,
+    uom: entry.unitOfMeasure,
+    lot: entry.lotNumber || '',
+    allergens: entry.allergens || [],
+    receivedBy: entry.receivedBy || '',
+    carrier: entry.carrier || '',
+    supplierId: entry.supplierId || ''
+  };
+}
+
+function backendMoveToLocal(entry, existing = {}) {
+  return {
+    ...existing,
+    id: entry.id,
+    _backendId: entry.id,
+    _backendSource: true,
+    moveId: entry.moveId,
+    date: entry.date,
+    time: entry.time,
+    receivingId: entry.receivingId,
+    masterItemId: entry.masterItemId,
+    inventoryItemId: entry.inventoryItemId || '',
+    itemName: entry.itemName,
+    lot: entry.lotNumber || '',
+    caseCount: entry.caseCount,
+    qtyPerCase: entry.quantityPerCase,
+    qtyMoved: entry.quantityMoved,
+    uom: entry.unitOfMeasure,
+    movedBy: entry.movedBy || '',
+    fromLocation: entry.fromLocation || '',
+    toLocation: entry.toLocation || ''
+  };
+}
+
+function parseJsonFallback(value, fallback) {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch (err) {
+    return fallback;
+  }
 }
 
 function mergeByBackendId(localRows, backendRows, mapper) {
@@ -1964,10 +2518,32 @@ function mergeBackendCustomers(customers) {
 
 function mergeBackendProducts(products) {
   state.products = mergeByBackendId(state.products || [], products || [], backendProductToLocalProduct);
+  state.boms = state.boms || {};
+  (products || []).forEach(product => {
+    if (Array.isArray(product.bomItems)) {
+      state.boms[product.id] = product.bomItems.map(item => ({
+        ingredientId: item.masterItemId,
+        qty: item.quantityPerUnit,
+        pct: item.percentOfFormula || 0
+      }));
+    }
+  });
 }
 
 function mergeBackendMasterItems(items) {
   state.masterItems = mergeByBackendId(state.masterItems || [], items || [], backendMasterItemToLocalMasterItem);
+}
+
+function mergeBackendInventoryItems(items) {
+  state.ingredients = mergeByBackendId(state.ingredients || [], items || [], backendInventoryItemToLocalIngredient);
+}
+
+function mergeBackendReceivingEntries(entries) {
+  state.receivingLog = mergeByBackendId(state.receivingLog || [], entries || [], backendReceivingToLocal);
+}
+
+function mergeBackendMoveEntries(entries) {
+  state.moveLog = mergeByBackendId(state.moveLog || [], entries || [], backendMoveToLocal);
 }
 
 async function loadBackendCustomers() {
@@ -2038,6 +2614,188 @@ async function loadBackendMasterItems() {
   } finally {
     backendMasterItemState.loading = false;
   }
+}
+
+async function loadBackendInventory() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.loading || backendInventoryState.loaded) return;
+  backendInventoryState.loading = true;
+  try {
+    const items = await apiRequest('/api/inventory');
+    mergeBackendInventoryItems(items);
+    await loadBackendReceivingEntries();
+    await loadBackendMoveEntries();
+    await loadBackendInventorySignals();
+    backendInventoryState.status = 'connected';
+    backendInventoryState.lastError = '';
+    backendInventoryState.loaded = true;
+  } catch (error) {
+    backendInventoryState.status = 'error';
+    backendInventoryState.lastError = 'Inventory backend data is unavailable, so local demo inventory remains visible.';
+  } finally {
+    backendInventoryState.loading = false;
+  }
+}
+
+async function loadBackendReceivingEntries() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return;
+  const entries = await apiRequest('/api/inventory/receiving');
+  mergeBackendReceivingEntries(entries);
+}
+
+async function loadBackendMoveEntries() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return;
+  const entries = await apiRequest('/api/inventory/moves');
+  mergeBackendMoveEntries(entries);
+}
+
+async function loadBackendInventorySignals() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return null;
+  backendInventoryState.signals = await apiRequest('/api/inventory/signals');
+  return backendInventoryState.signals;
+}
+
+function buildBackendProductPayload(data, cleanFormula) {
+  return {
+    customerId: data.customerId || null,
+    sku: data.sku,
+    name: data.name,
+    description: data.notes || null,
+    productionRoom: data.room || null,
+    size: data.size || null,
+    sizeUnit: data.sizeUnit || null,
+    caseQuantity: data.caseQty || null,
+    caseSticker: data.caseSticker || null,
+    unitPriceCents: Math.round((data.price || 0) * 100),
+    kosher: !!data.kosher,
+    allergen: !!data.allergen,
+    allergenDetails: data.allergenDetails || null,
+    dailyProductionRate: data.dailyProductionRate || null,
+    notes: data.notes || null,
+    status: data.status || 'active',
+    bomItems: (cleanFormula || []).map(row => ({
+      masterItemId: row.ingredientId,
+      quantityPerUnit: row.qty,
+      percentOfFormula: row.pct || 0
+    }))
+  };
+}
+
+async function saveBackendProduct(id, isNew, data, cleanFormula) {
+  const path = isNew ? '/api/products' : `/api/products/${encodeURIComponent(data._backendId || id)}`;
+  const product = await apiRequest(path, {
+    method: isNew ? 'POST' : 'PATCH',
+    body: JSON.stringify(buildBackendProductPayload(data, cleanFormula))
+  });
+  mergeBackendProducts([product]);
+  return product;
+}
+
+async function saveBackendMasterItem(id, isNew, data) {
+  const path = isNew ? '/api/master-items' : `/api/master-items/${encodeURIComponent(data._backendId || id)}`;
+  const item = await apiRequest(path, {
+    method: isNew ? 'POST' : 'PATCH',
+    body: JSON.stringify({
+      sku: data.sku || data.name,
+      name: data.name,
+      itemType: data.itemType || 'other',
+      unitOfMeasure: data.uom === 'LBS' ? 'lb' : data.uom === 'Each' ? 'ea' : data.uom,
+      customerId: data.customerId || 'general',
+      allergens: data.allergens || []
+    })
+  });
+  mergeBackendMasterItems([item]);
+  return item;
+}
+
+function masterItemForInventoryName(itemName) {
+  return (state.masterItems || []).find(m => m.name === itemName || m.id === itemName);
+}
+
+async function saveBackendInventoryItem(id, isNew, data) {
+  const master = masterItemForInventoryName(data.name);
+  const backendId = data._backendId || id;
+  const payload = {
+    masterItemId: data.masterItemId || master?.id,
+    category: data.category,
+    supplierId: data.supplierId || null,
+    customerId: data.customerId || 'general',
+    onHandQuantity: data.stock || 0,
+    allocatedQuantity: data.allocatedQuantity || 0,
+    reorderPointQuantity: data.reorderLevel || 0,
+    unitOfMeasure: data.unit || master?.unitOfMeasure || 'lb',
+    unitCostCents: Math.round((data.cost || 0) * 100),
+    leadTimeDays: data.leadTimeDays || 0,
+    location: data.location || null,
+    lotNumber: data.lotNumber || null,
+    lotsJson: JSON.stringify(data.lots || [])
+  };
+  const item = await apiRequest(isNew ? '/api/inventory' : `/api/inventory/${encodeURIComponent(backendId)}`, {
+    method: isNew ? 'POST' : 'PATCH',
+    body: JSON.stringify(payload)
+  });
+  mergeBackendInventoryItems([item]);
+  return item;
+}
+
+async function saveBackendReceivingEntry(data) {
+  const entry = await apiRequest('/api/inventory/receiving', {
+    method: 'POST',
+    body: JSON.stringify({
+      masterItemId: data.masterItemId,
+      inventoryItemId: data.inventoryItemId || null,
+      itemName: data.itemName,
+      date: data.date,
+      time: data.time,
+      packages: data.packages || 0,
+      quantityPerPackage: data.qtyPerPackage || 0,
+      unitOfMeasure: data.uom,
+      lotNumber: data.lot || null,
+      allergens: data.allergens || [],
+      receivedBy: data.receivedBy || null,
+      carrier: data.carrier || null,
+      supplierId: data.supplierId || null
+    })
+  });
+  mergeBackendReceivingEntries([entry]);
+  return entry;
+}
+
+async function saveBackendMoveEntry(data) {
+  const entry = await apiRequest('/api/inventory/moves', {
+    method: 'POST',
+    body: JSON.stringify({
+      receivingId: data.receivingId,
+      date: data.date,
+      time: data.time,
+      caseCount: data.caseCount || 0,
+      quantityPerCase: data.qtyPerCase || 0,
+      movedBy: data.movedBy || null,
+      fromLocation: data.fromLocation || null,
+      toLocation: data.toLocation || null
+    })
+  });
+  mergeBackendMoveEntries([entry]);
+  return entry;
+}
+
+async function uploadBackendProductMedia(productId, file, fileCategory) {
+  if (!file || !(file instanceof File)) return null;
+  const form = new FormData();
+  form.append('ownerType', 'product');
+  form.append('ownerId', productId);
+  form.append('fileCategory', fileCategory);
+  form.append('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+async function uploadBackendInventoryCoa(inventoryItemId, file) {
+  if (!file || !(file instanceof File)) return null;
+  const form = new FormData();
+  form.append('ownerType', 'inventory_item');
+  form.append('ownerId', inventoryItemId);
+  form.append('fileCategory', 'inventory_coa');
+  form.append('file', file);
+  return apiFormRequest('/api/files', form);
 }
 
 function backendPurchaseOrderId(po) {
@@ -2288,8 +3046,16 @@ async function approveBackendPurchaseOrder(po) {
   return approved;
 }
 
-function resetAllData() {
-  if (!confirm('Reset all data back to sample demo? This cannot be undone.')) return;
+async function resetAllData() {
+  const ok = await openConfirmModal({
+    title: 'Reset demo data',
+    record: 'Local demo workspace',
+    message: 'Reset all local records back to the sample demo set?',
+    risk: 'This only affects local demo data, but it cannot be undone from the browser.',
+    confirmLabel: 'Reset Demo',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state = JSON.parse(JSON.stringify(SAMPLE_DATA));
   saveState();
   router(currentPage);
@@ -2348,6 +3114,60 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function openConfirmModal({
+  title = 'Confirm action',
+  record = '',
+  message = '',
+  risk = '',
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  tone = 'danger'
+} = {}) {
+  if (confirmModalResolver) resolveConfirmModal(false);
+  const overlay = document.getElementById('modal');
+  const modal = document.querySelector('.modal');
+  confirmModalPreviousState = {
+    open: overlay.classList.contains('open'),
+    modalClass: modal?.className || 'modal',
+    title: document.getElementById('modalTitle').innerHTML,
+    body: document.getElementById('modalBody').innerHTML
+  };
+  if (modal) modal.className = 'modal confirm-modal';
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = `
+    <div class="erp-confirm-modal" data-confirm-action="${escapeAttr(title)}">
+      ${record ? `<div class="confirm-record">${escapeHtml(record)}</div>` : ''}
+      <div class="confirm-message">${escapeHtml(message)}</div>
+      ${risk ? `<div class="confirm-risk">${escapeHtml(risk)}</div>` : ''}
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" type="button" onclick="resolveConfirmModal(false)">${escapeHtml(cancelLabel)}</button>
+        <button class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-workflow'}" type="button" onclick="resolveConfirmModal(true)">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>`;
+  overlay.classList.add('open');
+  return new Promise(resolve => {
+    confirmModalResolver = resolve;
+  });
+}
+
+function resolveConfirmModal(result) {
+  const resolver = confirmModalResolver;
+  confirmModalResolver = null;
+  const overlay = document.getElementById('modal');
+  const modal = document.querySelector('.modal');
+  if (confirmModalPreviousState?.open) {
+    if (modal) modal.className = confirmModalPreviousState.modalClass;
+    document.getElementById('modalTitle').innerHTML = confirmModalPreviousState.title;
+    document.getElementById('modalBody').innerHTML = confirmModalPreviousState.body;
+    overlay.classList.add('open');
+  } else {
+    overlay.classList.remove('open');
+    if (modal) modal.className = 'modal stitch-modal';
+  }
+  confirmModalPreviousState = null;
+  if (resolver) resolver(Boolean(result));
 }
 
 /* =========================================================================
@@ -2696,12 +3516,16 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
    ========================================================================= */
 function openModal(title, html) {
   const modal = document.querySelector('.modal');
-  if (modal) modal.className = 'modal';
+  if (modal) modal.className = 'modal stitch-modal';
   document.getElementById('modalTitle').innerHTML = title;
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('open');
 }
 function closeModal() {
+  if (confirmModalResolver) {
+    resolveConfirmModal(false);
+    return;
+  }
   if (customerPortalDirty && !customerPortalSubmitting) {
     const discard = confirm('Discard this customer PO draft?');
     if (!discard) return;
@@ -2717,12 +3541,18 @@ document.getElementById('modal').addEventListener('click', (e) => {
    DASHBOARD
    ========================================================================= */
 function renderDashboard(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.signals && !backendInventoryState.loading) {
+    loadBackendInventorySignals().then(() => { if (currentPage === 'dashboard') router('dashboard'); }).catch(() => {});
+  }
   const pos = state.purchaseOrders;
   const open = pos.filter(p => p.status !== 'completed');
   const inSC = pos.filter(p => p.status === 'pending' || p.status === 'in_supply_chain').length;
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
   const inShipping = pos.filter(p => p.status === 'shipping').length;
-  const lowStock = state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const backendSignals = backendInventoryState.signals || null;
+  const lowStock = backendSignals ? backendSignals.lowStockCount : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
+  const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
 
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);
@@ -2738,6 +3568,13 @@ function renderDashboard(el) {
     .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
 
   const conflicts = inventoryConflicts();
+  const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : conflicts.length;
+  const blockerRows = [
+    { label: 'Supply Chain blockers', count: inSC, route: 'supply-chain', detail: 'POs awaiting ingredient/deposit readiness review.' },
+    { label: 'Inventory conflicts', count: backendOverAllocationCount, route: 'inventory', detail: 'Over-allocation or Net Available issues that can block work.' },
+    { label: 'QA waiting on COA', count: qaBlocked, route: 'quality-assurance', detail: 'Production-complete POs that need COA upload or QA release.' },
+    { label: 'Shipment docs missing', count: shipmentDocsMissing, route: 'shipping', detail: 'External shipments cannot complete until required documents are attached.' }
+  ].filter(row => row.count > 0);
   const conflictBanner = conflicts.length === 0 ? '' : `
     <div style="background:#fcd7d3;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
@@ -2760,13 +3597,30 @@ function renderDashboard(el) {
     </div>`;
   el.innerHTML = `
     ${conflictBanner}
-    <div class="stat-grid">
+    <div class="ops-summary" style="margin-bottom:16px">
       <div class="stat brown"><div class="label">Open POs</div><div class="value">${open.length}</div></div>
       <div class="stat"><div class="label">In Supply Chain Review</div><div class="value">${inSC}</div></div>
       <div class="stat ok"><div class="label">In Production</div><div class="value">${inProd}</div></div>
       <div class="stat"><div class="label">Ready to Ship</div><div class="value">${inShipping}</div></div>
-      <div class="stat ${conflicts.length ? 'warn' : (lowStock ? 'warn' : 'ok')}"><div class="label">Inventory Status</div><div class="value">${conflicts.length ? conflicts.length+' conflict'+(conflicts.length===1?'':'s') : (lowStock ? lowStock+' low' : 'OK')}</div></div>
+      <div class="stat ${backendOverAllocationCount ? 'warn' : (lowStock ? 'warn' : 'ok')}"><div class="label">Inventory Status</div><div class="value">${backendOverAllocationCount ? backendOverAllocationCount+' conflict'+(backendOverAllocationCount===1?'':'s') : (lowStock ? lowStock+' low' : 'OK')}</div></div>
     </div>
+
+    ${renderOpsPanel({
+      title: 'Operational Blockers',
+      kicker: 'Needs attention',
+      actions: "<button class=\"btn btn-secondary btn-sm\" onclick=\"router('inventory')\">View Inventory</button>",
+      body: blockerRows.length === 0
+        ? renderEmptyState('No active blockers', 'Supply Chain, QA, shipping documents, and inventory conflict signals are clear.')
+        : `<div class="table-wrap"><table>
+            <thead><tr><th>Area</th><th>Count</th><th>Why it matters</th><th></th></tr></thead>
+            <tbody>${blockerRows.map(row => `<tr>
+              <td><strong>${escapeHtml(row.label)}</strong></td>
+              <td>${renderStatusBadge(String(row.count), row.label.includes('Inventory') ? 'danger' : 'warn')}</td>
+              <td>${escapeHtml(row.detail)}</td>
+              <td class="row-actions"><button class="btn btn-icon btn-sm" onclick="router('${row.route}')">Review</button></td>
+            </tr>`).join('')}</tbody>
+          </table></div>`
+    })}
 
     <div class="card">
       <div class="card-header">
@@ -2835,6 +3689,7 @@ function renderDashboard(el) {
           `).join('')}
         </tbody>
       </table></div>
+      </div>
     </div>
   `;
 }
@@ -3175,8 +4030,16 @@ async function savePO(isNew, oldId) {
   router(currentPage);
 }
 
-function deletePO(id) {
-  if (!confirm(`Delete ${id}?`)) return;
+async function deletePO(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete purchase order',
+    record: id,
+    message: 'Delete this purchase order from the current workspace?',
+    risk: 'This removes the PO from the visible workflow. Approved, production, shipping, and completed POs should not be removed through ordinary entry.',
+    confirmLabel: 'Delete PO',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.purchaseOrders = state.purchaseOrders.filter(p => p.id !== id);
   saveState();
   router(currentPage);
@@ -3999,11 +4862,19 @@ function createProcFromNeed(supplierId) {
 }
 
 // One-click: create a draft procurement PO with all flagged items for this supplier and jump to Ordered tab.
-function quickMoveToOrdered(supplierId) {
+async function quickMoveToOrdered(supplierId) {
   const sup = getSupplier(supplierId);
   const items = needToOrderItemsForSupplier(supplierId);
   if (!items.length) { toast('Nothing to move.'); return; }
-  if (!confirm(`Move ${items.length} item${items.length===1?'':'s'} from ${sup?.name||'this vendor'} into a new Ordered PO? You can edit the QuickBooks PO# afterward.`)) return;
+  const ok = await openConfirmModal({
+    title: 'Draft supplier PO',
+    record: sup?.name || 'No vendor assigned',
+    message: `Move ${items.length} item${items.length===1?'':'s'} into a new Ordered PO?`,
+    risk: 'You can edit the QuickBooks PO# afterward.',
+    confirmLabel: 'Create Ordered PO',
+    tone: 'workflow'
+  });
+  if (!ok) return;
   const newOrder = {
     id: nextProcId(),
     qbPoNumber: '',
@@ -4251,17 +5122,33 @@ function saveProc(id, isNew) {
   router('procurement');
   toast('Procurement PO saved.');
 }
-function deleteProc(id) {
-  if (!confirm('Delete this procurement PO?')) return;
+async function deleteProc(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete procurement PO',
+    record: id,
+    message: 'Delete this procurement PO?',
+    risk: 'This removes the supplier PO from the current procurement view.',
+    confirmLabel: 'Delete PO',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.procurementOrders = state.procurementOrders.filter(p=>p.id!==id);
   saveState();
   router('procurement');
   toast('Procurement PO deleted.');
 }
-function receiveProc(id) {
+async function receiveProc(id) {
   const p = state.procurementOrders.find(x=>x.id===id);
   if (!p) return;
-  if (!confirm('Mark this PO as Arrived? This will add the items to inventory and move it to Completed.')) return;
+  const ok = await openConfirmModal({
+    title: 'Mark procurement arrived',
+    record: id,
+    message: 'Mark this PO as Arrived?',
+    risk: 'This adds the items to inventory and moves the procurement PO to Completed.',
+    confirmLabel: 'Mark Arrived',
+    tone: 'workflow'
+  });
+  if (!ok) return;
   p.items.forEach(it => {
     const ing = state.ingredients.find(i=>i.id===it.ingredientId);
     if (ing) ing.stock = (ing.stock || 0) + it.qty;
@@ -4490,8 +5377,16 @@ function viewProductionLog(id) {
     <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
   `);
 }
-function deleteProductionLog(id) {
-  if (!confirm('Delete this production log entry? (This does not affect the PO.)')) return;
+async function deleteProductionLog(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete production log',
+    record: id,
+    message: 'Delete this production log entry?',
+    risk: 'This does not affect the related PO.',
+    confirmLabel: 'Delete Log',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.productionLog = (state.productionLog || []).filter(x => x.id !== id);
   saveState();
   router('production');
@@ -4964,7 +5859,7 @@ function recomputeCompletion(poId) {
   }
 }
 
-function finalizeMarkComplete(id) {
+async function finalizeMarkComplete(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
   // collect units + cases + lot per line
@@ -5029,7 +5924,15 @@ function finalizeMarkComplete(id) {
   const downstream = downstreamShortageOnFinalize(po);
   if (downstream.length > 0) {
     const summary = downstream.map(d => `• ${d.ingredient.name}: short ${d.short.toFixed(2)} ${d.ingredient.unit||''} (${d.affected.map(p=>p.id).join(', ')})`).join('\n');
-    if (!confirm(`WARNING: Confirming this run will leave other scheduled POs short:\n\n${summary}\n\nProceed anyway?`)) return;
+    const ok = await openConfirmModal({
+      title: 'Confirm production completion',
+      record: id,
+      message: 'Completing this run will leave other scheduled POs short.',
+      risk: summary,
+      confirmLabel: 'Complete Anyway',
+      tone: 'workflow'
+    });
+    if (!ok) return;
   }
   const completionNotes = (document.getElementById('comp_notes')?.value || '').trim();
   if (completionNotes) po.completionNotes = completionNotes;
@@ -5485,10 +6388,18 @@ function saveWarehouseNotes(id) {
   saveState();
   toast('Notes saved.');
 }
-function confirmStocked(id) {
+async function confirmStocked(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
-  if (!confirm(`Mark ${id} (${po.brand}) as stocked to the warehouse and complete?`)) return;
+  const ok = await openConfirmModal({
+    title: 'Confirm warehouse stocking',
+    record: `${id} - ${po.brand}`,
+    message: 'Mark this internal-brand order as stocked to the warehouse and complete?',
+    risk: 'This changes the order status to completed and removes it from the active Shipping queue.',
+    confirmLabel: 'Confirm Stocked',
+    tone: 'workflow'
+  });
+  if (!ok) return;
   po.shipping = po.shipping || {};
   if (document.getElementById('sh_notes_'+id)) {
     po.shipping.notes = document.getElementById('sh_notes_'+id).value;
@@ -5506,7 +6417,7 @@ function saveShipping(id) {
   saveState();
   toast(`Shipping info saved for ${id}.`);
 }
-function completeShipment(id) {
+async function completeShipment(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   captureShippingForm(po);
   const s = po.shipping || {};
@@ -5515,7 +6426,15 @@ function completeShipment(id) {
     return;
   }
   if (!s.bol || !s.carrier) {
-    if (!confirm('BOL # or Carrier is missing. Mark complete anyway?')) return;
+    const ok = await openConfirmModal({
+      title: 'Ship with missing details',
+      record: id,
+      message: 'BOL # or Carrier is missing. Mark this shipment complete anyway?',
+      risk: 'The order will be completed, but shipping records may need cleanup later.',
+      confirmLabel: 'Mark Shipped',
+      tone: 'workflow'
+    });
+    if (!ok) return;
   }
   po.status = 'completed';
   po.shippedAt = new Date().toISOString();
@@ -5928,8 +6847,17 @@ function saveSupplier(id, isNew) {
   router('suppliers');
   toast('Supplier saved.');
 }
-function deleteSupplier(id) {
-  if (!confirm('Delete this supplier?')) return;
+async function deleteSupplier(id) {
+  const supplier = getSupplier(id);
+  const ok = await openConfirmModal({
+    title: 'Delete supplier',
+    record: supplier?.name || id,
+    message: 'Delete this supplier record?',
+    risk: 'Supplier references on existing demo records may show as blank.',
+    confirmLabel: 'Delete Supplier',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.suppliers = state.suppliers.filter(s => s.id !== id);
   saveState();
   router('suppliers');
@@ -5953,10 +6881,20 @@ function renderCustomers(el) {
           <button class="btn" onclick="editCustomer()">+ Add Customer</button>
         </div>
       </div>
-      <div class="table-wrap"><table>
+      <div class="table-wrap"><table class="customer-table">
+        <colgroup>
+          <col class="customer-company-col">
+          <col class="customer-contact-col">
+          <col class="customer-contact-col">
+          <col class="customer-contact-col">
+          <col class="customer-contact-col">
+          <col class="customer-file-col">
+          <col class="customer-file-col">
+          <col class="customer-actions-col">
+        </colgroup>
         <thead><tr>
           <th>Company Name</th><th>Sales Contact</th><th>Shipping Contact</th><th>Billing Contact</th><th>Food Safety Contact</th>
-          <th>Spec Sheet</th><th>Co-Packing Agreement</th><th></th>
+          <th>Spec Sheet</th><th>Co-Packing Agreement</th><th class="customer-actions-header">Actions</th>
         </tr></thead>
         <tbody>
           ${state.customers.length === 0 ? `<tr><td colspan="8" class="empty">No customers yet.</td></tr>` :
@@ -5990,9 +6928,11 @@ function renderCustomers(el) {
                   ? `<a href="${agreement.dataUrl}" download="${escapeHtml(agreement.name||agreement.fileName||'agreement')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((agreement.name||agreement.fileName||'agreement').slice(0,18))}</a>`
                   : '<span style="font-size:12px;color:var(--brown-light)">—</span>'
                 }</td>
-                <td class="row-actions">
-                  <button class="btn btn-icon btn-sm" onclick="editCustomer('${c.id}')">Edit</button>
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteCustomer('${c.id}')">Delete</button>
+                <td class="customer-actions-cell">
+                  <div class="row-actions">
+                    <button class="btn btn-icon btn-sm" onclick="editCustomer('${c.id}')">Edit</button>
+                    <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteCustomer('${c.id}')">Delete</button>
+                  </div>
                 </td>
               </tr>`;
             }).join('')
@@ -6150,16 +7090,26 @@ async function saveCustomer(id, isNew) {
   router('customers');
   toast('Customer saved.');
 }
-function deleteCustomer(id) {
+async function deleteCustomer(id) {
   const used = state.products.find(p => p.customerId === id);
   if (used) { toast('Remove or reassign products linked to this customer first.'); return; }
-  if (!confirm('Delete this customer?')) return;
+  const customer = getCustomer(id);
+  const ok = await openConfirmModal({
+    title: 'Delete customer',
+    record: customer?.name || id,
+    message: 'Delete this customer record?',
+    risk: 'Customer-linked setup records should be reassigned first.',
+    confirmLabel: 'Delete Customer',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.customers = state.customers.filter(c => c.id !== id);
   saveState();
   router('customers');
   toast('Customer deleted.');
 }
 let editingFormula = []; // [{ingredientId, qty, pct}]
+const pendingProductMediaFiles = { product: null, nfp: null };
 const FORMULA_GRID = 'grid-template-columns:2fr 1fr 1fr 0.7fr 1fr 40px';
 const CASE_STICKER_OPTIONS = ['', '2x3', 'Keyence'];
 function editProduct(id) {
@@ -6235,12 +7185,12 @@ function editProduct(id) {
           <div class="help-text">Specify which allergen(s) this product contains.</div>
         </div>
         <div class="form-row">
-          <label>Finished Good (auto for Bnutty / Poochie Butter)</label>
+          <label>Linked Finished Good Inventory Item</label>
           <select id="prod_fg">
-            <option value="">— Auto-create on first production —</option>
+            <option value="">— Link later or create on first production —</option>
             ${state.ingredients.filter(i=>i.category==='Finished Good').map(fg => `<option value="${fg.id}" ${p.finishedGoodId===fg.id?'selected':''}>${escapeHtml(fg.name)}</option>`).join('')}
           </select>
-          <div class="help-text">Only Bnutty &amp; Poochie Butter POs increment FG. Auto-creates a matching FG on first run; pick an existing row to link manually.</div>
+          <div class="help-text">Choose the inventory item that should increase when this product is completed in production. Leave blank to create or link it later.</div>
         </div>
       </div>
 
@@ -6308,6 +7258,7 @@ function productImageSelected(e, kind) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('Image too large (max 5 MB).'); e.target.value=''; return; }
+  pendingProductMediaFiles[kind] = f;
   const reader = new FileReader();
   reader.onload = () => {
     const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
@@ -6431,7 +7382,7 @@ function autoBalanceFormulaPct() {
   }
   renderFormulaRows();
 }
-function saveProduct(id, isNew) {
+async function saveProduct(id, isNew) {
   let productImage = null, nfpImage = null;
   const pid = document.getElementById('prod_image_data').value;
   const nid = document.getElementById('prod_nfp_data').value;
@@ -6467,6 +7418,25 @@ function saveProduct(id, isNew) {
     }
   }
   const existing = state.products.find(p=>p.id===id);
+  let backendProduct = null;
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
+    try {
+      backendProduct = await saveBackendProduct(id, isNew, { ...data, _backendId: existing?._backendId }, cleanFormula);
+      if (pendingProductMediaFiles.product) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image');
+      if (pendingProductMediaFiles.nfp) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts');
+      pendingProductMediaFiles.product = null;
+      pendingProductMediaFiles.nfp = null;
+      backendProductState.status = 'connected';
+      backendProductState.loaded = false;
+      data.id = backendProduct.id;
+      data._backendId = backendProduct.id;
+      id = backendProduct.id;
+    } catch (error) {
+      backendProductState.status = 'error';
+      backendProductState.lastError = 'Product backend save failed, so this edit stayed local/demo only.';
+      toast(error.message || 'Product backend save failed. Saved locally only.');
+    }
+  }
   if (isNew) state.products.push(data);
   else Object.assign(existing, data);
   // save formula (BOM) with pct
@@ -6483,10 +7453,19 @@ function saveProduct(id, isNew) {
   router(currentPage === 'customers' ? 'customers' : 'products');
   toast('Product saved.');
 }
-function deleteProduct(id) {
+async function deleteProduct(id) {
   const used = state.purchaseOrders.find(po => po.lines.some(l=>l.productId===id));
   if (used) { toast('Product is referenced on a PO and cannot be deleted.'); return; }
-  if (!confirm('Delete this product?')) return;
+  const product = getProduct(id);
+  const ok = await openConfirmModal({
+    title: 'Delete product',
+    record: product?.sku || product?.name || id,
+    message: 'Delete this product setup record?',
+    risk: 'This does not delete completed PO history, but the product will no longer appear for setup and order entry.',
+    confirmLabel: 'Delete Product',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.products = state.products.filter(p => p.id !== id);
   saveState();
   router(currentPage);
@@ -6504,13 +7483,15 @@ function renderProducts(el) {
     loadBackendProducts().then(() => { if (currentPage === 'products') router('products'); });
   }
   el.innerHTML = `
+    <div class="ops-page">
     ${renderBackendDataStatusBanner('products', backendProductState)}
-    <div class="card">
+    <div class="ops-panel">
       <div class="tabs">
         <button class="tab ${productsTab==='list'?'active':''}" onclick="setProductsTab('list')">Products <span class="tab-count">${state.products.length}</span></button>
         <button class="tab ${productsTab==='calc'?'active':''}" onclick="setProductsTab('calc')">Product Calculator</button>
       </div>
-      <div id="productsBody" style="margin-top:14px"></div>
+      <div id="productsBody"></div>
+    </div>
     </div>
   `;
   const body = document.getElementById('productsBody');
@@ -6648,15 +7629,20 @@ function downloadProductFormula(productId) {
 }
 
 function renderProductList(el) {
+  const filters = `${opsSelect('Customer filter', ['All customers', ...state.customers.map(c=>c.name).slice(0,8)])}${opsSelect('Production room filter', ['All rooms','Squeeze Pack','Bnutty','Main','Dog House'])}${opsSelect('Status filter', ['All statuses','Active','Archived'])}`;
+  const actions = `
+    <button class="btn btn-secondary btn-sm" onclick="exportCsv('products.csv', state.products.map(p=>({sku:p.sku,name:p.name,customer:getCustomer(p.customerId)?.name||'',room:p.room,size:p.size?p.size+(p.sizeUnit||'oz'):'',case_qty:p.caseQty||0,case_sticker:p.caseSticker||'',daily_production_rate:p.dailyProductionRate||0,kosher:p.kosher?'Yes':'No',allergen:p.allergen?'Yes':'No',allergen_details:p.allergenDetails||'',price:p.price,notes:p.notes||''})))">Export CSV</button>
+    <button class="btn btn-sm" onclick="editProduct()">+ Add Product</button>`;
   el.innerHTML = `
-    <div class="card-header">
-      <h2>Products</h2>
+    <div class="ops-header">
       <div>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('products.csv', state.products.map(p=>({sku:p.sku,name:p.name,customer:getCustomer(p.customerId)?.name||'',room:p.room,size:p.size?p.size+(p.sizeUnit||'oz'):'',case_qty:p.caseQty||0,case_sticker:p.caseSticker||'',daily_production_rate:p.dailyProductionRate||0,kosher:p.kosher?'Yes':'No',allergen:p.allergen?'Yes':'No',allergen_details:p.allergenDetails||'',price:p.price,notes:p.notes||''})))">Export CSV</button>
-        <button class="btn" onclick="editProduct()">+ Add Product</button>
+        <h2 class="ops-title">Products</h2>
+        <div class="ops-kicker">Product/SKU setup, media, formulas, customer links, and production details.</div>
       </div>
+      <div class="ops-actions">${actions}</div>
     </div>
-    <div class="help-text" style="margin-bottom:8px">All SKUs we manufacture. Each product is linked to a customer and a production room. Hover the Formula pill for a quick look at the recipe.</div>
+    ${opsToolbarHtml({ filters })}
+    <div class="ops-note">All SKUs we manufacture. Each product is linked to a customer, production room, media, and Formula/BOM.</div>
     <div class="table-wrap allow-overflow"><table>
       <thead><tr>
         <th>Image</th><th>SKU</th><th>Name</th><th>Customer</th><th>Production Room</th><th>Size</th><th>Case Qty</th><th>Case Sticker</th><th>Daily Rate</th><th>Kosher</th><th>Allergen</th><th>NFP</th><th>Formula</th><th>Price</th><th></th>
@@ -6720,58 +7706,60 @@ function renderProductCalculator(el) {
         <button class="btn btn-secondary btn-sm" onclick="resetCalc()">Reset</button>
       </div>
     </div>
-    <div class="help-text" style="margin-bottom:8px">Build a cost-up for any product. Pick an existing product to pre-load its formula, then tweak quantities, batch fees, labor, and margin.</div>
-    <div style="margin-bottom:10px;padding:8px 12px;background:#fff5e8;border-left:3px solid var(--orange);border-radius:4px;font-size:12px;color:var(--brown)">
-      <strong>Loss factor:</strong> All ingredient and packaging quantities are automatically buffered by <strong>5%</strong> to account for production loss/waste.
-    </div>
+    <div class="ops-panel-body">
+      <div class="help-text" style="margin-bottom:10px">Build a cost-up for any product. Pick an existing product to pre-load its formula, then tweak quantities, batch fees, labor, and margin.</div>
+      <div style="margin-bottom:12px;padding:10px 14px;background:#fff5e8;border-left:3px solid var(--orange);border-radius:4px;font-size:12px;color:var(--brown)">
+        <strong>Loss factor:</strong> All ingredient and packaging quantities are automatically buffered by <strong>5%</strong> to account for production loss/waste.
+      </div>
 
-    <div class="form-grid">
-      <div class="form-row"><label>Load From Product</label>
-        <select id="calc_product" onchange="calcLoadProduct()">
-          <option value="">— Build manually —</option>
-          ${state.products.map(p => `<option value="${p.id}" ${calcState.productId===p.id?'selected':''}>${escapeHtml(p.sku)} — ${escapeHtml(p.name)}</option>`).join('')}
-        </select>
+      <div class="form-grid">
+        <div class="form-row"><label>Load From Product</label>
+          <select id="calc_product" onchange="calcLoadProduct()">
+            <option value="">— Build manually —</option>
+            ${state.products.map(p => `<option value="${p.id}" ${calcState.productId===p.id?'selected':''}>${escapeHtml(p.sku)} — ${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row"><label>Number of Units (Jars / Pouches)</label>
+          <input type="number" id="calc_units" value="${calcState.units}" min="1" oninput="updateCalc()" />
+        </div>
+        <div class="form-row"><label>Size per Unit (oz)</label>
+          <input type="number" id="calc_size" value="${calcState.sizeOz}" min="0" step="0.01" oninput="updateCalc()" />
+        </div>
       </div>
-      <div class="form-row"><label>Number of Units (Jars / Pouches)</label>
-        <input type="number" id="calc_units" value="${calcState.units}" min="1" oninput="updateCalc()" />
-      </div>
-      <div class="form-row"><label>Size per Unit (oz)</label>
-        <input type="number" id="calc_size" value="${calcState.sizeOz}" min="0" step="0.01" oninput="updateCalc()" />
-      </div>
-    </div>
 
-    <div style="margin-top:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--brown)">Ingredients (per unit)</strong>
-        <button class="btn btn-secondary btn-sm" onclick="addCalcRow('ingredients')">+ Add Ingredient</button>
+      <div style="margin-top:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="color:var(--brown)">Ingredients (per unit)</strong>
+          <button class="btn btn-secondary btn-sm" onclick="addCalcRow('ingredients')">+ Add Ingredient</button>
+        </div>
+        <div id="calc_ingredients" style="margin-top:8px"></div>
       </div>
-      <div id="calc_ingredients" style="margin-top:6px"></div>
-    </div>
 
-    <div style="margin-top:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--brown)">Packaging (per unit)</strong>
-        <button class="btn btn-secondary btn-sm" onclick="addCalcRow('packaging')">+ Add Packaging</button>
+      <div style="margin-top:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="color:var(--brown)">Packaging (per unit)</strong>
+          <button class="btn btn-secondary btn-sm" onclick="addCalcRow('packaging')">+ Add Packaging</button>
+        </div>
+        <div id="calc_packaging" style="margin-top:8px"></div>
       </div>
-      <div id="calc_packaging" style="margin-top:6px"></div>
-    </div>
 
-    <div style="margin-top:18px;padding:14px;background:var(--beige-light);border-radius:8px">
-      <strong style="color:var(--brown)">Batch Fees & Per-Unit Costs</strong>
-      <div class="form-grid" style="margin-top:8px">
-        <div class="form-row"><label>Allergen Testing ($/batch)</label><input type="number" id="calc_allergen" value="${calcState.allergenTestPerBatch}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>QA / Lab Testing ($/batch)</label><input type="number" id="calc_qa" value="${calcState.qaTestPerBatch}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Production Labor (hours)</label><input type="number" id="calc_lhours" value="${calcState.laborHours}" step="0.25" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Labor Rate ($/hr loaded)</label><input type="number" id="calc_lrate" value="${calcState.laborRate}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Overhead ($/unit)</label><input type="number" id="calc_oh" value="${calcState.overheadPerUnit}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Case / Carton ($/unit)</label><input type="number" id="calc_case" value="${calcState.caseCostPerUnit}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Freight Allocation ($/unit)</label><input type="number" id="calc_freight" value="${calcState.freightPerUnit}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Co-Pack Fee ($/unit)</label><input type="number" id="calc_copack" value="${calcState.copackFeePerUnit}" step="0.01" oninput="updateCalc()" /></div>
-        <div class="form-row"><label>Target Margin %</label><input type="number" id="calc_margin" value="${calcState.marginPct}" step="1" oninput="updateCalc()" /></div>
+      <div style="margin-top:20px;padding:16px;background:var(--beige-light);border-radius:8px">
+        <strong style="color:var(--brown)">Batch Fees & Per-Unit Costs</strong>
+        <div class="form-grid" style="margin-top:10px">
+          <div class="form-row"><label>Allergen Testing ($/batch)</label><input type="number" id="calc_allergen" value="${calcState.allergenTestPerBatch}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>QA / Lab Testing ($/batch)</label><input type="number" id="calc_qa" value="${calcState.qaTestPerBatch}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Production Labor (hours)</label><input type="number" id="calc_lhours" value="${calcState.laborHours}" step="0.25" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Labor Rate ($/hr loaded)</label><input type="number" id="calc_lrate" value="${calcState.laborRate}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Overhead ($/unit)</label><input type="number" id="calc_oh" value="${calcState.overheadPerUnit}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Case / Carton ($/unit)</label><input type="number" id="calc_case" value="${calcState.caseCostPerUnit}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Freight Allocation ($/unit)</label><input type="number" id="calc_freight" value="${calcState.freightPerUnit}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Co-Pack Fee ($/unit)</label><input type="number" id="calc_copack" value="${calcState.copackFeePerUnit}" step="0.01" oninput="updateCalc()" /></div>
+          <div class="form-row"><label>Target Margin %</label><input type="number" id="calc_margin" value="${calcState.marginPct}" step="1" oninput="updateCalc()" /></div>
+        </div>
       </div>
-    </div>
 
-    <div id="calc_summary" style="margin-top:18px"></div>
+      <div id="calc_summary" style="margin-top:20px"></div>
+    </div>
   `;
   renderCalcRows('ingredients');
   renderCalcRows('packaging');
@@ -6817,7 +7805,7 @@ function renderCalcRows(kind) {
   if (!cont) return;
   const rows = calcState[kind];
   if (rows.length === 0) {
-    cont.innerHTML = `<div style="font-size:12px;color:var(--brown-light);padding:6px 0">No ${kind} added.</div>`;
+    cont.innerHTML = `<div style="font-size:12px;color:var(--brown-light);padding:10px 0">No ${kind} added.</div>`;
     return;
   }
   cont.innerHTML = `
@@ -6943,8 +7931,16 @@ function costRow(label, perUnit, extra='') {
     <span style="font-weight:600;color:var(--brown)">${fmtMoney(perUnit)}</span>
   </div>`;
 }
-function resetCalc() {
-  if (!confirm('Reset all calculator inputs?')) return;
+async function resetCalc() {
+  const ok = await openConfirmModal({
+    title: 'Reset calculator',
+    record: 'Product Calculator',
+    message: 'Reset all calculator inputs?',
+    risk: 'Unsaved calculator entries will be cleared.',
+    confirmLabel: 'Reset Calculator',
+    tone: 'danger'
+  });
+  if (!ok) return;
   calcState = {
     productId: '', units: 1000, sizeOz: 16,
     ingredients: [], packaging: [],
@@ -7756,8 +8752,16 @@ function customerPortalInventoryTableHtml(items, emptyText) {
   return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>On Hand</th><th>Status</th></tr></thead><tbody>${items.map(i => `<tr><td>${escapeHtml(i.name)}</td><td>${i.stock} ${escapeHtml(i.unit)}</td><td>${i.stock <= i.reorderLevel ? '<span class="badge badge-low">Low</span>' : '<span class="badge badge-prod">OK</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 async function deleteUser(id) {
-  if (!confirm('Remove this user?')) return;
   const existing = (state.users || []).find(u => u.id === id);
+  const ok = await openConfirmModal({
+    title: 'Remove user',
+    record: existing?.email || existing?.name || id,
+    message: 'Remove this user from Account Management?',
+    risk: 'Backend-backed users are deactivated when the backend API is available.',
+    confirmLabel: 'Remove User',
+    tone: 'danger'
+  });
+  if (!ok) return;
   if (backendAuthState.token && existing?._backendUserId) {
     try {
       await apiRequest(`/api/users/${encodeURIComponent(existing._backendUserId)}`, { method: 'DELETE' });
@@ -7825,6 +8829,9 @@ function inventoryTabsHtml() {
   }).join('')}</div>`;
 }
 function renderInventory(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.loaded && !backendInventoryState.loading) {
+    loadBackendInventory().then(() => { if (currentPage === 'inventory') router('inventory'); });
+  }
   if (invTab === 'Master List') { renderMasterList(el); return; }
   if (invTab === 'Receiving Log') { renderReceivingLog(el); return; }
   if (invTab === 'Move Log') { renderMoveLog(el); return; }
@@ -7854,17 +8861,30 @@ function renderInventory(el) {
   Object.keys(scMap).forEach(id => { allocMap[id] = (allocMap[id]||0) + scMap[id]; });
   Object.keys(prodMap).forEach(id => { allocMap[id] = (allocMap[id]||0) + prodMap[id]; });
 
+  const tabDescriptions = {
+    'Finished Good': 'Completed sellable inventory available for shipping, stocking, pick, and pack workflows.',
+    Ingredient: 'Raw materials used in formulas and production. Watch lots, CoA files, allocations, and reorder points.',
+    Packaging: 'Jars, lids, labels, pouches, cases, and other production or fulfillment materials.'
+  };
+  const filters = `${opsSelect('Status filter', ['All statuses','OK','Reorder','Over-allocated'])}${opsSelect('Scope filter', ['All scopes','General','Customer-specific'])}`;
+  const actions = `
+    <button class="btn btn-secondary btn-sm" onclick="exportCsv('inventory_${invTab.toLowerCase().replace(/\\s+/g,'_')}.csv', state.ingredients.filter(i=>(i.category||'Ingredient')==='${invTab}').map(i=>({...i,supplier:getSupplier(i.supplierId)?.name||'',customer:i.customerId?(getCustomer(i.customerId)?.name||''):''})))">Export CSV</button>
+    <a class="btn btn-dark btn-sm" href="${SHAREPOINT_INVENTORY_URL}" target="_blank" rel="noopener" style="text-decoration:none">View Sheet</a>
+    <button class="btn btn-sm" onclick="editIngredient()">+ Add Item</button>`;
   el.innerHTML = `
-    <div class="card">
+    <div class="ops-page">
+      ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
+      ${inventorySummaryHtml()}
+      <div class="ops-panel">
       ${inventoryTabsHtml()}
-      <div class="card-header" style="margin-top:14px">
-        <h2>${escapeHtml(tabLabels[invTab])} Inventory</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="exportCsv('inventory_${invTab.toLowerCase().replace(/\\s+/g,'_')}.csv', state.ingredients.filter(i=>(i.category||'Ingredient')==='${invTab}').map(i=>({...i,supplier:getSupplier(i.supplierId)?.name||'',customer:i.customerId?(getCustomer(i.customerId)?.name||''):''})))">Export CSV</button>
-          <a class="btn btn-dark" href="${SHAREPOINT_INVENTORY_URL}" target="_blank" rel="noopener" style="text-decoration:none">+ View Sheet</a>
-          <button class="btn" onclick="editIngredient()">+ Add Item</button>
+      <div class="ops-header">
+        <div>
+          <h2 class="ops-title">${escapeHtml(tabLabels[invTab])} Inventory</h2>
+          <div class="ops-kicker">${escapeHtml(tabDescriptions[invTab] || '')}</div>
         </div>
+        <div class="ops-actions">${actions}</div>
       </div>
+      ${opsToolbarHtml({ filters })}
       <div class="table-wrap"><table>
         <thead><tr>
           ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
@@ -7937,48 +8957,67 @@ function masterCustomerName(m) {
   if (!m.customerId || m.customerId === 'general') return '<span class="pill">General</span>';
   return escapeHtml(getCustomer(m.customerId)?.name || '—');
 }
+function masterTypeLabel(m) {
+  const raw = (m.itemType || '').replace(/_/g, ' ').trim();
+  if (raw) return raw.replace(/\b\w/g, c => c.toUpperCase());
+  const inv = (state.ingredients || []).find(i => i.name === m.name || i.masterItemId === m.id);
+  return inv ? (inv.category || 'Ingredient') : 'Other';
+}
+function masterUsedInHtml(m) {
+  const used = [];
+  if ((state.ingredients || []).some(i => i.name === m.name || i.masterItemId === m.id)) used.push('Inventory');
+  if (Object.values(state.boms || {}).some(rows => (rows || []).some(b => b.ingredientId === m.id || b.masterItemId === m.id))) used.push('Formula/BOM');
+  if ((state.receivingLog || []).some(r => r.masterItemId === m.id || r.itemName === m.name)) used.push('Receiving');
+  return used.length ? used.map(u => `<span class="pill">${escapeHtml(u)}</span>`).join(' ') : '<span style="color:var(--brown-light);font-size:12px">Not used yet</span>';
+}
 function renderMasterList(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendMasterItemState.loaded && !backendMasterItemState.loading) {
     loadBackendMasterItems().then(() => { if (currentPage === 'inventory' && invTab === 'Master List') router('inventory'); });
   }
   const items = (state.masterItems || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const filters = `${opsSelect('Item type filter', ['All types','Ingredient','Packaging','Finished Good','Other'])}${opsSelect('Customer scope filter', ['All scopes','General','Customer-specific'])}${opsSelect('Allergen filter', ['All allergens','None','Peanut','Tree Nut','Milk','Soy','Wheat'])}`;
+  const actions = `
+    <button class="btn btn-secondary btn-sm" onclick="exportCsv('master_list.csv', (state.masterItems||[]).map(m=>({name:m.name,type:masterTypeLabel(m),uom:m.uom,allergens:(m.allergens||[]).join('; '),customer:(!m.customerId||m.customerId==='general')?'General':(getCustomer(m.customerId)?.name||'')})))">Export CSV</button>
+    <button class="btn btn-sm" onclick="editMasterItem()">+ Add Master Item</button>`;
   el.innerHTML = `
-    ${renderBackendDataStatusBanner('master-items', backendMasterItemState)}
-    <div class="card">
-      ${inventoryTabsHtml()}
-      <div class="card-header" style="margin-top:14px">
-        <h2>Master List</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="exportCsv('master_list.csv', (state.masterItems||[]).map(m=>({name:m.name,uom:m.uom,allergens:(m.allergens||[]).join('; '),customer:(!m.customerId||m.customerId==='general')?'General':(getCustomer(m.customerId)?.name||'')})))">Export CSV</button>
-          <button class="btn" onclick="editMasterItem()">+ Add Master Item</button>
+    <div class="ops-page">
+      ${renderBackendDataStatusBanner('master-items', backendMasterItemState)}
+      ${inventorySummaryHtml()}
+      <div class="ops-panel">
+        ${inventoryTabsHtml()}
+        <div class="ops-header">
+          <div>
+            <h2 class="ops-title">Master List</h2>
+            <div class="ops-kicker">Item definitions used by inventory, product formulas, receiving, and moves. This is setup data, not stock count data.</div>
+          </div>
+          <div class="ops-actions">${actions}</div>
         </div>
+        ${opsToolbarHtml({ filters })}
+        <div class="ops-note">Master List is the source of truth for stocked item names. Add raw materials, packaging, finished goods, and other items here before creating inventory records or formulas.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Item Name</th><th>Type</th><th>Unit of Measure</th><th>Allergens</th><th>Customer Scope</th><th>Used In</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${items.length === 0 ? `<tr><td colspan="8" class="empty">No master items yet. Add item definitions before creating inventory records or product formulas.</td></tr>` :
+              items.map(m => `<tr>
+                <td><strong>${escapeHtml(m.name)}</strong></td>
+                <td>${escapeHtml(masterTypeLabel(m))}</td>
+                <td>${escapeHtml(m.uom || '')}</td>
+                <td>${(m.allergens && m.allergens.length) ? m.allergens.map(a => '<span class="badge badge-low" style="margin:1px 2px">'+escapeHtml(a)+'</span>').join('') : '<span style="color:var(--brown-light);font-size:12px">None</span>'}</td>
+                <td>${masterCustomerName(m)}</td>
+                <td>${masterUsedInHtml(m)}</td>
+                <td>${opsStatus('Active','ok')}</td>
+                <td class="row-actions">
+                  <button class="btn btn-icon btn-sm" onclick="editMasterItem('${m.id}')">Edit</button>
+                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteMasterItem('${m.id}')">Delete</button>
+                </td>
+              </tr>`).join('')
+            }
+          </tbody>
+        </table></div>
       </div>
-      <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
-        This is the master list every inventory <strong>Item</strong> name is pulled from. To stock a new ingredient, finished good, or packaging item, add it here first — then it becomes selectable when you add inventory.
-      </div>
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>Item Name</th><th>Unit of Measure</th><th>Allergens</th><th>Customer</th><th></th>
-        </tr></thead>
-        <tbody>
-          ${items.length === 0 ? `<tr><td colspan="5" class="empty">No master items yet. Click “+ Add Master Item” to get started.</td></tr>` :
-            items.map(m => `<tr>
-              <td><strong>${escapeHtml(m.name)}</strong></td>
-              <td>${escapeHtml(m.uom || '')}</td>
-              <td>${(m.allergens && m.allergens.length) ? m.allergens.map(a => '<span class="badge badge-low" style="margin:1px 2px">'+escapeHtml(a)+'</span>').join('') : '<span style="color:var(--brown-light);font-size:12px">None</span>'}</td>
-              <td>${masterCustomerName(m)}</td>
-              <td class="row-actions">
-                <button class="btn btn-icon btn-sm" onclick="editMasterItem('${m.id}')">Edit</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteMasterItem('${m.id}')">Delete</button>
-              </td>
-            </tr>`).join('')
-          }
-        </tbody>
-      </table></div>
     </div>
   `;
-}
-function editMasterItem(id) {
+}function editMasterItem(id) {
   const m = (state.masterItems || []).find(x => x.id === id) || { id: uid('m'), name:'', uom:'LBS', allergens:[], customerId:'general' };
   const isNew = !id;
   const allergens = Array.isArray(m.allergens) ? m.allergens : [];
@@ -8015,12 +9054,14 @@ function editMasterItem(id) {
     </form>
   `);
 }
-function saveMasterItem(id, isNew) {
+async function saveMasterItem(id, isNew) {
   const name = (document.getElementById('mi_name').value || '').trim();
   if (!name) { toast('Item Name is required.'); return; }
   const allergens = Array.from(document.querySelectorAll('.mi_allergen')).filter(c => c.checked).map(c => c.value);
   const data = {
     id,
+    sku: name,
+    itemType: 'other',
     name,
     uom: document.getElementById('mi_uom').value || 'LBS',
     allergens,
@@ -8030,6 +9071,21 @@ function saveMasterItem(id, isNew) {
   // prevent duplicate names (case-insensitive)
   const dup = state.masterItems.find(x => x.id !== id && (x.name||'').toLowerCase() === name.toLowerCase());
   if (dup) { toast('A master item with that name already exists.'); return; }
+  const existing = state.masterItems.find(x => x.id === id);
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
+    try {
+      const saved = await saveBackendMasterItem(id, isNew, { ...data, _backendId: existing?._backendId });
+      data.id = saved.id;
+      data._backendId = saved.id;
+      id = saved.id;
+      backendMasterItemState.status = 'connected';
+      backendMasterItemState.loaded = false;
+    } catch (error) {
+      backendMasterItemState.status = 'error';
+      backendMasterItemState.lastError = 'Master List backend save failed, so this edit stayed local/demo only.';
+      toast(error.message || 'Master List backend save failed. Saved locally only.');
+    }
+  }
   if (isNew) state.masterItems.push(data);
   else Object.assign(state.masterItems.find(x => x.id === id), data);
   saveState();
@@ -8038,12 +9094,21 @@ function saveMasterItem(id, isNew) {
   router('inventory');
   toast('Master item saved.');
 }
-function deleteMasterItem(id) {
+async function deleteMasterItem(id) {
   const m = (state.masterItems || []).find(x => x.id === id);
   if (!m) return;
   const inUse = state.ingredients.some(i => (i.name||'').toLowerCase() === (m.name||'').toLowerCase());
-  if (inUse && !confirm(`"${m.name}" is used by one or more inventory items. Removing it from the Master List won't delete those items, but you won't be able to re-select this name. Delete anyway?`)) return;
-  else if (!inUse && !confirm('Delete this master item?')) return;
+  const ok = await openConfirmModal({
+    title: 'Delete master item',
+    record: m.name || id,
+    message: 'Delete this Master List item?',
+    risk: inUse
+      ? 'It is used by one or more inventory items. Those items will not be deleted, but this name will no longer be selectable.'
+      : 'This removes the item definition from setup lists.',
+    confirmLabel: 'Delete Master Item',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.masterItems = state.masterItems.filter(x => x.id !== id);
   saveState();
   router('inventory');
@@ -8067,19 +9132,25 @@ function renderReceivingLog(el) {
     return kb.localeCompare(ka); // newest first
   });
   const headers = ['Receiving ID','Date','Time','Item Name','# Packages','Qty / Package','Total Qty','UOM','Lot #','Allergen','Received By','Carrier','Vendor',''];
+  const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Item filter', ['All items', ...rows.map(r=>r.itemName).filter(Boolean).slice(0,6)])}${opsSelect('Vendor filter', ['All vendors', ...state.suppliers.map(s=>s.name).slice(0,6)])}`;
+  const actions = `
+    <button class="btn btn-secondary btn-sm" onclick="exportCsv('receiving_log.csv', (state.receivingLog||[]).map(r=>({receiving_id:r.receivingId,date:r.date,time:r.time,item:r.itemName,packages:r.packages,qty_per_package:r.qtyPerPackage,total_qty:r.totalQty,uom:r.uom,lot:r.lot,allergens:(r.allergens||[]).join('; '),received_by:r.receivedBy,carrier:r.carrier,vendor:getSupplier(r.supplierId)?.name||''})))">Export CSV</button>
+    <button class="btn btn-sm" onclick="editReceiving()">+ Log Receipt</button>`;
   el.innerHTML = `
-    <div class="card">
+    <div class="ops-page">
+    ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
+    ${inventorySummaryHtml()}
+    <div class="ops-panel">
       ${inventoryTabsHtml()}
-      <div class="card-header" style="margin-top:14px">
-        <h2>Receiving Log</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="exportCsv('receiving_log.csv', (state.receivingLog||[]).map(r=>({receiving_id:r.receivingId,date:r.date,time:r.time,item:r.itemName,packages:r.packages,qty_per_package:r.qtyPerPackage,total_qty:r.totalQty,uom:r.uom,lot:r.lot,allergens:(r.allergens||[]).join('; '),received_by:r.receivedBy,carrier:r.carrier,vendor:getSupplier(r.supplierId)?.name||''})))">Export CSV</button>
-          <button class="btn" onclick="editReceiving()">+ Log Receipt</button>
+      <div class="ops-header">
+        <div>
+          <h2 class="ops-title">Receiving Log</h2>
+          <div class="ops-kicker">Inbound inventory receipts with generated RCV IDs and Master List autofill.</div>
         </div>
+        <div class="ops-actions">${actions}</div>
       </div>
-      <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
-        Record every inbound receipt. Item Name, Unit of Measure, and Allergen are pulled from the <strong>Master List</strong>; Total Quantity is # of Packages &times; Quantity per Package.
-      </div>
+      ${opsToolbarHtml({ filters })}
+      <div class="ops-note">Record inbound inventory receipts. Item, Unit of Measure, and Allergen are pulled from Master List; Total Qty is packages times quantity per package.</div>
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
@@ -8106,6 +9177,7 @@ function renderReceivingLog(el) {
           }
         </tbody>
       </table></div>
+    </div>
     </div>
   `;
 }
@@ -8187,7 +9259,7 @@ function computeReceivingTotal() {
   const totalEl = document.getElementById('rcv_total');
   if (totalEl) totalEl.value = +(pkgs * per).toFixed(2);
 }
-function saveReceiving(id, isNew) {
+async function saveReceiving(id, isNew) {
   const masterItemId = document.getElementById('rcv_item').value;
   const master = (state.masterItems || []).find(m => m.id === masterItemId);
   if (!master) { toast('Pick an Item Name from the Master List.'); return; }
@@ -8212,6 +9284,20 @@ function saveReceiving(id, isNew) {
     carrier: (document.getElementById('rcv_carrier').value || '').trim(),
     supplierId: document.getElementById('rcv_vendor').value || ''
   };
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && isNew) {
+    try {
+      const saved = await saveBackendReceivingEntry(data);
+      data.id = saved.id;
+      data._backendId = saved.id;
+      data.receivingId = saved.receivingId;
+      backendInventoryState.status = 'connected';
+      backendInventoryState.loaded = false;
+    } catch (error) {
+      backendInventoryState.status = 'error';
+      backendInventoryState.lastError = 'Receiving Log backend save failed, so this receipt stayed local/demo only.';
+      toast(error.message || 'Receiving backend save failed. Saved locally only.');
+    }
+  }
   state.receivingLog = state.receivingLog || [];
   if (isNew) state.receivingLog.push(data);
   else Object.assign(state.receivingLog.find(x => x.id === id), data);
@@ -8221,8 +9307,16 @@ function saveReceiving(id, isNew) {
   router('inventory');
   toast('Receipt logged.');
 }
-function deleteReceiving(id) {
-  if (!confirm('Delete this receiving record?')) return;
+async function deleteReceiving(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete receiving record',
+    record: id,
+    message: 'Delete this receiving record?',
+    risk: 'This removes the receipt from the visible Receiving Log.',
+    confirmLabel: 'Delete Receipt',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.receivingLog = (state.receivingLog || []).filter(x => x.id !== id);
   saveState();
   router('inventory');
@@ -8260,19 +9354,25 @@ function renderMoveLog(el) {
   });
   const headers = ['Move ID','Date','Receiving ID','Item','Lot #','Case Count','Qty / Case','Qty Moved','UOM','Moved By','From Location','To Location',''];
   const hasReceipts = (state.receivingLog || []).length > 0;
+  const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Item filter', ['All items', ...rows.map(r=>r.itemName).filter(Boolean).slice(0,6)])}${opsSelect('Location filter', ['All locations', ...allLocations().slice(0,8)])}`;
+  const actions = `
+    <button class="btn btn-secondary btn-sm" onclick="exportCsv('move_log.csv', (state.moveLog||[]).map(r=>({move_id:r.moveId,date:r.date,time:r.time,receiving_id:r.receivingId,item:r.itemName,lot:r.lot,case_count:r.caseCount,qty_per_case:r.qtyPerCase,qty_moved:r.qtyMoved,uom:r.uom,moved_by:r.movedBy,from_location:r.fromLocation,to_location:r.toLocation})))">Export CSV</button>
+    <button class="btn btn-sm" onclick="editMove()" ${hasReceipts?'':'disabled title="Log a receipt first" style="opacity:.55"'}>+ Log Move</button>`;
   el.innerHTML = `
-    <div class="card">
+    <div class="ops-page">
+    ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
+    ${inventorySummaryHtml()}
+    <div class="ops-panel">
       ${inventoryTabsHtml()}
-      <div class="card-header" style="margin-top:14px">
-        <h2>Move Log</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="exportCsv('move_log.csv', (state.moveLog||[]).map(r=>({move_id:r.moveId,date:r.date,time:r.time,receiving_id:r.receivingId,item:r.itemName,lot:r.lot,case_count:r.caseCount,qty_per_case:r.qtyPerCase,qty_moved:r.qtyMoved,uom:r.uom,moved_by:r.movedBy,from_location:r.fromLocation,to_location:r.toLocation})))">Export CSV</button>
-          <button class="btn" onclick="editMove()" ${hasReceipts?'':'disabled title="Log a receipt first" style="opacity:.55"'}>+ Log Move</button>
+      <div class="ops-header">
+        <div>
+          <h2 class="ops-title">Move Log</h2>
+          <div class="ops-kicker">Internal movement between receiving, storage, production, dock, and warehouse locations.</div>
         </div>
+        <div class="ops-actions">${actions}</div>
       </div>
-      <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
-        Track product moving between locations. Receiving ID is pulled from the <strong>Receiving Log</strong>; Item Name &amp; Unit of Measure come from the <strong>Master List</strong>; pick a location or add a new one inline.${hasReceipts?'':' <strong>Log a receipt on the Receiving Log tab first.</strong>'}
-      </div>
+      ${opsToolbarHtml({ filters })}
+      <div class="ops-note">Receiving ID fills item, lot, and unit when available. Qty Moved is calculated from Case Count times Qty / Case.${hasReceipts?'':' Log a receipt before moving inventory.'}</div>
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
@@ -8302,6 +9402,7 @@ function renderMoveLog(el) {
           }
         </tbody>
       </table></div>
+    </div>
     </div>
   `;
 }
@@ -8417,7 +9518,7 @@ function computeMoveQty() {
   const el = document.getElementById('mv_qtymoved');
   if (el) el.value = +(cases * per).toFixed(2);
 }
-function saveMove(id, isNew) {
+async function saveMove(id, isNew) {
   const receivingId = document.getElementById('mv_receiving').value;
   if (!receivingId) { toast('Select a Receiving ID.'); return; }
   const fromLocation = moveLocValue('from');
@@ -8447,6 +9548,25 @@ function saveMove(id, isNew) {
     fromLocation,
     toLocation
   };
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && isNew) {
+    try {
+      const saved = await saveBackendMoveEntry(data);
+      data.id = saved.id;
+      data._backendId = saved.id;
+      data.moveId = saved.moveId;
+      data.masterItemId = saved.masterItemId;
+      data.itemName = saved.itemName;
+      data.lot = saved.lotNumber || data.lot;
+      data.qtyMoved = saved.quantityMoved;
+      data.uom = saved.unitOfMeasure;
+      backendInventoryState.status = 'connected';
+      backendInventoryState.loaded = false;
+    } catch (error) {
+      backendInventoryState.status = 'error';
+      backendInventoryState.lastError = 'Move Log backend save failed, so this move stayed local/demo only.';
+      toast(error.message || 'Move backend save failed. Saved locally only.');
+    }
+  }
   state.moveLog = state.moveLog || [];
   if (isNew) state.moveLog.push(data);
   else Object.assign(state.moveLog.find(x => x.id === id), data);
@@ -8456,8 +9576,16 @@ function saveMove(id, isNew) {
   router('inventory');
   toast('Move logged.');
 }
-function deleteMove(id) {
-  if (!confirm('Delete this move record?')) return;
+async function deleteMove(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete move record',
+    record: id,
+    message: 'Delete this move record?',
+    risk: 'This removes the movement entry from the visible Move Log.',
+    confirmLabel: 'Delete Move',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.moveLog = (state.moveLog || []).filter(x => x.id !== id);
   saveState();
   router('inventory');
@@ -8504,18 +9632,23 @@ function logShipment(po) {
 function renderShippingLog(el) {
   const rows = (state.shippingLog || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
   const headers = ['Shipping ID','Date','Order (PO)','Customer','Brand','Carrier','BOL #','PRO #','Pallets','Weight','Items',''];
+  const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Customer filter', ['All customers', ...state.customers.map(c=>c.name).slice(0,6)])}${opsSelect('Carrier filter', ['All carriers','UPS','FedEx','USPS','LTL'])}`;
+  const actions = `<button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', (state.shippingLog||[]).map(r=>({shipping_id:r.shipId,date:r.date,po:r.poId,customer:getCustomer(r.customerId)?.name||'',brand:r.brand,carrier:r.carrier,bol:r.bol,pro:r.proNumber,pallets:r.pallets,weight:r.weight,items:(r.items||[]).map(it=>(getProduct(it.productId)?.sku||'')+' x'+it.qty).join('; ')})))">Export CSV</button>`;
   el.innerHTML = `
-    <div class="card">
+    <div class="ops-page">
+    ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
+    ${inventorySummaryHtml()}
+    <div class="ops-panel">
       ${inventoryTabsHtml()}
-      <div class="card-header" style="margin-top:14px">
-        <h2>Shipping Log</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', (state.shippingLog||[]).map(r=>({shipping_id:r.shipId,date:r.date,po:r.poId,customer:getCustomer(r.customerId)?.name||'',brand:r.brand,carrier:r.carrier,bol:r.bol,pro:r.proNumber,pallets:r.pallets,weight:r.weight,items:(r.items||[]).map(it=>(getProduct(it.productId)?.sku||'')+' x'+it.qty).join('; ')})))">Export CSV</button>
+      <div class="ops-header">
+        <div>
+          <h2 class="ops-title">Shipping Log</h2>
+          <div class="ops-kicker">Read-only shipment history generated from the Shipping workflow.</div>
         </div>
+        <div class="ops-actions">${actions}</div>
       </div>
-      <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
-        Auto-generated history of outbound shipments. A record is created here automatically whenever a PO is marked shipped on the <strong>Shipping</strong> page.
-      </div>
+      ${opsToolbarHtml({ filters })}
+      <div class="ops-note">Shipping records are generated from the Shipping workflow. Manual Shipping Log creation stays disabled here.</div>
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
@@ -8547,10 +9680,19 @@ function renderShippingLog(el) {
         </tbody>
       </table></div>
     </div>
+    </div>
   `;
 }
-function deleteShippingLog(id) {
-  if (!confirm('Delete this shipping record? (This does not affect the PO.)')) return;
+async function deleteShippingLog(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete shipping log',
+    record: id,
+    message: 'Delete this shipping log record?',
+    risk: 'This does not affect the related PO, but removes the log row from Inventory.',
+    confirmLabel: 'Delete Shipping Log',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.shippingLog = (state.shippingLog || []).filter(x => x.id !== id);
   saveState();
   router('inventory');
@@ -8558,6 +9700,7 @@ function deleteShippingLog(id) {
 }
 
 let ingEditingLots = [];
+let pendingInventoryCoaFile = null;
 function editIngredient(id) {
   const defaultCat = (invTab && invTab !== 'Master List') ? invTab : 'Ingredient';
   const i = state.ingredients.find(x=>x.id===id) || { id: uid('i'), name:'', supplierId:'', stock:0, reorderLevel:0, unit:'lb', cost:0, category: defaultCat, customerId: 'general', leadTimeDays: 0, building: '', location: '', lotNumber: '', coa: null, lots: [] };
@@ -8684,6 +9827,7 @@ function ingredientCoaSelected(e) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
+  pendingInventoryCoaFile = f;
   const reader = new FileReader();
   reader.onload = () => {
     const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
@@ -8695,6 +9839,7 @@ function ingredientCoaSelected(e) {
   reader.readAsDataURL(f);
 }
 function clearIngredientCoa() {
+  pendingInventoryCoaFile = null;
   document.getElementById('ing_coa_data').value = '';
   document.getElementById('ing_coa_input').value = '';
   const info = document.getElementById('ing_coa_info');
@@ -8726,7 +9871,7 @@ function toggleIngredientFields() {
   // CoA: ingredients only
   if (coaRow) coaRow.style.display = (cat === 'Ingredient') ? 'flex' : 'none';
 }
-function saveIngredient(id, isNew) {
+async function saveIngredient(id, isNew) {
   const cat = document.getElementById('ing_category').value;
   const itemName = (document.getElementById('ing_name').value || '').trim();
   if (!itemName) { toast('Pick an Item from the Master List. Add it on the Master List tab first if it isn\'t there.'); return; }
@@ -8757,6 +9902,23 @@ function saveIngredient(id, isNew) {
   const coaData = document.getElementById('ing_coa_data')?.value;
   if (cat === 'Ingredient' && coaData) { try { coa = JSON.parse(coaData); } catch(e){} }
   data.coa = coa;
+  const existing = state.ingredients.find(i=>i.id===id);
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
+    try {
+      const saved = await saveBackendInventoryItem(id, isNew, { ...data, _backendId: existing?._backendId });
+      data.id = saved.id;
+      data._backendId = saved.id;
+      data.masterItemId = saved.masterItemId;
+      if (pendingInventoryCoaFile) await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile);
+      pendingInventoryCoaFile = null;
+      backendInventoryState.status = 'connected';
+      backendInventoryState.loaded = false;
+    } catch (error) {
+      backendInventoryState.status = 'error';
+      backendInventoryState.lastError = 'Inventory backend save failed, so this item stayed local/demo only.';
+      toast(error.message || 'Inventory backend save failed. Saved locally only.');
+    }
+  }
   if (isNew) state.ingredients.push(data);
   else Object.assign(state.ingredients.find(i=>i.id===id), data);
   try { saveState(); }
@@ -8766,8 +9928,17 @@ function saveIngredient(id, isNew) {
   router('inventory');
   toast('Inventory item saved.');
 }
-function deleteIngredient(id) {
-  if (!confirm('Delete this inventory item?')) return;
+async function deleteIngredient(id) {
+  const item = getIngredient(id);
+  const ok = await openConfirmModal({
+    title: 'Delete inventory item',
+    record: item?.name || id,
+    message: 'Delete this inventory item from the current workspace?',
+    risk: 'This can affect low-stock, allocation, and procurement visibility in local/demo mode.',
+    confirmLabel: 'Delete Item',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.ingredients = state.ingredients.filter(i => i.id !== id);
   saveState();
   router('inventory');
@@ -9032,7 +10203,7 @@ function renameFolder(id) {
   saveState();
   router('content-library');
 }
-function deleteFolder(id) {
+async function deleteFolder(id) {
   const desc = libDescendantFolderIds(id);
   const filesIn = state.libraryFiles.filter(f => desc.has(f.folderId)).length;
   const subCount = desc.size - 1;
@@ -9040,7 +10211,15 @@ function deleteFolder(id) {
   if (subCount) msg += ` and its ${subCount} subfolder${subCount===1?'':'s'}`;
   if (filesIn) msg += `${subCount?' plus':' and its'} ${filesIn} file${filesIn===1?'':'s'}`;
   msg += '?';
-  if (!confirm(msg)) return;
+  const ok = await openConfirmModal({
+    title: 'Delete folder',
+    record: state.libraryFolders.find(f => f.id === id)?.name || id,
+    message: msg,
+    risk: 'Nested folders and files in this folder will also be removed from the local content library.',
+    confirmLabel: 'Delete Folder',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.libraryFolders = state.libraryFolders.filter(f => !desc.has(f.id));
   state.libraryFiles = state.libraryFiles.filter(f => !desc.has(f.folderId));
   saveState();
@@ -9098,8 +10277,17 @@ function libraryUpload(e) {
     toast('Files uploaded.');
   }
 }
-function deleteLibraryFile(id) {
-  if (!confirm('Delete this file?')) return;
+async function deleteLibraryFile(id) {
+  const file = state.libraryFiles.find(f => f.id === id);
+  const ok = await openConfirmModal({
+    title: 'Delete file',
+    record: file?.name || id,
+    message: 'Delete this file from the content library?',
+    risk: 'This removes the local file record.',
+    confirmLabel: 'Delete File',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.libraryFiles = state.libraryFiles.filter(f => f.id !== id);
   saveState();
   router('content-library');
@@ -9212,8 +10400,17 @@ function newChannel() {
   saveState();
   renderSlack(document.getElementById('content'));
 }
-function deleteChannel(id) {
-  if (!confirm('Delete this channel and all of its messages?')) return;
+async function deleteChannel(id) {
+  const channel = state.channels.find(c => c.id === id);
+  const ok = await openConfirmModal({
+    title: 'Delete chat channel',
+    record: channel?.name || id,
+    message: 'Delete this channel and all of its messages?',
+    risk: 'This removes local chat history for the channel.',
+    confirmLabel: 'Delete Channel',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.channels = state.channels.filter(c => c.id !== id);
   state.messages = state.messages.filter(m => m.channelId !== id);
   if (activeChannel === id) activeChannel = state.channels[0]?.id || null;
@@ -9421,8 +10618,9 @@ function saveSwab(id, isNew) {
   renderFoodSafety(document.getElementById('content'));
   toast('Swab record saved.');
 }
-function deleteSwab(id) {
-  if (!confirm('Delete this swab record?')) return;
+async function deleteSwab(id) {
+  const ok = await openConfirmModal({ title: 'Delete swab record', record: id, message: 'Delete this swab record?', risk: 'This removes the local food-safety log row.', confirmLabel: 'Delete Record', tone: 'danger' });
+  if (!ok) return;
   state.swabRecords = state.swabRecords.filter(s=>s.id!==id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9526,8 +10724,9 @@ function saveComplaint(id, isNew) {
   renderFoodSafety(document.getElementById('content'));
   toast('Complaint saved.');
 }
-function deleteComplaint(id) {
-  if (!confirm('Delete this complaint record?')) return;
+async function deleteComplaint(id) {
+  const ok = await openConfirmModal({ title: 'Delete complaint', record: id, message: 'Delete this complaint record?', risk: 'This removes the local complaint row.', confirmLabel: 'Delete Complaint', tone: 'danger' });
+  if (!ok) return;
   state.complaints = state.complaints.filter(c => c.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9619,8 +10818,10 @@ function saveLot(id, isNew) {
   closeModal();
   renderFoodSafety(document.getElementById('content'));
 }
-function deleteLot(id) {
-  if (!confirm('Delete this lot?')) return;
+async function deleteLot(id) {
+  const lot = state.lots.find(l => l.id === id);
+  const ok = await openConfirmModal({ title: 'Delete lot', record: lot?.lotNumber || id, message: 'Delete this lot record?', risk: 'This removes the local lot-tracking row.', confirmLabel: 'Delete Lot', tone: 'danger' });
+  if (!ok) return;
   state.lots = state.lots.filter(l => l.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9701,8 +10902,9 @@ function saveSanitation(id, isNew) {
   closeModal();
   renderFoodSafety(document.getElementById('content'));
 }
-function deleteSanitation(id) {
-  if (!confirm('Delete this log entry?')) return;
+async function deleteSanitation(id) {
+  const ok = await openConfirmModal({ title: 'Delete sanitation log', record: id, message: 'Delete this sanitation log entry?', risk: 'This removes the local sanitation log row.', confirmLabel: 'Delete Log', tone: 'danger' });
+  if (!ok) return;
   state.sanitationLogs = state.sanitationLogs.filter(s => s.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9793,8 +10995,9 @@ function saveCcp(id, isNew) {
   closeModal();
   renderFoodSafety(document.getElementById('content'));
 }
-function deleteCcp(id) {
-  if (!confirm('Delete this CCP log entry?')) return;
+async function deleteCcp(id) {
+  const ok = await openConfirmModal({ title: 'Delete CCP log', record: id, message: 'Delete this CCP / HACCP log entry?', risk: 'This removes the local CCP log row.', confirmLabel: 'Delete Log', tone: 'danger' });
+  if (!ok) return;
   state.ccpLogs = state.ccpLogs.filter(c => c.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9881,8 +11084,9 @@ function saveNcr(id, isNew) {
   closeModal();
   renderFoodSafety(document.getElementById('content'));
 }
-function deleteNcr(id) {
-  if (!confirm('Delete this NCR?')) return;
+async function deleteNcr(id) {
+  const ok = await openConfirmModal({ title: 'Delete NCR', record: id, message: 'Delete this non-conformance / CAPA record?', risk: 'This removes the local NCR row.', confirmLabel: 'Delete NCR', tone: 'danger' });
+  if (!ok) return;
   state.ncrs = state.ncrs.filter(n => n.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -9969,8 +11173,9 @@ function saveRecall(id, isNew) {
   closeModal();
   renderFoodSafety(document.getElementById('content'));
 }
-function deleteRecall(id) {
-  if (!confirm('Delete this mock recall record?')) return;
+async function deleteRecall(id) {
+  const ok = await openConfirmModal({ title: 'Delete mock recall', record: id, message: 'Delete this mock recall record?', risk: 'This removes the local mock recall row.', confirmLabel: 'Delete Recall', tone: 'danger' });
+  if (!ok) return;
   state.recalls = state.recalls.filter(r => r.id !== id);
   saveState();
   renderFoodSafety(document.getElementById('content'));
@@ -10198,8 +11403,9 @@ function completeMaintenance(id) {
   router('machinery');
   toast('Maintenance marked complete.');
 }
-function deleteMaintenance(id) {
-  if (!confirm('Delete this maintenance event?')) return;
+async function deleteMaintenance(id) {
+  const ok = await openConfirmModal({ title: 'Delete maintenance event', record: id, message: 'Delete this maintenance event?', risk: 'This removes the local maintenance schedule row.', confirmLabel: 'Delete Event', tone: 'danger' });
+  if (!ok) return;
   state.maintenanceEvents = state.maintenanceEvents.filter(x=>x.id!==id);
   saveState();
   router('machinery');
@@ -10329,8 +11535,9 @@ function saveEquipmentIssue(id, isNew) {
   router('machinery');
   toast('Equipment issue saved.');
 }
-function deleteEquipmentIssue(id) {
-  if (!confirm('Delete this equipment issue?')) return;
+async function deleteEquipmentIssue(id) {
+  const ok = await openConfirmModal({ title: 'Delete equipment issue', record: id, message: 'Delete this equipment issue?', risk: 'This removes the local equipment issue row.', confirmLabel: 'Delete Issue', tone: 'danger' });
+  if (!ok) return;
   state.equipmentIssues = state.equipmentIssues.filter(x=>x.id!==id);
   saveState();
   router('machinery');
@@ -10468,8 +11675,16 @@ function coaFileSelected(e, poId) {
   reader.readAsDataURL(f);
 }
 
-function removeCoa(poId) {
-  if (!confirm('Remove the COA from this PO?')) return;
+async function removeCoa(poId) {
+  const ok = await openConfirmModal({
+    title: 'Remove COA',
+    record: poId,
+    message: 'Remove the COA from this PO?',
+    risk: 'The PO will no longer be ready for QA release until a COA is uploaded again.',
+    confirmLabel: 'Remove COA',
+    tone: 'danger'
+  });
+  if (!ok) return;
   const po = state.purchaseOrders.find(x => x.id === poId);
   if (!po) return;
   po.coa = null;
@@ -10676,8 +11891,16 @@ function updateProductionRequestStatus(id, status) {
   saveState();
   toast('Status updated.');
 }
-function deleteProductionRequest(id) {
-  if (!confirm('Delete this production request?')) return;
+async function deleteProductionRequest(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete production request',
+    record: id,
+    message: 'Delete this production request?',
+    risk: 'This removes the local production request row from Pick & Pack.',
+    confirmLabel: 'Delete Request',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.productionRequests = state.productionRequests.filter(x=>x.id!==id);
   saveState();
   router('pick-pack');
@@ -11067,12 +12290,20 @@ function pickPackStockCheck(p) {
   return { ok: short.length === 0, short };
 }
 
-function markPickPackPicked(id) {
+async function markPickPackPicked(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
   const check = pickPackStockCheck(p);
   if (!check.ok) {
-    if (!confirm(`This order is short on stock:\n\n${check.short.map(s => '• '+s.item+': short '+s.shortBy).join('\n')}\n\nMark Picked anyway?`)) return;
+    const ok = await openConfirmModal({
+      title: 'Pick with short stock',
+      record: id,
+      message: 'This order is short on finished-goods stock. Mark it picked anyway?',
+      risk: check.short.map(s => `${s.item}: short ${s.shortBy}`).join('\n'),
+      confirmLabel: 'Mark Picked',
+      tone: 'workflow'
+    });
+    if (!ok) return;
   }
   // deduct from finished goods
   p.lines.forEach(l => {
@@ -11109,15 +12340,31 @@ function savePickPackShippingForm(id) {
   saveState();
   toast('Shipping info saved.');
 }
-function markPickPackShipped(id) {
+async function markPickPackShipped(id) {
   savePickPackShippingForm(id);
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
   if (p.shippingMode === 'parcel' && !p.trackingNumber) {
-    if (!confirm('No tracking number entered. Mark shipped anyway?')) return;
+    const ok = await openConfirmModal({
+      title: 'Ship without tracking',
+      record: id,
+      message: 'No tracking number is entered. Mark this parcel shipped anyway?',
+      risk: 'The order will move to Shipped without a tracking reference.',
+      confirmLabel: 'Mark Shipped',
+      tone: 'workflow'
+    });
+    if (!ok) return;
   }
   if (p.shippingMode !== 'parcel' && !p.bol && !p.carrier) {
-    if (!confirm('No BOL or Carrier entered. Mark shipped anyway?')) return;
+    const ok = await openConfirmModal({
+      title: 'Ship with missing details',
+      record: id,
+      message: 'No BOL or Carrier is entered. Mark this LTL shipment shipped anyway?',
+      risk: 'The order will move to Shipped without complete freight details.',
+      confirmLabel: 'Mark Shipped',
+      tone: 'workflow'
+    });
+    if (!ok) return;
   }
   p.status = 'shipped';
   p.shippedAt = new Date().toISOString();
@@ -11127,8 +12374,16 @@ function markPickPackShipped(id) {
   toast(`${id} marked shipped.`);
 }
 
-function deletePickPackPO(id) {
-  if (!confirm('Delete this Pick & Pack PO?')) return;
+async function deletePickPackPO(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete Pick & Pack PO',
+    record: id,
+    message: 'Delete this Pick & Pack PO?',
+    risk: 'This removes the order from the Pick & Pack workflow.',
+    confirmLabel: 'Delete PO',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.pickPackOrders = state.pickPackOrders.filter(p => p.id !== id);
   saveState();
   router('pick-pack');
@@ -11298,8 +12553,16 @@ function updateFeedbackStatus(id, status) {
   saveState();
   toast('Status updated.');
 }
-function deleteFeedback(id) {
-  if (!confirm('Delete this feedback submission?')) return;
+async function deleteFeedback(id) {
+  const ok = await openConfirmModal({
+    title: 'Delete feedback',
+    record: id,
+    message: 'Delete this feedback submission?',
+    risk: 'This removes the local feedback record.',
+    confirmLabel: 'Delete Feedback',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.feedback = (state.feedback || []).filter(f => f.id !== id);
   saveState();
   router('feedback');
@@ -11577,10 +12840,18 @@ function addRdComment(id) {
   router('rd');
 }
 
-function completeRdRequest(id) {
+async function completeRdRequest(id) {
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
-  if (!confirm(`Mark ${r.rdId} as complete? It will move to the Completed tab.`)) return;
+  const ok = await openConfirmModal({
+    title: 'Complete R&D request',
+    record: r.rdId,
+    message: 'Move this R&D request to the Completed tab?',
+    risk: 'The request can be reopened later if work resumes.',
+    confirmLabel: 'Mark Complete',
+    tone: 'workflow'
+  });
+  if (!ok) return;
   r.status = 'completed';
   r.completedAt = new Date().toISOString();
   saveState();
@@ -11589,10 +12860,18 @@ function completeRdRequest(id) {
   toast(`${r.rdId} marked complete.`);
 }
 
-function reopenRdRequest(id) {
+async function reopenRdRequest(id) {
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
-  if (!confirm(`Reopen ${r.rdId}? It will move back to the Queue.`)) return;
+  const ok = await openConfirmModal({
+    title: 'Reopen R&D request',
+    record: r.rdId,
+    message: 'Move this R&D request back to the active Queue?',
+    risk: 'This makes it active again for follow-up work.',
+    confirmLabel: 'Reopen',
+    tone: 'workflow'
+  });
+  if (!ok) return;
   r.status = 'queue';
   r.completedAt = null;
   saveState();
@@ -11601,10 +12880,18 @@ function reopenRdRequest(id) {
   toast(`${r.rdId} reopened.`);
 }
 
-function deleteRdRequest(id) {
+async function deleteRdRequest(id) {
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
-  if (!confirm(`Delete ${r.rdId}? This can't be undone.`)) return;
+  const ok = await openConfirmModal({
+    title: 'Delete R&D request',
+    record: r.rdId,
+    message: 'Delete this R&D request?',
+    risk: 'This cannot be undone from the browser.',
+    confirmLabel: 'Delete Request',
+    tone: 'danger'
+  });
+  if (!ok) return;
   state.rdRequests = (state.rdRequests || []).filter(x => x.id !== id);
   saveState();
   router('rd');

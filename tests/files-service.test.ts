@@ -115,8 +115,8 @@ describe("file service", () => {
     await expect(createFileMetadata(store, {
       ownerType: "purchase_order",
       ownerId: "po-1",
-      fileCategory: "product_image" as never,
-      storageKey: "files/purchase_order/po-1/product_image/upload.pdf",
+      fileCategory: "supplier_contract" as never,
+      storageKey: "files/purchase_order/po-1/supplier_contract/upload.pdf",
       fileName: "upload.pdf",
       contentType: "application/pdf",
       sizeBytes: 10,
