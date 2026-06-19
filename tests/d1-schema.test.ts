@@ -11,6 +11,7 @@ const migrationPaths = [
   "migrations/0004_phase_2b_sprint_5_inventory_foundations.sql",
   "migrations/0005_phase_2b_sprint_6_procurement_automation.sql",
   "migrations/0006_phase_2b_sprint_7_production_schedule.sql",
+  "migrations/0007_phase_2b_sprint_8_quality_assurance.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -302,6 +303,38 @@ describe("Phase 2A D1 baseline schema migration", () => {
 
       expect(productionStatusInsert.at(-1)?.results).toContainEqual(
         expect.objectContaining({ status: "qa_review" }),
+      );
+
+      const qaColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('purchase_orders');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(qaColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "qa_released_at" }),
+          expect.objectContaining({ name: "qa_released_by_user_id" }),
+          expect.objectContaining({ name: "qa_release_type" }),
+          expect.objectContaining({ name: "qa_notes" }),
+          expect.objectContaining({ name: "qa_skipped_at" }),
+          expect.objectContaining({ name: "qa_skipped_by_user_id" }),
+          expect.objectContaining({ name: "qa_skip_reason" }),
+          expect.objectContaining({ name: "post_shipment_coa_file_id" }),
+        ]),
+      );
+
+      const shippingInsert = d1Execute(persistDir, [
+        "--command",
+        `
+          INSERT INTO purchase_orders (id, po_number, customer_id, status)
+          VALUES ('po-schema-shipping', 'PO-SCHEMA-SHIPPING', 'customer-schema', 'shipping');
+          SELECT status FROM purchase_orders WHERE id = 'po-schema-shipping';
+        `,
+      ]);
+
+      expect(shippingInsert.at(-1)?.results).toContainEqual(
+        expect.objectContaining({ status: "shipping" }),
       );
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
