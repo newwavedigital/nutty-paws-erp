@@ -1890,12 +1890,14 @@ const backendInventoryState = { status: 'local', lastError: '', loading: false, 
 const backendProcurementState = { status: 'local', lastError: '', loading: false, loaded: false, needRows: [] };
 const backendProductionState = { status: 'local', lastError: '', loading: false, loaded: false, runs: [], logs: [] };
 const backendQualityState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [] };
+const backendShippingState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [], logs: [] };
 let confirmModalResolver = null;
 let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
 const BACKEND_ACTOR_USER_ID = 'phase-2a-frontend';
 let pendingPoFile = null;
 let pendingCustomerPortalFile = null;
+const pendingShipmentDocumentFiles = new Map();
 let customerPortalDirty = false;
 let customerPortalSubmitting = false;
 
@@ -2122,7 +2124,7 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
@@ -2133,6 +2135,8 @@ function resetBackendDataStates() {
   backendProductionState.runs = [];
   backendProductionState.logs = [];
   backendQualityState.queue = [];
+  backendShippingState.queue = [];
+  backendShippingState.logs = [];
 }
 
 function authHeaders() {
@@ -2407,6 +2411,20 @@ function renderBackendQualityBanner() {
   </div>`;
 }
 
+function renderBackendShippingBanner() {
+  const connected = backendShippingState.status === 'connected';
+  const loading = backendShippingState.loading;
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const detail = connected
+    ? 'Shipping queue, shipment documents, shipped status, stocking status, and Shipping Log rows are reading from protected backend records when available.'
+    : (backendShippingState.lastError || 'Local shipping demo data remains visible while backend data is unavailable.');
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="shipping" style="border-left-color:${color}">
+    <strong>${title}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
+  </div>`;
+}
+
 function qualityBackendIsConnected() {
   return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendQualityState.status === 'connected';
 }
@@ -2536,6 +2554,201 @@ function qualityActionLabel(po) {
 
 function qualityActionTimestamp(po) {
   return po.qaSkippedAt || po.qaReleasedAt || po.coa?.uploadedAt || po.completedAt || '';
+}
+
+function shippingBackendIsConnected() {
+  return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendShippingState.status === 'connected';
+}
+
+function shippingPurchaseOrderBackendId(po) {
+  return po?._backendId || po?.id || '';
+}
+
+function shippingShipmentDocumentFileId(po) {
+  const doc = po?.shipping?.documents;
+  return doc?._backendFileId || doc?.id || po?.shipping?.shipmentDocumentFileId || '';
+}
+
+function mergeBackendShippingQueue(records) {
+  const queue = mergeBackendPurchaseOrders(records || []);
+  backendShippingState.queue = queue;
+  return queue;
+}
+
+function backendShippingLogToLocal(log, existing = {}) {
+  const palletList = parseJsonFallback(log.palletListJson, []);
+  const items = Array.isArray(log.items) ? log.items : parseJsonFallback(log.itemsSnapshotJson, []);
+  return {
+    ...existing,
+    id: log.id,
+    _backendId: log.id,
+    shipId: log.shipId || log.shippingId || log.shippingLogNumber || existing.shipId || log.id,
+    poId: localPoIdFromBackendPurchaseOrderId(log.purchaseOrderId || log.poId || ''),
+    date: (log.shippedAt || log.stockedAt || log.createdAt || log.date || '').slice(0, 10),
+    customerId: log.customerId || existing.customerId || '',
+    brand: log.brand || existing.brand || '',
+    carrier: log.carrier || log.carrierName || '',
+    bol: log.bol || log.bolNumber || '',
+    proNumber: log.proNumber || '',
+    pallets: log.palletCount ?? palletList.length ?? 0,
+    weight: log.totalWeight ?? log.weight ?? palletList.reduce((sum, pl) => sum + (parseFloat(pl.weight)||0), 0),
+    items: items.map(item => ({
+      productId: item.productId || '',
+      qty: item.quantity ?? item.qty ?? item.quantityProduced ?? 0,
+      lot: item.lotNumber || item.lot || ''
+    }))
+  };
+}
+
+function mergeBackendShippingLogs(logs) {
+  const mapped = (logs || []).map(log => backendShippingLogToLocal(log, (state.shippingLog || []).find(local => local._backendId === log.id || local.id === log.id) || {}));
+  backendShippingState.logs = mapped;
+  state.shippingLog = mergeByBackendId(state.shippingLog || [], logs || [], backendShippingLogToLocal);
+  try { saveState(); } catch (err) {}
+  return mapped;
+}
+
+async function attachBackendShipmentDocuments(queue) {
+  for (const po of queue || []) {
+    const purchaseOrderId = shippingPurchaseOrderBackendId(po);
+    if (!purchaseOrderId) continue;
+    try {
+      const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
+      po._backendFiles = files || [];
+      const shipmentDocument = (files || []).find(file => file.fileCategory === 'shipment_document') || null;
+      if (shipmentDocument) {
+        po.shipping = po.shipping || {};
+        po.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
+        po.shipping.shipmentDocumentFileId = shipmentDocument.id;
+      }
+    } catch (error) {
+      po._backendFileError = error?.message || 'Shipment documents unavailable';
+    }
+  }
+}
+
+async function loadBackendShippingQueue() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return backendShippingState.queue;
+  const records = await apiRequest('/api/shipping/queue');
+  const queue = mergeBackendShippingQueue(records || []);
+  await attachBackendShipmentDocuments(queue);
+  return queue;
+}
+
+async function loadBackendShippingLogs() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return backendShippingState.logs;
+  const logs = await apiRequest('/api/shipping/logs');
+  return mergeBackendShippingLogs(logs || []);
+}
+
+async function loadBackendShipping() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendShippingState.loading || backendShippingState.loaded) return;
+  backendShippingState.loading = true;
+  try {
+    await loadBackendShippingQueue();
+    await loadBackendShippingLogs();
+    backendShippingState.status = 'connected';
+    backendShippingState.lastError = '';
+    backendShippingState.loaded = true;
+  } catch (error) {
+    backendShippingState.status = 'error';
+    backendShippingState.lastError = 'Shipping backend data is unavailable, so local demo shipping remains visible.';
+    backendShippingState.loaded = true;
+  } finally {
+    backendShippingState.loading = false;
+  }
+}
+
+async function uploadBackendShipmentDocument(purchaseOrderId, file) {
+  if (!file) return null;
+  const form = new FormData();
+  form.set('ownerType', 'purchase_order');
+  form.set('ownerId', purchaseOrderId);
+  form.set('fileCategory', 'shipment_document');
+  form.set('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+function backendShippingDetailsPayload(po) {
+  const s = po.shipping || {};
+  const palletList = shipPalletList(po).map(pl => ({
+    length: Number(pl.length || 0),
+    width: Number(pl.width || 0),
+    height: Number(pl.height || 0),
+    weight: Number(pl.weight || 0)
+  }));
+  return {
+    bol: s.bol || null,
+    bolNumber: s.bol || null,
+    proNumber: s.proNumber || null,
+    carrier: s.carrier || null,
+    carrierName: s.carrier || null,
+    freightClass: s.freightClass || null,
+    notes: s.notes || null,
+    palletList,
+    palletListJson: JSON.stringify(palletList),
+    weight: palletList.reduce((sum, pl) => sum + Number(pl.weight || 0), 0),
+    shipmentDocumentFileId: shippingShipmentDocumentFileId(po) || null,
+    actorUserId: BACKEND_ACTOR_USER_ID
+  };
+}
+
+async function saveBackendShippingDetails(po) {
+  const purchaseOrderId = shippingPurchaseOrderBackendId(po);
+  if (!purchaseOrderId) throw new Error('Backend shipping details are unavailable for this PO.');
+  const updated = await apiRequest(`/api/shipping/purchase-orders/${encodeURIComponent(purchaseOrderId)}/details`, {
+    method: 'PATCH',
+    body: JSON.stringify(backendShippingDetailsPayload(po))
+  });
+  po.shipping = {
+    ...(po.shipping || {}),
+    bol: updated?.bolNumber || po.shipping?.bol || '',
+    proNumber: updated?.proNumber || po.shipping?.proNumber || '',
+    carrier: updated?.carrier || po.shipping?.carrier || '',
+    freightClass: updated?.freightClass || po.shipping?.freightClass || '',
+    notes: updated?.notes || po.shipping?.notes || '',
+    shipmentDocumentFileId: updated?.shipmentDocumentFileId || po.shipping?.shipmentDocumentFileId || ''
+  };
+  backendShippingState.loaded = false;
+  return updated;
+}
+
+async function markBackendShipped(po, options = {}) {
+  const purchaseOrderId = shippingPurchaseOrderBackendId(po);
+  if (!purchaseOrderId) throw new Error('Backend shipping completion is unavailable for this PO.');
+  const updated = await apiRequest(`/api/shipping/purchase-orders/${encodeURIComponent(purchaseOrderId)}/mark-shipped`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...backendShippingDetailsPayload(po),
+      confirmMissingCarrierBol: !!options.confirmMissingCarrierBol
+    })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  await loadBackendShippingLogs();
+  backendShippingState.loaded = false;
+  return updated;
+}
+
+async function markBackendStocked(po) {
+  const purchaseOrderId = shippingPurchaseOrderBackendId(po);
+  if (!purchaseOrderId) throw new Error('Backend stocking completion is unavailable for this PO.');
+  const updated = await apiRequest(`/api/shipping/purchase-orders/${encodeURIComponent(purchaseOrderId)}/mark-stocked`, {
+    method: 'POST',
+    body: JSON.stringify({
+      notes: po.shipping?.notes || null,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  await loadBackendShippingLogs();
+  backendShippingState.loaded = false;
+  return updated;
+}
+
+function isBackendMissingCarrierBolWarning(error) {
+  const code = String(error?.envelope?.error?.code || error?.code || '').toLowerCase();
+  const message = String(error?.message || error?.envelope?.error?.message || '').toLowerCase();
+  return code.includes('missing') || (message.includes('missing') && (message.includes('bol') || message.includes('carrier')));
 }
 
 function qualityActionActor(po) {
@@ -3460,12 +3673,26 @@ function mergeBackendPurchaseOrders(records) {
 function mapBackendPurchaseOrderToPrototype(po) {
   const backendStatus = po.status || 'draft';
   const existing = (state.purchaseOrders || []).find(local => local._backendId === po.id || local.id === po.poNumber || local.id === po.id) || {};
+  const shippingDetails = po.shippingDetails || {};
+  const shippingPalletList = parseJsonFallback(shippingDetails.palletListJson, []);
+  const backendShipping = {
+    ...(existing.shipping || {}),
+    bol: shippingDetails.bolNumber || existing.shipping?.bol || '',
+    proNumber: shippingDetails.proNumber || existing.shipping?.proNumber || '',
+    carrier: shippingDetails.carrier || existing.shipping?.carrier || '',
+    freightClass: shippingDetails.freightClass || existing.shipping?.freightClass || '',
+    notes: shippingDetails.notes || po.shippingNotes || existing.shipping?.notes || '',
+    palletList: shippingPalletList.length ? shippingPalletList : existing.shipping?.palletList,
+    shipmentDocumentFileId: po.shipmentDocumentFileId || shippingDetails.shipmentDocumentFileId || existing.shipping?.shipmentDocumentFileId || ''
+  };
   const prototypeStatus = backendStatus === 'approved_for_production'
     ? 'approved_for_production'
     : backendStatus === 'in_production'
       ? 'in_production'
       : backendStatus === 'qa_review'
         ? 'qa_review'
+    : backendStatus === 'shipping'
+      ? 'shipping'
     : backendStatus === 'completed'
       ? 'completed'
       : 'in_supply_chain';
@@ -3506,7 +3733,10 @@ function mapBackendPurchaseOrderToPrototype(po) {
     qaSkippedAt: po.qaSkippedAt || existing?.qaSkippedAt || '',
     qaSkippedByUserId: po.qaSkippedByUserId || existing?.qaSkippedByUserId || '',
     qaSkipReason: po.qaSkipReason || existing?.qaSkipReason || '',
-    postShipmentCoaFileId: po.postShipmentCoaFileId || existing?.postShipmentCoaFileId || ''
+    postShipmentCoaFileId: po.postShipmentCoaFileId || existing?.postShipmentCoaFileId || '',
+    shipping: backendShipping,
+    shippedAt: po.shippedAt || existing?.shippedAt || '',
+    stockedAt: po.stockedAt || existing?.stockedAt || ''
   };
 }
 
@@ -6902,12 +7132,16 @@ function saveProductionValues(id) {
    SHIPPING
    ========================================================================= */
 function renderShipping(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendShippingState.loaded && !backendShippingState.loading) {
+    loadBackendShipping().then(() => { if (currentPage === 'shipping') router('shipping'); });
+  }
   const ship = state.purchaseOrders.filter(p => p.status === 'shipping' || p.status === 'completed');
   const open = ship.filter(p => p.status === 'shipping');
   const done = ship.filter(p => p.status === 'completed');
   const openExternal = open.filter(p => !isInternalBrand(p));
   const openInternal = open.filter(p => isInternalBrand(p));
   el.innerHTML = `
+    ${renderBackendShippingBanner()}
     <div class="card">
       <div class="card-header">
         <h2>Ready to Ship</h2>
@@ -7124,6 +7358,7 @@ function shipDocsSelected(e, id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
   captureShippingForm(po);
+  pendingShipmentDocumentFiles.set(id, f);
   const reader = new FileReader();
   reader.onload = () => {
     po.shipping.documents = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result, uploadedAt: new Date().toISOString() };
@@ -7138,6 +7373,7 @@ function clearShipDocs(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
   captureShippingForm(po);
+  pendingShipmentDocumentFiles.delete(id);
   po.shipping.documents = null;
   saveState();
   router('shipping');
@@ -7191,6 +7427,21 @@ async function confirmStocked(id) {
   if (document.getElementById('sh_notes_'+id)) {
     po.shipping.notes = document.getElementById('sh_notes_'+id).value;
   }
+  if (shippingBackendIsConnected() && po._backendId) {
+    try {
+      await markBackendStocked(po);
+      backendShippingState.status = 'connected';
+      router('shipping');
+      toast(`${id} stocked to warehouse in backend.`);
+      return;
+    } catch (error) {
+      backendShippingState.status = 'error';
+      backendShippingState.lastError = 'Shipping backend stocking failed, so the local demo fallback remains visible.';
+      toast(error.message || backendShippingState.lastError);
+      router('shipping');
+      return;
+    }
+  }
   po.shipping.stockedToWarehouse = true;
   po.shipping.stockedAt = new Date().toISOString();
   po.status = 'completed';
@@ -7198,9 +7449,22 @@ async function confirmStocked(id) {
   router('shipping');
   toast(`${id} stocked to warehouse.`);
 }
-function saveShipping(id) {
+async function saveShipping(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   captureShippingForm(po);
+  if (shippingBackendIsConnected() && po?._backendId) {
+    try {
+      await saveBackendShippingDetails(po);
+      backendShippingState.status = 'connected';
+      saveState();
+      toast(`Shipping info saved to backend for ${id}.`);
+      return;
+    } catch (error) {
+      backendShippingState.status = 'error';
+      backendShippingState.lastError = 'Shipping backend save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendShippingState.lastError);
+    }
+  }
   saveState();
   toast(`Shipping info saved for ${id}.`);
 }
@@ -7222,6 +7486,49 @@ async function completeShipment(id) {
       tone: 'workflow'
     });
     if (!ok) return;
+  }
+  if (shippingBackendIsConnected() && po._backendId) {
+    try {
+      const pendingFile = pendingShipmentDocumentFiles.get(id);
+      if (pendingFile) {
+        const uploaded = await uploadBackendShipmentDocument(shippingPurchaseOrderBackendId(po), pendingFile);
+        po.shipping.documents = mapBackendFileToPrototype(uploaded);
+        po.shipping.shipmentDocumentFileId = uploaded?.id || '';
+        pendingShipmentDocumentFiles.delete(id);
+      }
+      await saveBackendShippingDetails(po);
+      await markBackendShipped(po);
+      backendShippingState.status = 'connected';
+      router('shipping');
+      toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
+      return;
+    } catch (error) {
+      if (isBackendMissingCarrierBolWarning(error)) {
+        const ok = await openConfirmModal({
+          title: 'Ship with missing backend details',
+          record: id,
+          message: 'The backend reported a missing BOL # or Carrier. Mark this shipment complete anyway?',
+          risk: 'The backend order will be completed, but shipping records may need cleanup later.',
+          confirmLabel: 'Mark Shipped',
+          tone: 'workflow'
+        });
+        if (!ok) return;
+        try {
+          await markBackendShipped(po, { confirmMissingCarrierBol: true });
+          backendShippingState.status = 'connected';
+          router('shipping');
+          toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
+          return;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+      backendShippingState.status = 'error';
+      backendShippingState.lastError = 'Shipping backend completion failed, so the local demo fallback remains visible.';
+      toast(error.message || backendShippingState.lastError);
+      router('shipping');
+      return;
+    }
   }
   po.status = 'completed';
   po.shippedAt = new Date().toISOString();
@@ -10416,14 +10723,36 @@ function logShipment(po) {
   if (state.shippingLog.some(l => l.poId === po.id)) return;
   state.shippingLog.push(buildShippingLogEntry(po));
 }
+function shippingLogRowsForDisplay() {
+  return shippingBackendIsConnected() ? backendShippingState.logs : (state.shippingLog || []);
+}
+function shippingLogExportRows() {
+  return shippingLogRowsForDisplay().map(r=>({
+    shipping_id: r.shipId,
+    date: r.date,
+    po: r.poId,
+    customer: getCustomer(r.customerId)?.name || '',
+    brand: r.brand,
+    carrier: r.carrier,
+    bol: r.bol,
+    pro: r.proNumber,
+    pallets: r.pallets,
+    weight: r.weight,
+    items: (r.items||[]).map(it=>(getProduct(it.productId)?.sku||'')+' x'+it.qty).join('; ')
+  }));
+}
 function renderShippingLog(el) {
-  const rows = (state.shippingLog || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendShippingState.loaded && !backendShippingState.loading) {
+    loadBackendShipping().then(() => { if (currentPage === 'inventory' && invTab === 'Shipping Log') router('inventory'); });
+  }
+  const rows = shippingLogRowsForDisplay().slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
   const headers = ['Shipping ID','Date','Order (PO)','Customer','Brand','Carrier','BOL #','PRO #','Pallets','Weight','Items',''];
   const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Customer filter', ['All customers', ...state.customers.map(c=>c.name).slice(0,6)])}${opsSelect('Carrier filter', ['All carriers','UPS','FedEx','USPS','LTL'])}`;
-  const actions = `<button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', (state.shippingLog||[]).map(r=>({shipping_id:r.shipId,date:r.date,po:r.poId,customer:getCustomer(r.customerId)?.name||'',brand:r.brand,carrier:r.carrier,bol:r.bol,pro:r.proNumber,pallets:r.pallets,weight:r.weight,items:(r.items||[]).map(it=>(getProduct(it.productId)?.sku||'')+' x'+it.qty).join('; ')})))">Export CSV</button>`;
+  const actions = `<button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', shippingLogExportRows())">Export CSV</button>`;
   el.innerHTML = `
     <div class="ops-page">
     ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
+    ${renderBackendShippingBanner()}
     ${inventorySummaryHtml()}
     <div class="ops-panel">
       ${inventoryTabsHtml()}
@@ -10459,7 +10788,7 @@ function renderShippingLog(el) {
                 <td>${r.weight?escapeHtml(String(r.weight))+' lb':'—'}</td>
                 <td>${itemsHtml}</td>
                 <td class="row-actions">
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteShippingLog('${r.id}')">Delete</button>
+                  ${r._backendId ? '<span style="font-size:12px;color:var(--brown-light)">Backend</span>' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteShippingLog('${r.id}')">Delete</button>`}
                 </td>
               </tr>`;
             }).join('')

@@ -12,6 +12,7 @@ const migrationPaths = [
   "migrations/0005_phase_2b_sprint_6_procurement_automation.sql",
   "migrations/0006_phase_2b_sprint_7_production_schedule.sql",
   "migrations/0007_phase_2b_sprint_8_quality_assurance.sql",
+  "migrations/0008_phase_2b_sprint_9_shipping_stocking.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -100,6 +101,8 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "receiving_entries",
         "roles",
         "sessions",
+        "shipping_details",
+        "shipping_logs",
         "user_roles",
         "users",
       ]);
@@ -321,6 +324,37 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "qa_skipped_by_user_id" }),
           expect.objectContaining({ name: "qa_skip_reason" }),
           expect.objectContaining({ name: "post_shipment_coa_file_id" }),
+          expect.objectContaining({ name: "shipped_at" }),
+          expect.objectContaining({ name: "shipped_by_user_id" }),
+          expect.objectContaining({ name: "stocked_at" }),
+          expect.objectContaining({ name: "stocked_by_user_id" }),
+          expect.objectContaining({ name: "shipping_notes" }),
+          expect.objectContaining({ name: "shipment_document_file_id" }),
+        ]),
+      );
+
+      const shippingDetailsColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('shipping_details');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(shippingDetailsColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "purchase_order_id", notnull: 1 }),
+          expect.objectContaining({ name: "bol_number" }),
+          expect.objectContaining({ name: "carrier" }),
+          expect.objectContaining({ name: "shipment_document_file_id" }),
+        ]),
+      );
+
+      const shippingLogIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('shipping_logs');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(shippingLogIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ unique: 1, origin: "u" }),
         ]),
       );
 
@@ -339,5 +373,5 @@ describe("Phase 2A D1 baseline schema migration", () => {
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }
-  }, 30000);
+  }, 45000);
 });
