@@ -8,6 +8,7 @@ export type PurchaseOrderStatus =
   | "awaiting_deposit"
   | "approved_for_production"
   | "in_production"
+  | "qa_review"
   | "completed"
   | "cancelled";
 
@@ -367,7 +368,7 @@ async function resolveInventoryRequirements(
 }
 
 function isOrdinaryEditLocked(status: PurchaseOrderStatus) {
-  return ["approved_for_production", "in_production", "completed"].includes(status);
+  return ["approved_for_production", "in_production", "qa_review", "completed"].includes(status);
 }
 
 async function transitionPO(

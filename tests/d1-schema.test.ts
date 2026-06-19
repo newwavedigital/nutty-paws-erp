@@ -10,6 +10,7 @@ const migrationPaths = [
   "migrations/0003_phase_2b_sprint_4_supply_chain.sql",
   "migrations/0004_phase_2b_sprint_5_inventory_foundations.sql",
   "migrations/0005_phase_2b_sprint_6_procurement_automation.sql",
+  "migrations/0006_phase_2b_sprint_7_production_schedule.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -73,6 +74,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "customers",
         "file_metadata",
         "inventory_items",
+        "inventory_lots",
         "inventory_movements",
         "inventory_reservations",
         "master_items",
@@ -82,6 +84,11 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "procurement_receipt_lines",
         "procurement_receipts",
         "product_bom_items",
+        "production_inventory_effects",
+        "production_logs",
+        "production_run_lines",
+        "production_run_materials",
+        "production_runs",
         "products",
         "purchase_order_lines",
         "purchase_order_status_events",
@@ -245,8 +252,59 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "source_reason", notnull: 1 }),
         ]),
       );
+
+      const productionRunColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('production_runs');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(productionRunColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "purchase_order_id", notnull: 1 }),
+          expect.objectContaining({ name: "production_date", notnull: 1 }),
+          expect.objectContaining({ name: "production_end_date", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "correction_count", notnull: 1 }),
+        ]),
+      );
+
+      const productionRunIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('production_runs');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(productionRunIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ unique: 1, origin: "u" }),
+        ]),
+      );
+
+      const productionLogIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('production_logs');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(productionLogIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ unique: 1, origin: "u" }),
+        ]),
+      );
+
+      const productionStatusInsert = d1Execute(persistDir, [
+        "--command",
+        `
+          INSERT INTO customers (id, name) VALUES ('customer-schema', 'Schema Customer');
+          INSERT INTO purchase_orders (id, po_number, customer_id, status)
+          VALUES ('po-schema-qa', 'PO-SCHEMA-QA', 'customer-schema', 'qa_review');
+          SELECT status FROM purchase_orders WHERE id = 'po-schema-qa';
+        `,
+      ]);
+
+      expect(productionStatusInsert.at(-1)?.results).toContainEqual(
+        expect.objectContaining({ status: "qa_review" }),
+      );
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }
-  }, 20000);
+  }, 30000);
 });

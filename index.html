@@ -1888,6 +1888,7 @@ const backendProductState = { status: 'local', lastError: '', loading: false, lo
 const backendMasterItemState = { status: 'local', lastError: '', loading: false, loaded: false };
 const backendInventoryState = { status: 'local', lastError: '', loading: false, loaded: false, signals: null };
 const backendProcurementState = { status: 'local', lastError: '', loading: false, loaded: false, needRows: [] };
+const backendProductionState = { status: 'local', lastError: '', loading: false, loaded: false, runs: [], logs: [] };
 let confirmModalResolver = null;
 let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
@@ -2120,7 +2121,7 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
@@ -2128,6 +2129,8 @@ function resetBackendDataStates() {
   });
   backendInventoryState.signals = null;
   backendProcurementState.needRows = [];
+  backendProductionState.runs = [];
+  backendProductionState.logs = [];
 }
 
 function authHeaders() {
@@ -2369,6 +2372,20 @@ function renderBackendProcurementBanner() {
     : (backendProcurementState.lastError || 'Local procurement demo data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="procurement" style="border-left-color:${color}">
+    <strong>${title}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
+  </div>`;
+}
+
+function renderBackendProductionBanner() {
+  const connected = backendProductionState.status === 'connected';
+  const loading = backendProductionState.loading;
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const detail = connected
+    ? 'Production Schedule, Production Log, QA routing, and correction actions are reading from protected backend records when available.'
+    : (backendProductionState.lastError || 'Local production demo data remains visible while backend data is unavailable.');
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="production" style="border-left-color:${color}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -2648,6 +2665,170 @@ function mergeBackendMoveEntries(entries) {
 
 function mergeBackendProcurementOrders(orders) {
   state.procurementOrders = mergeByBackendId(state.procurementOrders || [], orders || [], backendProcurementOrderToLocal);
+}
+
+function backendProductionRunToLocal(run, existing = {}) {
+  return {
+    ...existing,
+    _backendProductionRunId: run.id,
+    _backendProductionRunStatus: run.status,
+    productionDate: run.productionDate || existing.productionDate || null,
+    productionEndDate: run.productionEndDate || existing.productionEndDate || run.productionDate || null,
+    productionRoom: run.productionRoom || existing.productionRoom || '',
+    productionFinalized: run.status === 'finalized',
+    completedAt: run.finalizedAt || existing.completedAt || null,
+    productionCorrectionCount: run.correctionCount || 0,
+    completionNotes: run.notes || existing.completionNotes || '',
+    status: run.status === 'finalized' ? 'qa_review' : 'in_production'
+  };
+}
+
+function backendProductionLogToLocal(log, existing = {}) {
+  return {
+    ...existing,
+    id: log.id,
+    _backendId: log.id,
+    _backendProductionRunId: log.productionRunId,
+    logId: log.logId || existing.logId || log.id,
+    poId: localPoIdFromBackendPurchaseOrderId(log.purchaseOrderId),
+    productionDate: log.productionDate || '',
+    productionEndDate: log.productionEndDate || '',
+    room: log.productionRoom || '',
+    completedAt: log.completedAt || '',
+    wasteLossPct: log.overallWastePercent || 0,
+    notes: log.notes || '',
+    lines: (log.lineSnapshot || []).map(line => ({
+      productId: line.productId,
+      ordered: line.orderedQuantity,
+      produced: line.quantityProduced,
+      cases: line.casesProduced,
+      lot: line.lotNumber
+    })),
+    materials: (log.materialSnapshot || []).map(material => ({
+      ingredientId: material.masterItemId,
+      category: material.materialType === 'packaging' ? 'Packaging' : 'Ingredient',
+      theoretical: material.theoreticalQuantity,
+      actual: material.actualUsedQuantity,
+      lot: material.lotNumber,
+      productId: material.productId,
+      lineIndex: null
+    }))
+  };
+}
+
+function localPoIdFromBackendPurchaseOrderId(purchaseOrderId) {
+  return (state.purchaseOrders || []).find(po => po._backendId === purchaseOrderId || po.id === purchaseOrderId)?.id || purchaseOrderId;
+}
+
+function mergeBackendProductionRuns(runs) {
+  backendProductionState.runs = runs || [];
+  (runs || []).forEach(run => {
+    const po = state.purchaseOrders.find(p => p._backendId === run.purchaseOrderId || p.id === run.purchaseOrderId);
+    if (po) Object.assign(po, backendProductionRunToLocal(run, po));
+  });
+}
+
+function mergeBackendProductionLogs(logs) {
+  backendProductionState.logs = logs || [];
+  state.productionLog = mergeByBackendId(state.productionLog || [], logs || [], backendProductionLogToLocal);
+}
+
+async function loadBackendProduction() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendProductionState.loading || backendProductionState.loaded) return;
+  backendProductionState.loading = true;
+  try {
+    await loadBackendProductionRuns();
+    await loadBackendProductionLogs();
+    backendProductionState.status = 'connected';
+    backendProductionState.lastError = '';
+    backendProductionState.loaded = true;
+  } catch (error) {
+    backendProductionState.status = 'error';
+    backendProductionState.lastError = 'Production backend data is unavailable, so local demo production remains visible.';
+  } finally {
+    backendProductionState.loading = false;
+  }
+}
+
+async function loadBackendProductionRuns() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return [];
+  const runs = await apiRequest('/api/production/runs');
+  mergeBackendProductionRuns(runs || []);
+  return runs;
+}
+
+async function loadBackendProductionLogs() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return [];
+  const logs = await apiRequest('/api/production/logs');
+  mergeBackendProductionLogs(logs || []);
+  return logs;
+}
+
+async function scheduleBackendProductionRun(po, productionDate, productionEndDate, productionRoom, notes) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  const run = await apiRequest('/api/production/schedule', {
+    method: 'POST',
+    body: JSON.stringify({
+      purchaseOrderId,
+      productionDate,
+      productionEndDate,
+      productionRoom,
+      notes: notes || null,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendProductionRuns([run]);
+  backendProductionState.loaded = false;
+  return run;
+}
+
+function productionFinalizePayload(po) {
+  return {
+    actorUserId: BACKEND_ACTOR_USER_ID,
+    lines: (po.lines || []).map((line) => ({
+      purchaseOrderLineId: line.id,
+      productId: line.productId,
+      quantityProduced: typeof line.actualQty === 'number' ? line.actualQty : line.qty,
+      casesProduced: line.casesProduced || 0,
+      lotNumber: line.lotNumber || ''
+    })),
+    materialActuals: (po.materialsUsed || []).map((material) => {
+      const line = typeof material.lineIndex === 'number' ? po.lines[material.lineIndex] : null;
+      return {
+        masterItemId: material.ingredientId,
+        productId: material.productId || line?.productId || null,
+        purchaseOrderLineId: line?.id || null,
+        actualUsedQuantity: material.actual || 0,
+        lotNumber: material.lot || null
+      };
+    }),
+    notes: po.completionNotes || null
+  };
+}
+
+async function finalizeBackendProductionRun(po) {
+  const productionRunId = po._backendProductionRunId;
+  if (!productionRunId) throw new Error('Backend production run is not scheduled yet.');
+  const run = await apiRequest(`/api/production/runs/${encodeURIComponent(productionRunId)}/finalize`, {
+    method: 'POST',
+    body: JSON.stringify(productionFinalizePayload(po))
+  });
+  mergeBackendProductionRuns([run]);
+  await loadBackendProductionLogs();
+  backendProductionState.loaded = false;
+  return run;
+}
+
+async function reopenBackendProductionRun(po, reason) {
+  const productionRunId = po._backendProductionRunId;
+  if (!productionRunId) throw new Error('Backend production run is unavailable.');
+  const run = await apiRequest(`/api/production/runs/${encodeURIComponent(productionRunId)}/reopen`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendProductionRuns([run]);
+  backendProductionState.loaded = false;
+  return run;
 }
 
 async function loadBackendProcurement() {
@@ -3010,8 +3191,13 @@ function mergeBackendPurchaseOrders(records) {
 
 function mapBackendPurchaseOrderToPrototype(po) {
   const backendStatus = po.status || 'draft';
+  const existing = (state.purchaseOrders || []).find(local => local._backendId === po.id || local.id === po.poNumber || local.id === po.id) || {};
   const prototypeStatus = backendStatus === 'approved_for_production'
     ? 'approved_for_production'
+    : backendStatus === 'in_production'
+      ? 'in_production'
+      : backendStatus === 'qa_review'
+        ? 'qa_review'
     : backendStatus === 'completed'
       ? 'completed'
       : 'in_supply_chain';
@@ -3037,6 +3223,10 @@ function mapBackendPurchaseOrderToPrototype(po) {
       supply_chain_status: line.supplyChainStatus || 'pending'
     })),
     status: prototypeStatus,
+    productionDate: po.productionDate || existing?.productionDate || null,
+    productionEndDate: po.productionEndDate || existing?.productionEndDate || null,
+    productionRoom: po.productionRoom || existing?.productionRoom || null,
+    productionFinalized: backendStatus === 'qa_review' ? true : !!existing?.productionFinalized,
     depositStatus: mapBackendDepositToPrototype(po.depositStatus),
     poFile: null,
     _backendFiles: [],
@@ -5431,11 +5621,15 @@ function productionTabsHtml() {
   </div>`;
 }
 function renderProduction(el) {
-  if (prodTab === 'Production Log') { el.innerHTML = productionTabsHtml() + productionLogInnerHtml(); return; }
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendProductionState.loaded && !backendProductionState.loading) {
+    loadBackendProduction().then(() => { if (currentPage === 'production') router('production'); });
+  }
+  if (prodTab === 'Production Log') { el.innerHTML = productionTabsHtml() + renderBackendProductionBanner() + productionLogInnerHtml(); return; }
   const unscheduled = state.purchaseOrders.filter(p => p.status === 'approved_for_production' && !p.productionDate);
   const active = state.purchaseOrders.filter(p => p.productionDate && p.status !== 'qa_review' && p.status !== 'shipping' && p.status !== 'completed');
   el.innerHTML = `
     ${productionTabsHtml()}
+    ${renderBackendProductionBanner()}
     <div class="card">
       <div class="cal-toolbar">
         <button class="btn btn-secondary btn-sm" onclick="calNav(-1)">&laquo; Prev</button>
@@ -5579,6 +5773,7 @@ function productionLogInnerHtml() {
 function viewProductionLog(id) {
   const r = (state.productionLog || []).find(x => x.id === id);
   if (!r) return;
+  const po = (state.purchaseOrders || []).find(p => p.id === r.poId || p._backendId === r.poId);
   const sameDay = !r.productionEndDate || r.productionEndDate === r.productionDate;
   const dates = sameDay ? fmtDate(r.productionDate) : `${fmtDate(r.productionDate)} &rarr; ${fmtDate(r.productionEndDate)}`;
   const w = r.wasteLossPct||0;
@@ -5620,8 +5815,36 @@ function viewProductionLog(id) {
       <tbody>${matRows || '<tr><td colspan="6" class="empty">—</td></tr>'}</tbody>
     </table></div>
     ${r.notes ? `<div style="margin-top:14px"><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:4px">Production Notes</div><div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;white-space:pre-wrap;font-size:13px">${escapeHtml(r.notes)}</div></div>` : ''}
-    <div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
+    <div class="form-actions">
+      ${po?._backendProductionRunId ? `<button class="btn btn-secondary" onclick="reopenProductionForCorrection('${po.id}')">Reopen for Correction</button>` : ''}
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
   `);
+}
+
+async function reopenProductionForCorrection(poId) {
+  const po = (state.purchaseOrders || []).find(p => p.id === poId);
+  if (!po) return;
+  const reason = window.prompt('Reason for reopening this finalized production run?');
+  if (!reason || !reason.trim()) return;
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendProductionRunId) {
+    try {
+      await reopenBackendProductionRun(po, reason.trim());
+      backendProductionState.status = 'connected';
+    } catch (error) {
+      backendProductionState.status = 'error';
+      backendProductionState.lastError = 'Production backend correction reopen failed.';
+      toast(error.message || backendProductionState.lastError);
+      return;
+    }
+  }
+  po.productionFinalized = false;
+  po.status = 'in_production';
+  po.completionNotes = reason.trim();
+  saveState();
+  closeModal();
+  toast(`${po.id} reopened for production correction.`);
+  router('production');
 }
 async function deleteProductionLog(id) {
   const ok = await openConfirmModal({
@@ -5753,12 +5976,22 @@ function dayClick(dStr) {
     </table>
   `);
 }
-function confirmSchedule(poId, dStr) {
+async function confirmSchedule(poId, dStr) {
   const po = state.purchaseOrders.find(p => p.id === poId);
   if (!po) return;
   const room = document.getElementById('room_'+poId)?.value || ROOMS[0];
   const endDate = document.getElementById('end_'+poId)?.value || dStr;
   if (endDate < dStr) { toast('End date must be on or after the start date.'); return; }
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendId) {
+    try {
+      await scheduleBackendProductionRun(po, dStr, endDate, room);
+      backendProductionState.status = 'connected';
+    } catch (error) {
+      backendProductionState.status = 'error';
+      backendProductionState.lastError = 'Production backend schedule failed, so this schedule stayed local/demo only.';
+      toast(error.message || backendProductionState.lastError);
+    }
+  }
   po.productionDate = dStr;
   po.productionEndDate = endDate;
   po.productionRoom = room;
@@ -5796,12 +6029,22 @@ function schedulePO(id) {
     </div>
   `);
 }
-function doSchedule(id) {
+async function doSchedule(id) {
   const d = document.getElementById('sched_date').value;
   const e = document.getElementById('sched_end').value || d;
   const r = document.getElementById('sched_room').value;
   if (e < d) { toast('End date must be on or after the start date.'); return; }
   const po = state.purchaseOrders.find(p => p.id === id);
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po?._backendId) {
+    try {
+      await scheduleBackendProductionRun(po, d, e, r);
+      backendProductionState.status = 'connected';
+    } catch (error) {
+      backendProductionState.status = 'error';
+      backendProductionState.lastError = 'Production backend schedule failed, so this schedule stayed local/demo only.';
+      toast(error.message || backendProductionState.lastError);
+    }
+  }
   po.productionDate = d;
   po.productionEndDate = e;
   po.productionRoom = r;
@@ -5860,14 +6103,25 @@ function editProductionEvent(id) {
     </div>
   `);
 }
-function saveEventEdit(id) {
+async function saveEventEdit(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   const start = document.getElementById('ev_date').value;
   const end = document.getElementById('ev_end').value || start;
   if (end < start) { toast('End date must be on or after the start date.'); return; }
+  const room = document.getElementById('ev_room').value;
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po?._backendId) {
+    try {
+      await scheduleBackendProductionRun(po, start, end, room);
+      backendProductionState.status = 'connected';
+    } catch (error) {
+      backendProductionState.status = 'error';
+      backendProductionState.lastError = 'Production backend schedule update failed, so this schedule stayed local/demo only.';
+      toast(error.message || backendProductionState.lastError);
+    }
+  }
   po.productionDate = start;
   po.productionEndDate = end;
-  po.productionRoom = document.getElementById('ev_room').value;
+  po.productionRoom = room;
   saveState();
   closeModal();
   toast(`${id} updated.`);
@@ -6182,6 +6436,17 @@ async function finalizeMarkComplete(id) {
   }
   const completionNotes = (document.getElementById('comp_notes')?.value || '').trim();
   if (completionNotes) po.completionNotes = completionNotes;
+
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendProductionRunId) {
+    try {
+      await finalizeBackendProductionRun(po);
+      backendProductionState.status = 'connected';
+    } catch (error) {
+      backendProductionState.status = 'error';
+      backendProductionState.lastError = 'Production backend finalize failed, so this completion stayed local/demo only.';
+      toast(error.message || backendProductionState.lastError);
+    }
+  }
 
   const alreadyDeducted = po.status === 'shipping' || po.status === 'completed';
   if (!alreadyDeducted) {
