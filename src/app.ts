@@ -6,6 +6,7 @@ import { registerCatalogRoutes } from "./catalog/routes";
 import { registerCustomerRoutes } from "./customers/routes";
 import { registerInventoryRoutes } from "./inventory/routes";
 import { registerQualityRoutes } from "./quality/routes";
+import { registerResearchRoutes } from "./research/routes";
 import { registerShippingRoutes } from "./shipping/routes";
 import { registerFileRoutes } from "./files/routes";
 import { registerProcurementRoutes } from "./procurement/routes";
@@ -53,6 +54,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
   registerPurchaseOrderRoutes(app);
   registerInventoryRoutes(app);
   registerQualityRoutes(app);
+  registerResearchRoutes(app);
   registerShippingRoutes(app);
   registerPickPackRoutes(app);
   registerProcurementRoutes(app);

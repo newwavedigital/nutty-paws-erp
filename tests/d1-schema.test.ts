@@ -14,6 +14,7 @@ const migrationPaths = [
   "migrations/0007_phase_2b_sprint_8_quality_assurance.sql",
   "migrations/0008_phase_2b_sprint_9_shipping_stocking.sql",
   "migrations/0009_phase_2b_sprint_10_pick_pack.sql",
+  "migrations/0010_phase_2b_sprint_11_research_workflow.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -429,8 +430,39 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "idx_pick_pack_orders_needed" }),
         ]),
       );
+
+      const researchColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('rd_requests');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(researchColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "customer_id" }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "packaging_type" }),
+          expect.objectContaining({ name: "units_requested" }),
+          expect.objectContaining({ name: "product_description", notnull: 1 }),
+          expect.objectContaining({ name: "submitted_at" }),
+          expect.objectContaining({ name: "completed_at" }),
+          expect.objectContaining({ name: "archived_at" }),
+          expect.objectContaining({ name: "archived_by_user_id" }),
+        ]),
+      );
+
+      const researchIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('rd_requests');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(researchIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_rd_requests_customer_id" }),
+          expect.objectContaining({ name: "idx_rd_requests_status" }),
+        ]),
+      );
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }
-  }, 45000);
+  }, 60000);
 });

@@ -1826,7 +1826,7 @@ const SAMPLE_DATA = {
     { id: 'sn1', date: '2026-04-24', area: 'Bnutty Room', cleanedBy: 'Maria', verifiedBy: 'Henry', notes: 'Pre-op clean. ATP swab pass.' }
   ],
   ccpLogs: [
-    { id: 'cc1', date: '2026-04-24', step: 'Roaster', criticalLimit: '320°F min', measured: '325°F', result: 'Pass', correctiveAction: '' }
+    { id: 'cc1', date: '2026-04-24', step: 'Roaster', criticalLimit: '320Â°F min', measured: '325Â°F', result: 'Pass', correctiveAction: '' }
   ],
   ncrs: [
     { id: 'nc1', date: '2026-04-15', issue: 'Mislabeled cases on PO-1001 short run', rootCause: 'Operator pulled wrong label', correctiveAction: 'Retraining + 2nd-check on label issue', owner: 'Henry', status: 'Open' }
@@ -1869,7 +1869,7 @@ const SAMPLE_DATA = {
     { id: 'sw2', date: '2026-05-18', location: 'Floor drain - Bnutty Room', zone: 'Zone 4', swabType: 'Listeria (Lm)', result: 'Negative', limit: 'Negative', resultStatus: 'Pass', swabbedBy: 'Outside Lab', correctiveAction: '', reswabResult: '', notes: 'Monthly environmental.' }
   ],
   productionRequests: [
-    { id: 'pr1', date: '2026-05-19', customerId: 'c_pp_poochie_butter', ingredientId: 'i15', qtyRequested: 3000, neededBy: '2026-05-29', requestedBy: 'Maria Lopez', notes: 'Squeeze packs running low — big Chewy order coming.', status: 'Requested' }
+    { id: 'pr1', date: '2026-05-19', customerId: 'c_pp_poochie_butter', ingredientId: 'i15', qtyRequested: 3000, neededBy: '2026-05-29', requestedBy: 'Maria Lopez', notes: 'Squeeze packs running low â€” big Chewy order coming.', status: 'Requested' }
   ]
 };
 
@@ -1892,6 +1892,7 @@ const backendProductionState = { status: 'local', lastError: '', loading: false,
 const backendQualityState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [] };
 const backendShippingState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [], logs: [] };
 const backendPickPackState = { status: 'local', lastError: '', loading: false, loaded: false, orders: [] };
+const backendResearchState = { status: 'local', lastError: '', loading: false, loaded: false, requests: [] };
 let confirmModalResolver = null;
 let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
@@ -2125,7 +2126,7 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState, backendPickPackState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState, backendPickPackState, backendResearchState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
@@ -3000,11 +3001,11 @@ function isBackendShortStockWarning(error) {
 }
 
 function qualityActionActor(po) {
-  return po.qaSkippedByUserId || po.qaReleasedByUserId || po.coa?.uploadedBy || '—';
+  return po.qaSkippedByUserId || po.qaReleasedByUserId || po.coa?.uploadedBy || 'â€”';
 }
 
 function qualityFileName(po) {
-  return po.postShipmentCoa?.name || po.coa?.name || '—';
+  return po.postShipmentCoa?.name || po.coa?.name || 'â€”';
 }
 
 function qualityReleaseStatusText(po) {
@@ -4202,7 +4203,7 @@ function fmtMoney(n) {
   return '$' + Number(n || 0).toFixed(2);
 }
 function fmtDate(d) {
-  if (!d) return '—';
+  if (!d) return 'â€”';
   const dt = new Date(d + 'T00:00:00');
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -4308,7 +4309,7 @@ function poRequirements(po, useActual, withLoss) {
   });
   return required;
 }
-// Theoretical (no loss buffer) requirements — used to compute waste vs. actual at completion
+// Theoretical (no loss buffer) requirements â€” used to compute waste vs. actual at completion
 function poTheoretical(po, useActual) { return poRequirements(po, useActual, false); }
 function inventoryCheck(po) {
   const req = poRequirements(po);
@@ -4390,7 +4391,7 @@ function scPOsNeedingIngredient(ingId) {
   });
 }
 // DISPLAY-ONLY total allocation per ingredient for the Inventory page:
-// anything tied up by a PO that hasn't shipped yet — Supply Chain reviews +
+// anything tied up by a PO that hasn't shipped yet â€” Supply Chain reviews +
 // approved + in-production. Includes the 5% planning loss buffer.
 // (Does NOT affect Supply Chain approval gating, which still uses allocatedInventory().)
 function inventoryAllocation() {
@@ -4543,9 +4544,9 @@ function ensureFinishedGoodForProduct(product, brand) {
   if (product.finishedGoodId) {
     const fg = state.ingredients.find(i => i.id === product.finishedGoodId);
     if (fg) return fg;
-    // dangling link — fall through to find or create
+    // dangling link â€” fall through to find or create
   }
-  // map brand → the matching customer record (auto-created earlier for Pick & Pack)
+  // map brand â†’ the matching customer record (auto-created earlier for Pick & Pack)
   const brandCustomer = state.customers.find(c => c.name === brand);
   const brandCustId = brandCustomer?.id || '';
   // try to find existing FG by name match (with or without "- Finished" suffix) and brand customer
@@ -4702,12 +4703,12 @@ function renderDashboard(el) {
     <div style="background:#fcd7d3;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-weight:700;color:var(--danger);font-size:15px">&#9888; ${conflicts.length} inventory conflict${conflicts.length===1?'':'s'} — POs cannot fully complete</div>
+          <div style="font-weight:700;color:var(--danger);font-size:15px">&#9888; ${conflicts.length} inventory conflict${conflicts.length===1?'':'s'} â€” POs cannot fully complete</div>
           <div style="font-size:12px;color:var(--brown);margin-top:6px">
             ${conflicts.map(c => `
               <div style="margin-bottom:6px">
                 <strong>${escapeHtml(c.ingredient.name)}:</strong> ${c.onHand.toFixed(2)} on hand, ${c.allocated.toFixed(2)} allocated &mdash; <strong style="color:var(--danger)">short ${c.shortBy.toFixed(2)} ${escapeHtml(c.ingredient.unit||'')}</strong>
-                <div style="margin-left:12px;font-size:11px;color:var(--brown-light)">Affected: ${c.affected.map(a => `${a.po.id} (${escapeHtml(a.cust?.name||'')}) needs ${a.need.toFixed(2)}`).join(' · ')}</div>
+                <div style="margin-left:12px;font-size:11px;color:var(--brown-light)">Affected: ${c.affected.map(a => `${a.po.id} (${escapeHtml(a.cust?.name||'')}) needs ${a.need.toFixed(2)}`).join(' Â· ')}</div>
               </div>
             `).join('')}
           </div>
@@ -4784,7 +4785,7 @@ function renderDashboard(el) {
                 <td>${escapeHtml(i.name)} <span class="badge badge-low">Low</span></td>
                 <td>${i.stock} ${escapeHtml(i.unit)}</td>
                 <td>${i.reorderLevel} ${escapeHtml(i.unit)}</td>
-                <td>${escapeHtml(getSupplier(i.supplierId)?.name || '—')}</td>
+                <td>${escapeHtml(getSupplier(i.supplierId)?.name || 'â€”')}</td>
               </tr>
             `).join('')}
             </tbody>
@@ -4856,7 +4857,7 @@ function renderPurchaseOrders(el) {
             pos.map(p => `
               <tr>
                 <td><strong>${p.id}</strong></td>
-                <td>${p.brand ? `<span class="pill">${escapeHtml(p.brand)}</span>` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+                <td>${p.brand ? `<span class="pill">${escapeHtml(p.brand)}</span>` : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
                 <td>${escapeHtml(getCustomer(p.customerId)?.name || '')}</td>
                 <td>${fmtDate(p.poDate)}</td>
                 <td>${fmtDate(p.requestedDate)}</td>
@@ -4932,14 +4933,14 @@ function poFormHtml(po) {
         <div class="form-row">
           <label>Brand *</label>
           <select id="po_brand" required>
-            <option value="">— Select Brand —</option>
+            <option value="">â€” Select Brand â€”</option>
             ${BRANDS.map(b => `<option value="${escapeHtml(b)}" ${po.brand===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row">
           <label>Customer</label>
           <select id="po_customer" required>
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.customers.map(c => `<option value="${c.id}" ${po.customerId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
           </select>
         </div>
@@ -4989,7 +4990,7 @@ function poLineHtml(line, idx) {
   return `
     <div class="po-line" data-idx="${idx}">
       <select onchange="poLineProductChange(${idx})">
-        <option value="">— Select Product —</option>
+        <option value="">â€” Select Product â€”</option>
         ${state.products.map(p => `<option value="${p.id}" data-price="${p.price}" ${line.productId===p.id?'selected':''}>${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`).join('')}
       </select>
       <input type="number" min="1" value="${line.qty || 1}" onchange="recalcPoTotal()" />
@@ -5181,7 +5182,7 @@ async function viewPO(id) {
   }
   const cust = getCustomer(po.customerId);
   const total = po.lines.reduce((s,l)=>s+l.qty*l.price,0);
-  openModal(`${po.id} — ${escapeHtml(cust?.name || '')}`, `
+  openModal(`${po.id} â€” ${escapeHtml(cust?.name || '')}`, `
     <div style="display:flex;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
       <div>
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Brand / Customer</div>
@@ -5210,11 +5211,11 @@ async function viewPO(id) {
       <tbody>
         ${po.lines.map(l => {
           const p = getProduct(l.productId);
-          const units = (typeof l.actualQty === 'number') ? l.actualQty : '<span style="color:var(--brown-light)">—</span>';
-          const cases = (typeof l.casesProduced === 'number') ? l.casesProduced : '<span style="color:var(--brown-light)">—</span>';
-          const lot = l.lotNumber ? `<span class="pill">${escapeHtml(l.lotNumber)}</span>` : '<span style="color:var(--brown-light)">—</span>';
+          const units = (typeof l.actualQty === 'number') ? l.actualQty : '<span style="color:var(--brown-light)">â€”</span>';
+          const cases = (typeof l.casesProduced === 'number') ? l.casesProduced : '<span style="color:var(--brown-light)">â€”</span>';
+          const lot = l.lotNumber ? `<span class="pill">${escapeHtml(l.lotNumber)}</span>` : '<span style="color:var(--brown-light)">â€”</span>';
           return `<tr>
-            <td>${escapeHtml(p?.name || '—')}</td>
+            <td>${escapeHtml(p?.name || 'â€”')}</td>
             <td>${escapeHtml(p?.sku || '')}</td>
             <td>${l.qty}</td>
             <td>${units}</td>
@@ -5239,10 +5240,10 @@ async function viewPO(id) {
             ${po.materialsUsed.map(m => {
               const ing = getIngredient(m.ingredientId);
               return `<tr>
-                <td>${escapeHtml(ing?.name||'—')} <span class="pill">${escapeHtml(m.category||'')}</span></td>
+                <td>${escapeHtml(ing?.name||'â€”')} <span class="pill">${escapeHtml(m.category||'')}</span></td>
                 <td>${(m.theoretical||0).toFixed(2)} ${escapeHtml(ing?.unit||'')}</td>
                 <td>${(m.actual||0).toFixed(2)} ${escapeHtml(ing?.unit||'')}</td>
-                <td>${m.lot ? '<span class="pill">'+escapeHtml(m.lot)+'</span>' : '—'}</td>
+                <td>${m.lot ? '<span class="pill">'+escapeHtml(m.lot)+'</span>' : 'â€”'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -5250,7 +5251,7 @@ async function viewPO(id) {
       </div>
     ` : ''}
     ${po.completionNotes ? `<div class="inv-check ok" style="margin-top:14px"><strong>Production Notes:</strong> ${escapeHtml(po.completionNotes)}</div>` : ''}
-    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(po.coa.name)}</a> <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'—')}</span></div>` : ''}
+    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(po.coa.name)}</a> <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'â€”')}</span></div>` : ''}
     ${po.qaNotes ? `<div class="inv-check" style="margin-top:14px"><strong>QA Notes:</strong> ${escapeHtml(po.qaNotes)}</div>` : ''}
     ${(po.productionDate && po.status !== 'completed' && !po.productionFinalized) ? `
       <div style="margin-top:14px;padding:14px;background:#e8f4e2;border-left:4px solid var(--success);border-radius:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -5288,7 +5289,7 @@ function printFormulaForPO(id) {
     const totalPct = bom.reduce((s, b) => s + (b.pct || 0), 0);
     return `
       <h2>${escapeHtml(p.name)} <span style="font-weight:400;color:#8B5E3C">(${escapeHtml(p.sku)})</span></h2>
-      <div style="font-size:13px;color:#5C3A21;margin-bottom:8px">${p.size ? `Unit size: ${p.size}${escapeHtml(p.sizeUnit||'oz')} · ` : ''}Production room: ${escapeHtml(p.room||'—')}</div>
+      <div style="font-size:13px;color:#5C3A21;margin-bottom:8px">${p.size ? `Unit size: ${p.size}${escapeHtml(p.sizeUnit||'oz')} Â· ` : ''}Production room: ${escapeHtml(p.room||'â€”')}</div>
       <table>
         <thead><tr><th>Ingredient / Packaging</th><th style="text-align:right">%</th></tr></thead>
         <tbody>
@@ -5310,7 +5311,7 @@ function printFormulaForPO(id) {
 
   const w = window.open('', '_blank');
   w.document.write(`
-    <html><head><title>Formula — ${po.id}</title>
+    <html><head><title>Formula â€” ${po.id}</title>
     <style>
       body{font-family:Helvetica,Arial,sans-serif;padding:36px;color:#1A1A1A}
       h1{color:#5C3A21;margin:0 0 4px}
@@ -5325,13 +5326,13 @@ function printFormulaForPO(id) {
     <div class="head">
       <div>
         <h1>Production Formula</h1>
-        <div style="color:#8B5E3C">${po.id} · ${escapeHtml(cust?.name||'')}${po.brand ? ' · '+escapeHtml(po.brand) : ''}</div>
+        <div style="color:#8B5E3C">${po.id} Â· ${escapeHtml(cust?.name||'')}${po.brand ? ' Â· '+escapeHtml(po.brand) : ''}</div>
       </div>
       <div style="text-align:right">
         <div class="label">Production Date</div>
         <div>${fmtDate(po.productionDate)}</div>
         <div class="label" style="margin-top:6px">Room</div>
-        <div>${escapeHtml(po.productionRoom||'—')}</div>
+        <div>${escapeHtml(po.productionRoom||'â€”')}</div>
       </div>
     </div>
     ${blocks}
@@ -5352,14 +5353,14 @@ function printSpecSheetForPO(id) {
     toast('No spec sheet on file for ' + (cust.name || 'this customer') + '. Upload one on the Customers page.');
     return;
   }
-  // open the file in a new tab — browser handles PDF/image/etc display + print
+  // open the file in a new tab â€” browser handles PDF/image/etc display + print
   const w = window.open('', '_blank');
   if (!w) { toast('Popup blocked. Allow popups to print.'); return; }
   const isPdf = (sheet.type && sheet.type.includes('pdf')) || /\.pdf$/i.test(sheet.name||'');
   const isImg = (sheet.type && sheet.type.startsWith('image/'));
   if (isPdf) {
     w.document.write(`
-      <html><head><title>Spec Sheet — ${escapeHtml(cust.name||'')}</title></head>
+      <html><head><title>Spec Sheet â€” ${escapeHtml(cust.name||'')}</title></head>
       <body style="margin:0">
         <embed src="${sheet.dataUrl}" type="application/pdf" width="100%" style="height:100vh" />
         <script>setTimeout(()=>window.print(), 600);<\/script>
@@ -5367,10 +5368,10 @@ function printSpecSheetForPO(id) {
     `);
   } else if (isImg) {
     w.document.write(`
-      <html><head><title>Spec Sheet — ${escapeHtml(cust.name||'')}</title>
+      <html><head><title>Spec Sheet â€” ${escapeHtml(cust.name||'')}</title>
       <style>body{margin:0;padding:24px;text-align:center;font-family:Helvetica,Arial,sans-serif}img{max-width:100%}</style>
       </head><body>
-        <h2 style="color:#5C3A21;margin:0 0 12px">Spec Sheet — ${escapeHtml(cust.name||'')}</h2>
+        <h2 style="color:#5C3A21;margin:0 0 12px">Spec Sheet â€” ${escapeHtml(cust.name||'')}</h2>
         <img src="${sheet.dataUrl}" alt="${escapeHtml(sheet.name||'spec sheet')}" />
         <script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script>
       </body></html>
@@ -5382,7 +5383,7 @@ function printSpecSheetForPO(id) {
     a.download = sheet.name || 'spec-sheet';
     document.body.appendChild(a); a.click(); a.remove();
     w.close();
-    toast('Spec sheet downloaded — open and print from your viewer.');
+    toast('Spec sheet downloaded â€” open and print from your viewer.');
     return;
   }
   w.document.close();
@@ -5531,8 +5532,8 @@ function renderSupplyChain(el) {
             <div class="sc-card">
               <div class="sc-header">
                 <div>
-                  <h3 style="margin:0">${po.id} — ${escapeHtml(cust?.name||'')}</h3>
-                  <div style="font-size:12px;color:var(--brown-light);margin-top:2px">${po.brand ? '<span class="pill">'+escapeHtml(po.brand)+'</span> ' : ''}PO Date ${fmtDate(po.poDate)} · Needed by ${fmtDate(po.requestedDate)}</div>
+                  <h3 style="margin:0">${po.id} â€” ${escapeHtml(cust?.name||'')}</h3>
+                  <div style="font-size:12px;color:var(--brown-light);margin-top:2px">${po.brand ? '<span class="pill">'+escapeHtml(po.brand)+'</span> ' : ''}PO Date ${fmtDate(po.poDate)} Â· Needed by ${fmtDate(po.requestedDate)}</div>
                 </div>
                 <div>${statusBadge(po.status)}</div>
               </div>
@@ -5545,7 +5546,7 @@ function renderSupplyChain(el) {
                       return `<tr>
                         <td>${escapeHtml(p?.name||'')} <span class="pill">${escapeHtml(p?.sku||'')}</span></td>
                         <td>${l.qty}</td>
-                        <td><span class="room-dot" style="display:inline-block;background:${roomColor(p?.room)}"></span> ${escapeHtml(p?.room||'—')}</td>
+                        <td><span class="room-dot" style="display:inline-block;background:${roomColor(p?.room)}"></span> ${escapeHtml(p?.room||'â€”')}</td>
                       </tr>`;
                     }).join('')}
                   </tbody>
@@ -5581,7 +5582,7 @@ function renderSupplyChain(el) {
                     let action;
                     if (st === 'on_hold') {
                       action = isShort
-                        ? `<button class="btn btn-icon btn-sm" disabled title="Net available is short — receive inventory or revoke another PO first">Set OK</button>`
+                        ? `<button class="btn btn-icon btn-sm" disabled title="Net available is short â€” receive inventory or revoke another PO first">Set OK</button>`
                         : `<button class="btn btn-icon btn-sm" onclick="setLineStatus('${po.id}','${ingId}','ok')">Set OK</button>`;
                     } else if (st === 'ok') {
                       action = `<button class="btn btn-icon btn-sm" onclick="setLineStatus('${po.id}','${ingId}','on_hold')">Hold</button>`;
@@ -5592,7 +5593,7 @@ function renderSupplyChain(el) {
                       <td>${escapeHtml(ing?.name||'(missing)')}</td>
                       <td>${need.toFixed(2)} ${escapeHtml(ing?.unit||'')}</td>
                       <td>${stock} ${escapeHtml(ing?.unit||'')}</td>
-                      <td>${otherAllocAmt > 0 ? '<span style="color:var(--brown)">'+otherAllocAmt.toFixed(2)+' '+escapeHtml(ing?.unit||'')+'</span>' : '<span style="color:var(--brown-light)">—</span>'}</td>
+                      <td>${otherAllocAmt > 0 ? '<span style="color:var(--brown)">'+otherAllocAmt.toFixed(2)+' '+escapeHtml(ing?.unit||'')+'</span>' : '<span style="color:var(--brown-light)">â€”</span>'}</td>
                       <td><strong style="color:${net < need ? 'var(--danger)' : 'var(--success)'}">${net.toFixed(2)} ${escapeHtml(ing?.unit||'')}</strong></td>
                       <td>${badge}</td>
                       <td>${action}</td>
@@ -5648,7 +5649,7 @@ async function approveForProduction(id) {
   router('production');
 }
 
-// Print a warehouse-friendly pick list for a PO — grouped by Building → Location with checkboxes
+// Print a warehouse-friendly pick list for a PO â€” grouped by Building â†’ Location with checkboxes
 function printPickList(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
@@ -5669,7 +5670,7 @@ function printPickList(id) {
       onHand: ing?.stock || 0
     };
   });
-  // Sort by Building → Location → name for pick path efficiency
+  // Sort by Building â†’ Location â†’ name for pick path efficiency
   rows.sort((a, b) => {
     if (a.building !== b.building) return a.building.localeCompare(b.building);
     if (a.location !== b.location) return a.location.localeCompare(b.location);
@@ -5679,16 +5680,16 @@ function printPickList(id) {
   const byBuilding = {};
   rows.forEach(r => { (byBuilding[r.building] = byBuilding[r.building] || []).push(r); });
 
-  // Line items table (products on the PO) — for picker reference
+  // Line items table (products on the PO) â€” for picker reference
   const productLines = po.lines.map(l => {
     const p = getProduct(l.productId);
-    return { sku: p?.sku || '', name: p?.name || '', qty: l.qty, room: p?.room || '—' };
+    return { sku: p?.sku || '', name: p?.name || '', qty: l.qty, room: p?.room || 'â€”' };
   });
 
   const w = window.open('', '_blank');
   if (!w) { toast('Popup blocked. Allow popups to print.'); return; }
   w.document.write(`
-    <html><head><title>Pick List — ${escapeHtml(po.id)}</title>
+    <html><head><title>Pick List â€” ${escapeHtml(po.id)}</title>
     <style>
       body{font-family:Helvetica,Arial,sans-serif;padding:30px;color:#1A1A1A;font-size:13px}
       h1{color:#5C3A21;margin:0 0 4px;font-size:22px}
@@ -5711,7 +5712,7 @@ function printPickList(id) {
     <div class="head">
       <div>
         <h1>Warehouse Pick List</h1>
-        <div style="color:#8B5E3C;font-size:14px">${escapeHtml(po.id)}${po.brand ? ' · '+escapeHtml(po.brand) : ''} · ${escapeHtml(cust?.name||'')}</div>
+        <div style="color:#8B5E3C;font-size:14px">${escapeHtml(po.id)}${po.brand ? ' Â· '+escapeHtml(po.brand) : ''} Â· ${escapeHtml(cust?.name||'')}</div>
       </div>
       <div style="text-align:right">
         <div class="label">PO Date</div>
@@ -5882,7 +5883,7 @@ function renderProcNeed(el) {
       </div>
     </div>
     <div class="help-text" style="margin-bottom:10px">
-      Items at or below reorder level — <strong>plus</strong> any ingredient or packaging a PO awaiting Supply Chain approval is short on (so production isn't held up). Click <strong>+ Order</strong> on any vendor block to draft a supplier PO; items move to the Ordered tab and disappear from this list.
+      Items at or below reorder level â€” <strong>plus</strong> any ingredient or packaging a PO awaiting Supply Chain approval is short on (so production isn't held up). Click <strong>+ Order</strong> on any vendor block to draft a supplier PO; items move to the Ordered tab and disappear from this list.
     </div>
     ${low.length === 0
       ? (allLow.length === 0
@@ -5897,7 +5898,7 @@ function renderProcNeed(el) {
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                 <div>
                   <h3 style="margin:0">${supLabel}</h3>
-                  <div style="font-size:12px;color:var(--brown-light)">${sup?.contact ? escapeHtml(sup.contact)+' · ' : ''}${sup?.email ? escapeHtml(sup.email) : ''}</div>
+                  <div style="font-size:12px;color:var(--brown-light)">${sup?.contact ? escapeHtml(sup.contact)+' Â· ' : ''}${sup?.email ? escapeHtml(sup.email) : ''}</div>
                 </div>
                 ${sid !== '_none' ? `
                   <div style="display:flex;gap:6px">
@@ -5927,7 +5928,7 @@ function renderProcNeed(el) {
                       <td><strong>${escapeHtml(i.name)}</strong></td>
                       <td>${i.stock}</td>
                       <td>${i.reorderLevel}</td>
-                      <td>${i.leadTimeDays ? i.leadTimeDays + ' days' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+                      <td>${i.leadTimeDays ? i.leadTimeDays + ' days' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
                       <td><strong>${suggested}</strong></td>
                       <td>${escapeHtml(i.unit)}</td>
                       <td>${why}</td>
@@ -5957,7 +5958,7 @@ function renderProcNeed(el) {
                 <td><strong>${escapeHtml(i.name)}</strong> <span class="badge badge-low">Low</span></td>
                 <td>${i.stock}</td>
                 <td>${i.reorderLevel}</td>
-                <td>${escapeHtml(getSupplier(i.supplierId)?.name || '—')}</td>
+                <td>${escapeHtml(getSupplier(i.supplierId)?.name || 'â€”')}</td>
                 <td>${totalOnOrder} ${escapeHtml(i.unit||'')}</td>
                 <td>${orders.map(o => `<span class="pill" style="cursor:pointer" onclick="setProcTab('in')" title="Click to view in Ordered tab">${escapeHtml(o.po.id)}${o.po.qbPoNumber ? ' / '+escapeHtml(o.po.qbPoNumber) : ''}</span>`).join(' ')}</td>
               </tr>`;
@@ -5969,7 +5970,7 @@ function renderProcNeed(el) {
   `;
 }
 
-// Items that need ordering for a supplier — matches the Need To Order display logic
+// Items that need ordering for a supplier â€” matches the Need To Order display logic
 // (low stock OR net below reorder OR short for a PO awaiting Supply Chain approval), excluding already-ordered.
 function needToOrderItemsForSupplier(supplierId) {
   if (backendProcurementState.needRows && backendProcurementState.needRows.length) {
@@ -6054,12 +6055,12 @@ function renderProcInOrder(el) {
     .sort((a,b)=>(b.dateOrdered||'').localeCompare(a.dateOrdered||''));
   el.innerHTML = `
     <div class="card-header">
-      <h2>Ordered — Awaiting Arrival</h2>
+      <h2>Ordered â€” Awaiting Arrival</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('ordered_pos.csv', state.procurementOrders.filter(p=>p.status!=='Received').map(p=>({id:p.id,qb_po:p.qbPoNumber,supplier:getSupplier(p.supplierId)?.name||'',date_ordered:p.dateOrdered,expected:p.expectedDate,status:p.status,total:p.items.reduce((s,it)=>s+it.qty*it.unitCost,0).toFixed(2)})))">Export CSV</button>
       </div>
     </div>
-    <div class="help-text" style="margin-bottom:8px">Supplier POs you've placed. Each references the matching PO # in QuickBooks. Click "Mark Arrived" once items are received — they'll move to Completed and inventory will update automatically.</div>
+    <div class="help-text" style="margin-bottom:8px">Supplier POs you've placed. Each references the matching PO # in QuickBooks. Click "Mark Arrived" once items are received â€” they'll move to Completed and inventory will update automatically.</div>
     <div class="table-wrap"><table>
       <thead><tr>
         <th>Internal ID</th><th>QuickBooks PO #</th><th>Supplier</th><th>Items</th><th>Total</th>
@@ -6071,8 +6072,8 @@ function renderProcInOrder(el) {
             const total = p.items.reduce((s,it)=>s+it.qty*it.unitCost, 0);
             return `<tr>
               <td><strong>${escapeHtml(p.id)}</strong></td>
-              <td><span class="pill">${escapeHtml(p.qbPoNumber || '—')}</span></td>
-              <td>${escapeHtml(getSupplier(p.supplierId)?.name||'—')}</td>
+              <td><span class="pill">${escapeHtml(p.qbPoNumber || 'â€”')}</span></td>
+              <td>${escapeHtml(getSupplier(p.supplierId)?.name||'â€”')}</td>
               <td>${p.items.length}</td>
               <td>${fmtMoney(total)}</td>
               <td>${fmtDate(p.dateOrdered)}</td>
@@ -6115,8 +6116,8 @@ function renderProcCompleted(el) {
             const total = p.items.reduce((s,it)=>s+it.qty*it.unitCost, 0);
             return `<tr>
               <td><strong>${escapeHtml(p.id)}</strong></td>
-              <td><span class="pill">${escapeHtml(p.qbPoNumber || '—')}</span></td>
-              <td>${escapeHtml(getSupplier(p.supplierId)?.name||'—')}</td>
+              <td><span class="pill">${escapeHtml(p.qbPoNumber || 'â€”')}</span></td>
+              <td>${escapeHtml(getSupplier(p.supplierId)?.name||'â€”')}</td>
               <td>${p.items.length}</td>
               <td>${fmtMoney(total)}</td>
               <td>${fmtDate(p.dateOrdered)}</td>
@@ -6147,7 +6148,7 @@ function procFormHtml(id, prefill) {
         </div>
         <div class="form-row"><label>Supplier *</label>
           <select id="prc_sup" required onchange="prcSupplierChange()">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.suppliers.map(s=>`<option value="${s.id}" ${p.supplierId===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
           </select>
         </div>
@@ -6190,7 +6191,7 @@ function prcItemHtml(it, idx, supplierId) {
   return `
     <div class="po-line" data-idx="${idx}">
       <select onchange="prcItemChange(${idx})">
-        <option value="">— Select Item —</option>
+        <option value="">â€” Select Item â€”</option>
         ${opts.map(i=>`<option value="${i.id}" data-cost="${i.cost}" ${it.ingredientId===i.id?'selected':''}>${escapeHtml(i.name)} (${escapeHtml(i.unit)})</option>`).join('')}
       </select>
       <input type="number" min="0" step="0.01" value="${it.qty||0}" onchange="recalcPrcTotal()" />
@@ -6416,7 +6417,7 @@ function renderProduction(el) {
               return `<tr>
                 <td><strong>${p.id}</strong></td>
                 <td>${p.brand ? `<span class="pill">${escapeHtml(p.brand)}</span> ` : ''}${escapeHtml(getCustomer(p.customerId)?.name||'')}</td>
-                <td><span class="room-dot" style="display:inline-block;background:${roomColor(p.productionRoom)};vertical-align:middle"></span> ${escapeHtml(p.productionRoom||'—')}</td>
+                <td><span class="room-dot" style="display:inline-block;background:${roomColor(p.productionRoom)};vertical-align:middle"></span> ${escapeHtml(p.productionRoom||'â€”')}</td>
                 <td>${dates}</td>
                 <td>${p.lines.reduce((s,l)=>s+l.qty,0)}</td>
                 <td class="row-actions">
@@ -6459,7 +6460,7 @@ function renderProduction(el) {
 }
 
 /* =========================================================================
-   PRODUCTION LOG — auto-generated when a run is finalized (Mark Complete →
+   PRODUCTION LOG â€” auto-generated when a run is finalized (Mark Complete â†’
    QA). Read-only history of everything produced and consumed per PO.
    ========================================================================= */
 function nextProductionLogId() {
@@ -6504,14 +6505,14 @@ function productionLogInnerHtml() {
               const w = r.wasteLossPct||0;
               return `<tr>
                 <td><strong>${escapeHtml(r.logId||'')}</strong></td>
-                <td>${escapeHtml(r.poId||'—')}</td>
+                <td>${escapeHtml(r.poId||'â€”')}</td>
                 <td>${dates}</td>
-                <td>${escapeHtml(getCustomer(r.customerId)?.name||'—')}</td>
-                <td>${r.brand?'<span class="pill">'+escapeHtml(r.brand)+'</span>':'—'}</td>
-                <td>${escapeHtml(r.room||'—')}</td>
+                <td>${escapeHtml(getCustomer(r.customerId)?.name||'â€”')}</td>
+                <td>${r.brand?'<span class="pill">'+escapeHtml(r.brand)+'</span>':'â€”'}</td>
+                <td>${escapeHtml(r.room||'â€”')}</td>
                 <td>${units}</td>
                 <td><strong style="color:${w>7?'var(--danger)':(w>0?'#a0470c':'var(--success)')}">${(w>=0?'+':'')+w}%</strong></td>
-                <td>${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'—'}</td>
+                <td>${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'â€”'}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewProductionLog('${r.id}')">View</button>
                   <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionLog('${r.id}')">Delete</button>
@@ -6536,7 +6537,7 @@ function viewProductionLog(id) {
     return `<tr>
       <td><strong>${escapeHtml(p?.sku||'')}</strong><div style="font-size:12px;color:var(--brown-light)">${escapeHtml(p?.name||'')}</div></td>
       <td>${l.ordered}</td><td>${l.produced}</td><td>${l.cases||0}</td>
-      <td>${l.lot?'<span class="pill">'+escapeHtml(l.lot)+'</span>':'—'}</td>
+      <td>${l.lot?'<span class="pill">'+escapeHtml(l.lot)+'</span>':'â€”'}</td>
     </tr>`;
   }).join('');
   const matRows = (r.materials||[]).map(m => {
@@ -6549,24 +6550,24 @@ function viewProductionLog(id) {
       <td>${(m.theoretical||0).toFixed(2)}</td>
       <td>${(m.actual||0).toFixed(2)}</td>
       <td style="color:${wpct>7?'var(--danger)':(wpct>0?'#a0470c':'var(--success)')}">${(wpct>=0?'+':'')+wpct.toFixed(1)}%</td>
-      <td>${m.lot?'<span class="pill">'+escapeHtml(m.lot)+'</span>':'—'}</td>
+      <td>${m.lot?'<span class="pill">'+escapeHtml(m.lot)+'</span>':'â€”'}</td>
     </tr>`;
   }).join('');
-  openModal(`Production Log — ${escapeHtml(r.logId||'')}`, `
+  openModal(`Production Log â€” ${escapeHtml(r.logId||'')}`, `
     <div style="margin-bottom:10px">
       <strong>${escapeHtml(getCustomer(r.customerId)?.name||'')}</strong>
-      <div style="font-size:12px;color:var(--brown-light)">${r.brand?escapeHtml(r.brand)+' · ':''}PO ${escapeHtml(r.poId||'')} · Production: ${dates} · Room: ${escapeHtml(r.room||'—')}</div>
-      <div style="font-size:12px;color:var(--brown-light)">Completed: ${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'—'} · Overall waste loss: <strong style="color:${w>7?'var(--danger)':(w>0?'#a0470c':'var(--success)')}">${(w>=0?'+':'')+w}%</strong></div>
+      <div style="font-size:12px;color:var(--brown-light)">${r.brand?escapeHtml(r.brand)+' Â· ':''}PO ${escapeHtml(r.poId||'')} Â· Production: ${dates} Â· Room: ${escapeHtml(r.room||'â€”')}</div>
+      <div style="font-size:12px;color:var(--brown-light)">Completed: ${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'â€”'} Â· Overall waste loss: <strong style="color:${w>7?'var(--danger)':(w>0?'#a0470c':'var(--success)')}">${(w>=0?'+':'')+w}%</strong></div>
     </div>
     <h4 style="margin:14px 0 6px;color:var(--brown)">Finished Goods Produced</h4>
     <div class="table-wrap"><table>
       <thead><tr><th>SKU / Product</th><th>Ordered</th><th>Produced</th><th>Cases</th><th>Lot #</th></tr></thead>
-      <tbody>${fgRows || '<tr><td colspan="5" class="empty">—</td></tr>'}</tbody>
+      <tbody>${fgRows || '<tr><td colspan="5" class="empty">â€”</td></tr>'}</tbody>
     </table></div>
     <h4 style="margin:16px 0 6px;color:var(--brown)">Materials Used</h4>
     <div class="table-wrap"><table>
       <thead><tr><th>Item</th><th>Type</th><th>Theoretical</th><th>Actual</th><th>Waste %</th><th>Lot #</th></tr></thead>
-      <tbody>${matRows || '<tr><td colspan="6" class="empty">—</td></tr>'}</tbody>
+      <tbody>${matRows || '<tr><td colspan="6" class="empty">â€”</td></tr>'}</tbody>
     </table></div>
     ${r.notes ? `<div style="margin-top:14px"><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:4px">Production Notes</div><div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;white-space:pre-wrap;font-size:13px">${escapeHtml(r.notes)}</div></div>` : ''}
     <div class="form-actions">
@@ -6706,7 +6707,7 @@ function dayClick(dStr) {
     toast('No approved POs to schedule. Approve some in Supply Chain.');
     return;
   }
-  openModal('Schedule Production — starting ' + fmtDate(dStr), `
+  openModal('Schedule Production â€” starting ' + fmtDate(dStr), `
     <p>Select a PO to schedule starting <strong>${fmtDate(dStr)}</strong>. Set an end date if production runs more than one day.</p>
     <table>
       <thead><tr><th>PO</th><th>Customer</th><th>Units</th><th>Room</th><th>End Date</th><th></th></tr></thead>
@@ -6820,10 +6821,10 @@ function editProductionEvent(id) {
   const endDate = po.productionEndDate || po.productionDate || '';
   const dayCount = (startDate && endDate) ? Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1 : 1;
   const showComplete = canMarkComplete(po);
-  openModal(`${po.id} — Production`, `
+  openModal(`${po.id} â€” Production`, `
     <div style="margin-bottom:10px">
       <strong>${escapeHtml(getCustomer(po.customerId)?.name||'')}</strong>
-      <div style="font-size:12px;color:var(--brown-light)">${po.lines.reduce((s,l)=>s+l.qty,0)} units · ${dayCount} day${dayCount===1?'':'s'} · Status: ${po.status.replace(/_/g,' ')}</div>
+      <div style="font-size:12px;color:var(--brown-light)">${po.lines.reduce((s,l)=>s+l.qty,0)} units Â· ${dayCount} day${dayCount===1?'':'s'} Â· Status: ${po.status.replace(/_/g,' ')}</div>
     </div>
     ${showComplete ? `
       <div style="margin:14px 0;padding:14px;background:#e8f4e2;border-left:4px solid var(--success);border-radius:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -6920,10 +6921,10 @@ function markCompleted(id) {
       }
     });
   });
-  openModal(`Complete Production — ${po.id}`, `
+  openModal(`Complete Production â€” ${po.id}`, `
     <div style="margin-bottom:10px">
       <strong>${escapeHtml(getCustomer(po.customerId)?.name||'')}</strong>
-      <div style="font-size:12px;color:var(--brown-light)">${po.brand ? escapeHtml(po.brand)+' · ' : ''}Production: ${fmtDate(po.productionDate)}${po.productionEndDate && po.productionEndDate !== po.productionDate ? ' &rarr; ' + fmtDate(po.productionEndDate) : ''} · Room: ${escapeHtml(po.productionRoom||'—')}</div>
+      <div style="font-size:12px;color:var(--brown-light)">${po.brand ? escapeHtml(po.brand)+' Â· ' : ''}Production: ${fmtDate(po.productionDate)}${po.productionEndDate && po.productionEndDate !== po.productionDate ? ' &rarr; ' + fmtDate(po.productionEndDate) : ''} Â· Room: ${escapeHtml(po.productionRoom||'â€”')}</div>
     </div>
     <div style="background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--brown)">
       Enter the <strong>units &amp; cases produced</strong> with lot #s, then the <strong>actual ingredients &amp; packaging used</strong> with their lot #s. Waste loss % is calculated from theoretical vs. actual. <strong>All fields are required</strong> before you can move to QA.
@@ -6954,7 +6955,7 @@ function markCompleted(id) {
     <h4 style="margin:16px 0 6px;color:var(--brown)">Ingredients Used</h4>
     <div id="cm_ingredients">${completionMaterialRowsHtml('ingredients')}</div>
 
-    <h4 style="margin:16px 0 6px;color:var(--brown)">Packaging Used <span style="font-size:11px;font-weight:400;color:var(--brown-light)">— by SKU</span></h4>
+    <h4 style="margin:16px 0 6px;color:var(--brown)">Packaging Used <span style="font-size:11px;font-weight:400;color:var(--brown-light)">â€” by SKU</span></h4>
     <div id="cm_packaging">${completionPackagingRowsHtml()}</div>
 
     <div id="comp_waste" style="margin-top:14px"></div>
@@ -6983,9 +6984,9 @@ function completionMaterialRowsHtml(kind) {
       const ing = getIngredient(m.ingredientId);
       return `<div class="po-line" style="${grid}">
         <div style="font-size:13px">${escapeHtml(ing?.name||'')} <span style="color:var(--brown-light);font-size:11px">(${escapeHtml(ing?.unit||'')})</span></div>
-        <div data-theo="${kind}_${i}" style="text-align:right;font-size:13px;color:var(--brown-light)">—</div>
+        <div data-theo="${kind}_${i}" style="text-align:right;font-size:13px;color:var(--brown-light)">â€”</div>
         <input type="number" min="0" step="0.01" id="cm_${kind}_qty_${i}" oninput="recomputeCompletion()" style="padding:6px 8px;border:1px solid var(--grey);border-radius:4px" />
-        <div data-waste="${kind}_${i}" style="text-align:right;font-size:13px;font-weight:600">—</div>
+        <div data-waste="${kind}_${i}" style="text-align:right;font-size:13px;font-weight:600">â€”</div>
         <input type="text" id="cm_${kind}_lot_${i}" value="${escapeHtml(ing?.lotNumber||'')}" placeholder="Lot #" oninput="recomputeCompletion()" style="padding:6px 8px;border:1px solid var(--grey);border-radius:4px" />
       </div>`;
     }).join('')}
@@ -7004,7 +7005,7 @@ function completionPackagingRowsHtml() {
       const p = getProduct(m.productId);
       html += `<div style="margin:${lastLine === -1 ? '4px' : '14px'} 0 6px;padding:6px 10px;background:var(--beige-light);border-radius:6px">
         <strong style="color:var(--brown);font-size:13px">${escapeHtml(p?.sku || '')}</strong>
-        <span style="font-size:12px;color:var(--brown-light)"> — ${escapeHtml(p?.name || '')}</span>
+        <span style="font-size:12px;color:var(--brown-light)"> â€” ${escapeHtml(p?.name || '')}</span>
       </div>
       <div class="po-line" style="${grid};font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">
         <div>Packaging Item</div><div>Theoretical</div><div>Actual Used</div><div>Waste %</div><div>Lot #</div>
@@ -7013,9 +7014,9 @@ function completionPackagingRowsHtml() {
     }
     html += `<div class="po-line" style="${grid}">
       <div style="font-size:13px">${escapeHtml(ing?.name||'')} <span style="color:var(--brown-light);font-size:11px">(${escapeHtml(ing?.unit||'')})</span></div>
-      <div data-theo="packaging_${i}" style="text-align:right;font-size:13px;color:var(--brown-light)">—</div>
+      <div data-theo="packaging_${i}" style="text-align:right;font-size:13px;color:var(--brown-light)">â€”</div>
       <input type="number" min="0" step="0.01" id="cm_packaging_qty_${i}" oninput="recomputeCompletion()" style="padding:6px 8px;border:1px solid var(--grey);border-radius:4px" />
-      <div data-waste="packaging_${i}" style="text-align:right;font-size:13px;font-weight:600">—</div>
+      <div data-waste="packaging_${i}" style="text-align:right;font-size:13px;font-weight:600">â€”</div>
       <input type="text" id="cm_packaging_lot_${i}" value="${escapeHtml(ing?.lotNumber||'')}" placeholder="Lot #" oninput="recomputeCompletion()" style="padding:6px 8px;border:1px solid var(--grey);border-radius:4px" />
     </div>`;
   });
@@ -7031,8 +7032,8 @@ function recomputeCompletion(poId) {
     return isNaN(v) ? l.qty : v;
   }) : [];
   // theoretical per material.
-  //  - Ingredients (lineIndex omitted): sum over ALL lines of BOM qty × unitsProduced[line]
-  //  - Packaging (lineIndex given): just that one SKU/line's BOM qty × unitsProduced[line]
+  //  - Ingredients (lineIndex omitted): sum over ALL lines of BOM qty Ã— unitsProduced[line]
+  //  - Packaging (lineIndex given): just that one SKU/line's BOM qty Ã— unitsProduced[line]
   function theoForMaterial(ingId, lineIndex) {
     if (!po) return 0;
     if (lineIndex !== undefined && lineIndex !== null) {
@@ -7107,7 +7108,7 @@ function recomputeCompletion(poId) {
     if (target) {
       target.innerHTML = downstream.length === 0 ? '' : `<div style="background:#fcd7d3;border-left:4px solid var(--danger);padding:10px 14px;border-radius:6px">
         <strong style="color:var(--danger)">&#9888; Downstream Impact: this run leaves other scheduled POs short</strong>
-        <div style="font-size:12px;color:var(--brown);margin-top:6px">${downstream.map(d => `<div><strong>${escapeHtml(d.ingredient.name)}</strong> short ${d.short.toFixed(2)} ${escapeHtml(d.ingredient.unit||'')} — ${d.affected.map(p=>escapeHtml(p.id)).join(', ')}</div>`).join('')}</div>
+        <div style="font-size:12px;color:var(--brown);margin-top:6px">${downstream.map(d => `<div><strong>${escapeHtml(d.ingredient.name)}</strong> short ${d.short.toFixed(2)} ${escapeHtml(d.ingredient.unit||'')} â€” ${d.affected.map(p=>escapeHtml(p.id)).join(', ')}</div>`).join('')}</div>
       </div>`;
     }
   }
@@ -7177,7 +7178,7 @@ async function finalizeMarkComplete(id) {
   // Final downstream check
   const downstream = downstreamShortageOnFinalize(po);
   if (downstream.length > 0) {
-    const summary = downstream.map(d => `• ${d.ingredient.name}: short ${d.short.toFixed(2)} ${d.ingredient.unit||''} (${d.affected.map(p=>p.id).join(', ')})`).join('\n');
+    const summary = downstream.map(d => `â€¢ ${d.ingredient.name}: short ${d.short.toFixed(2)} ${d.ingredient.unit||''} (${d.affected.map(p=>p.id).join(', ')})`).join('\n');
     const ok = await openConfirmModal({
       title: 'Confirm production completion',
       record: id,
@@ -7242,7 +7243,7 @@ async function finalizeMarkComplete(id) {
     }
   });
 
-  // Production finalized → goes to QA Review (not directly to Shipping). Already-shipped/completed POs stay where they are.
+  // Production finalized â†’ goes to QA Review (not directly to Shipping). Already-shipped/completed POs stay where they are.
   if (po.status !== 'shipping' && po.status !== 'completed') po.status = 'qa_review';
   po.productionFinalized = true;
   po.completedAt = new Date().toISOString();
@@ -7256,17 +7257,17 @@ async function finalizeMarkComplete(id) {
   router('quality-assurance');
 }
 
-// Edit Actual / Lot # AFTER production has been finalized — adjusts saved values + lot tracking
+// Edit Actual / Lot # AFTER production has been finalized â€” adjusts saved values + lot tracking
 function editProductionValues(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
-  openModal(`Edit Production Values — ${po.id}`, `
+  openModal(`Edit Production Values â€” ${po.id}`, `
     <div style="margin-bottom:10px">
       <strong>${escapeHtml(getCustomer(po.customerId)?.name||'')}</strong>
-      <div style="font-size:12px;color:var(--brown-light)">${po.brand ? escapeHtml(po.brand)+' · ' : ''}${po.productionDate ? 'Production: '+fmtDate(po.productionDate) : ''}</div>
+      <div style="font-size:12px;color:var(--brown-light)">${po.brand ? escapeHtml(po.brand)+' Â· ' : ''}${po.productionDate ? 'Production: '+fmtDate(po.productionDate) : ''}</div>
     </div>
     <div style="background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--brown)">
-      Adjust the units produced, cases produced, or lot # for each SKU. Lot Tracking on the Food Safety page is updated automatically. <strong>Note:</strong> editing here does not auto-adjust inventory — if quantities changed significantly, manually adjust ingredient stock on the Inventory page.
+      Adjust the units produced, cases produced, or lot # for each SKU. Lot Tracking on the Food Safety page is updated automatically. <strong>Note:</strong> editing here does not auto-adjust inventory â€” if quantities changed significantly, manually adjust ingredient stock on the Inventory page.
     </div>
     <div class="table-wrap"><table>
       <thead><tr>
@@ -7327,7 +7328,7 @@ function saveProductionValues(id) {
 
     // sync Lot Tracking entries
     if (oldLot && oldLot !== newLot) {
-      // user renamed the lot — update existing entry by old lot # (if found) or by PO+product
+      // user renamed the lot â€” update existing entry by old lot # (if found) or by PO+product
       const existing = state.lots.find(x => x.lotNumber === oldLot && x.poId === po.id);
       if (existing) {
         if (newLot) {
@@ -7335,7 +7336,7 @@ function saveProductionValues(id) {
           existing.quantity = l.actualQty;
           existing.productionDate = po.productionDate;
         } else {
-          // lot # cleared — drop the lot record
+          // lot # cleared â€” drop the lot record
           state.lots = state.lots.filter(x => x !== existing);
         }
       } else if (newLot) {
@@ -7351,7 +7352,7 @@ function saveProductionValues(id) {
         });
       }
     } else if (newLot) {
-      // lot # unchanged or first time set — make sure a record exists
+      // lot # unchanged or first time set â€” make sure a record exists
       let existing = state.lots.find(x => x.lotNumber === newLot && x.poId === po.id);
       if (!existing) {
         state.lots.push({
@@ -7406,7 +7407,7 @@ function renderShipping(el) {
         <h2>To Stock in Warehouse</h2>
         <span style="font-size:13px;color:var(--brown-light)">${openInternal.length} internal-brand run(s)</span>
       </div>
-      <div class="help-text" style="margin-bottom:8px">Internal-brand POs (Bnutty, Dilly's, Poochie Butter) don't ship — they go to the warehouse to stock the shelves. Confirm to mark complete.</div>
+      <div class="help-text" style="margin-bottom:8px">Internal-brand POs (Bnutty, Dilly's, Poochie Butter) don't ship â€” they go to the warehouse to stock the shelves. Confirm to mark complete.</div>
       ${openInternal.length === 0
         ? '<div class="empty">No internal-brand runs to stock.</div>'
         : openInternal.map(p => warehouseStockCardHtml(p)).join('')
@@ -7429,11 +7430,11 @@ function renderShipping(el) {
                 <td><strong>${p.id}</strong></td>
                 <td>${internal ? '<span class="badge badge-prod">Stocked</span>' : '<span class="badge badge-shipping">Shipped</span>'}</td>
                 <td>${escapeHtml(getCustomer(p.customerId)?.name||'')}${p.brand ? ' <span class="pill">'+escapeHtml(p.brand)+'</span>' : ''}</td>
-                <td>${poTotalUnits(p) || '—'}</td>
-                <td>${poTotalCases(p) || '—'}</td>
-                <td>${internal ? '—' : escapeHtml(p.shipping?.bol||'—')}</td>
-                <td>${internal ? '—' : escapeHtml(p.shipping?.carrier||'—')}</td>
-                <td>${internal ? '—' : (shipPalletCount(p.shipping)||'—')}</td>
+                <td>${poTotalUnits(p) || 'â€”'}</td>
+                <td>${poTotalCases(p) || 'â€”'}</td>
+                <td>${internal ? 'â€”' : escapeHtml(p.shipping?.bol||'â€”')}</td>
+                <td>${internal ? 'â€”' : escapeHtml(p.shipping?.carrier||'â€”')}</td>
+                <td>${internal ? 'â€”' : (shipPalletCount(p.shipping)||'â€”')}</td>
                 <td>${internal ? '' : `<button class="btn btn-icon btn-sm" onclick="printDocuments('${p.id}')">Print Docs</button>`}</td>
               </tr>`;
             }).join('')}
@@ -7457,11 +7458,11 @@ function productionTotalsHtml(p) {
     <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
       <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Units Produced</div>
-        <div style="font-size:20px;font-weight:700;color:var(--brown)">${units || '—'}</div>
+        <div style="font-size:20px;font-weight:700;color:var(--brown)">${units || 'â€”'}</div>
       </div>
       <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Cases Produced</div>
-        <div style="font-size:20px;font-weight:700;color:var(--brown)">${cases || '—'}</div>
+        <div style="font-size:20px;font-weight:700;color:var(--brown)">${cases || 'â€”'}</div>
       </div>
       ${lotPills ? `<div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Lots</div>
@@ -7504,7 +7505,7 @@ function shipPalletRowsHtml(p) {
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
       <button type="button" class="btn btn-secondary btn-sm" onclick="addShippingPallet('${p.id}')">+ Add Pallet</button>
-      <div style="font-size:12px;color:var(--brown-light)">${pallets.length} pallet${pallets.length===1?'':'s'} · <strong style="color:var(--brown)">${totalWt.toFixed(1)} lb total</strong></div>
+      <div style="font-size:12px;color:var(--brown-light)">${pallets.length} pallet${pallets.length===1?'':'s'} Â· <strong style="color:var(--brown)">${totalWt.toFixed(1)} lb total</strong></div>
     </div>
   `;
 }
@@ -7516,7 +7517,7 @@ function shippingCardHtml(p) {
     <div class="card" style="background:var(--beige-light)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
         <div>
-          <h3 style="margin:0">${p.id} — ${escapeHtml(cust?.name||'')}</h3>
+          <h3 style="margin:0">${p.id} â€” ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">${p.brand ? '<span class="pill">'+escapeHtml(p.brand)+'</span> ' : ''}Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
         </div>
         <div>${statusBadge(p.status)}</div>
@@ -7530,7 +7531,7 @@ function shippingCardHtml(p) {
       </div>
       <div style="margin-top:14px;padding:12px;background:var(--white);border:1px solid var(--grey-light);border-radius:8px">
         <strong style="color:var(--brown);font-size:13px">Pallets</strong>
-        <div class="help-text" style="margin-bottom:6px">Add a line per pallet — each can have its own dimensions and weight.</div>
+        <div class="help-text" style="margin-bottom:6px">Add a line per pallet â€” each can have its own dimensions and weight.</div>
         ${shipPalletRowsHtml(p)}
       </div>
       <div class="form-row" style="margin-top:14px">
@@ -7611,7 +7612,7 @@ function shipDocsSelected(e, id) {
   reader.onload = () => {
     po.shipping.documents = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result, uploadedAt: new Date().toISOString() };
     try { saveState(); }
-    catch(err) { po.shipping.documents = null; toast('Storage full — use a smaller file.'); return; }
+    catch(err) { po.shipping.documents = null; toast('Storage full â€” use a smaller file.'); return; }
     toast('Shipment documents uploaded.');
     router('shipping');
   };
@@ -7633,8 +7634,8 @@ function warehouseStockCardHtml(p) {
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--brown)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
         <div>
-          <h3 style="margin:0">${p.id} — ${escapeHtml(p.brand||'')}</h3>
-          <div style="font-size:12px;color:var(--brown-light)">${escapeHtml(cust?.name||'')} · Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
+          <h3 style="margin:0">${p.id} â€” ${escapeHtml(p.brand||'')}</h3>
+          <div style="font-size:12px;color:var(--brown-light)">${escapeHtml(cust?.name||'')} Â· Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
         </div>
         <div><span class="badge badge-supply">Internal Brand</span></div>
       </div>
@@ -7815,10 +7816,10 @@ function bolSectionHtml(po) {
   return `
     <div class="doc-page">
       <div class="head">
-        <div><h1>BILL OF LADING</h1><div style="color:#8B5E3C">Nut House — Peanut Butter &amp; Dog Treat Co.</div></div>
+        <div><h1>BILL OF LADING</h1><div style="color:#8B5E3C">Nut House â€” Peanut Butter &amp; Dog Treat Co.</div></div>
         <div style="text-align:right">
-          <div class="label">BOL #</div><div style="font-weight:700;font-size:18px">${escapeHtml(s.bol||'—')}</div>
-          <div class="label" style="margin-top:6px">PRO #</div><div>${escapeHtml(s.proNumber||'—')}</div>
+          <div class="label">BOL #</div><div style="font-weight:700;font-size:18px">${escapeHtml(s.bol||'â€”')}</div>
+          <div class="label" style="margin-top:6px">PRO #</div><div>${escapeHtml(s.proNumber||'â€”')}</div>
         </div>
       </div>
       <div class="grid">
@@ -7831,18 +7832,18 @@ function bolSectionHtml(po) {
           <div>${escapeHtml(cust?.address||'')}</div>
           <div>${escapeHtml(cust?.phone||'')}</div>
         </div>
-        <div class="box"><div class="label">Carrier</div><div>${escapeHtml(s.carrier||'—')}</div>
-          <div class="label" style="margin-top:6px">Freight Class</div><div>${escapeHtml(s.freightClass||'—')}</div>
+        <div class="box"><div class="label">Carrier</div><div>${escapeHtml(s.carrier||'â€”')}</div>
+          <div class="label" style="margin-top:6px">Freight Class</div><div>${escapeHtml(s.freightClass||'â€”')}</div>
         </div>
         <div class="box"><div class="label">Shipment Totals</div>
-          <div>${pallets.length} pallet${pallets.length===1?'':'s'} · ${totalWt.toFixed(1)} lb total</div>
+          <div>${pallets.length} pallet${pallets.length===1?'':'s'} Â· ${totalWt.toFixed(1)} lb total</div>
         </div>
       </div>
       <h3 style="color:#5C3A21;margin:12px 0 4px">Pallet Detail</h3>
       <table>
         <thead><tr><th>Pallet #</th><th>Length (in)</th><th>Width (in)</th><th>Height (in)</th><th>Weight (lb)</th></tr></thead>
         <tbody>
-          ${pallets.length ? pallets.map((pl,i)=>`<tr><td>${i+1}</td><td>${pl.length||'—'}</td><td>${pl.width||'—'}</td><td>${pl.height||'—'}</td><td>${pl.weight||'—'}</td></tr>`).join('')
+          ${pallets.length ? pallets.map((pl,i)=>`<tr><td>${i+1}</td><td>${pl.length||'â€”'}</td><td>${pl.width||'â€”'}</td><td>${pl.height||'â€”'}</td><td>${pl.weight||'â€”'}</td></tr>`).join('')
             : '<tr><td colspan="5">No pallets entered</td></tr>'}
         </tbody>
         <tfoot><tr><th colspan="4" style="text-align:right">Total Weight</th><th>${totalWt.toFixed(1)} lb</th></tr></tfoot>
@@ -7868,7 +7869,7 @@ function poSectionHtml(po) {
   return `
     <div class="doc-page">
       <div class="head">
-        <div><h1>PURCHASE ORDER</h1><div style="color:#8B5E3C">${escapeHtml(po.id)}${po.brand ? ' · '+escapeHtml(po.brand):''}</div></div>
+        <div><h1>PURCHASE ORDER</h1><div style="color:#8B5E3C">${escapeHtml(po.id)}${po.brand ? ' Â· '+escapeHtml(po.brand):''}</div></div>
         <div style="text-align:right">
           <div class="label">PO Date</div><div>${fmtDate(po.poDate)}</div>
           <div class="label" style="margin-top:6px">Requested Ship</div><div>${fmtDate(po.requestedDate)}</div>
@@ -7900,10 +7901,10 @@ function packingSlipSectionHtml(po) {
   return `
     <div class="doc-page">
       <div class="head">
-        <div><h1>PACKING SLIP</h1><div style="color:#8B5E3C">${escapeHtml(po.id)} · ${escapeHtml(cust?.name||'')}</div></div>
+        <div><h1>PACKING SLIP</h1><div style="color:#8B5E3C">${escapeHtml(po.id)} Â· ${escapeHtml(cust?.name||'')}</div></div>
         <div style="text-align:right">
           <div class="label">Ship Date</div><div>${fmtDate((po.shippedAt||'').slice(0,10) || new Date().toISOString().slice(0,10))}</div>
-          <div class="label" style="margin-top:6px">BOL #</div><div>${escapeHtml(s.bol||'—')}</div>
+          <div class="label" style="margin-top:6px">BOL #</div><div>${escapeHtml(s.bol||'â€”')}</div>
         </div>
       </div>
       <div class="grid">
@@ -7912,8 +7913,8 @@ function packingSlipSectionHtml(po) {
           <div>${escapeHtml(cust?.address||'')}</div>
         </div>
         <div class="box"><div class="label">Shipment</div>
-          <div>${shipPalletCount(s)} pallet${shipPalletCount(s)===1?'':'s'} · ${shipTotalWeight(s).toFixed(1)} lb</div>
-          <div>Carrier: ${escapeHtml(s.carrier||'—')}</div>
+          <div>${shipPalletCount(s)} pallet${shipPalletCount(s)===1?'':'s'} Â· ${shipTotalWeight(s).toFixed(1)} lb</div>
+          <div>Carrier: ${escapeHtml(s.carrier||'â€”')}</div>
         </div>
       </div>
       <table>
@@ -7925,14 +7926,14 @@ function packingSlipSectionHtml(po) {
             return `<tr>
               <td>${escapeHtml(p?.sku||'')}</td>
               <td>${escapeHtml(p?.name||'')}</td>
-              <td>${p?.size?escapeHtml(p.size+(p.sizeUnit||'oz')):'—'}</td>
-              <td>${typeof l.casesProduced==='number'?l.casesProduced:'—'}</td>
+              <td>${p?.size?escapeHtml(p.size+(p.sizeUnit||'oz')):'â€”'}</td>
+              <td>${typeof l.casesProduced==='number'?l.casesProduced:'â€”'}</td>
               <td>${units}</td>
-              <td>${escapeHtml(l.lotNumber||'—')}</td>
+              <td>${escapeHtml(l.lotNumber||'â€”')}</td>
             </tr>`;
           }).join('')}
         </tbody>
-        <tfoot><tr><th colspan="3" style="text-align:right">Totals</th><th>${totalCases||'—'}</th><th>${totalUnits}</th><th></th></tr></tfoot>
+        <tfoot><tr><th colspan="3" style="text-align:right">Totals</th><th>${totalCases||'â€”'}</th><th>${totalUnits}</th><th></th></tr></tfoot>
       </table>
       <div style="margin-top:24px;font-size:12px">Packed By: ___________________________ &nbsp;&nbsp; Checked By: ___________________________ &nbsp;&nbsp; Date: __________</div>
     </div>
@@ -7958,7 +7959,7 @@ function printPackingSlip(id) {
   if (!po) return;
   const w = window.open('', '_blank');
   if (!w) { toast('Popup blocked. Allow popups to print.'); return; }
-  w.document.write(`<html><head><title>Packing Slip — ${escapeHtml(po.id)}</title><style>${PRINT_DOC_STYLES}</style></head><body>${packingSlipSectionHtml(po)}<script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.write(`<html><head><title>Packing Slip â€” ${escapeHtml(po.id)}</title><style>${PRINT_DOC_STYLES}</style></head><body>${packingSlipSectionHtml(po)}<script>window.onload=()=>window.print();<\/script></body></html>`);
   w.document.close();
 }
 // Print Documents: BOL + Purchase Order + Packing Slip in one document
@@ -7967,7 +7968,7 @@ function printDocuments(id) {
   if (!po) return;
   const w = window.open('', '_blank');
   if (!w) { toast('Popup blocked. Allow popups to print.'); return; }
-  w.document.write(`<html><head><title>Shipping Documents — ${escapeHtml(po.id)}</title><style>${PRINT_DOC_STYLES}</style></head><body>
+  w.document.write(`<html><head><title>Shipping Documents â€” ${escapeHtml(po.id)}</title><style>${PRINT_DOC_STYLES}</style></head><body>
     ${bolSectionHtml(po)}
     ${poSectionHtml(po)}
     ${packingSlipSectionHtml(po)}
@@ -8008,7 +8009,7 @@ function renderSuppliers(el) {
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
             const productsCell = lines.length
               ? lines.map(pl => `<div style="font-size:12px"><strong>${escapeHtml(pl.product||'')}</strong> <span class="pill">${escapeHtml(pl.type||'')}</span> ${pl.pricePerLb!==''&&pl.pricePerLb!=null ? '<span style="color:var(--brown-light)">'+fmtMoney(pl.pricePerLb)+'/lb</span>' : ''}</div>`).join('')
-              : (s.products ? `<div style="font-size:12px;color:var(--brown-light)">${escapeHtml(s.products)}</div>` : '<span style="font-size:12px;color:var(--brown-light)">—</span>');
+              : (s.products ? `<div style="font-size:12px;color:var(--brown-light)">${escapeHtml(s.products)}</div>` : '<span style="font-size:12px;color:var(--brown-light)">â€”</span>');
             return `
             <tr>
               <td><strong>${escapeHtml(s.name)}</strong></td>
@@ -8017,9 +8018,9 @@ function renderSuppliers(el) {
               <td><a href="mailto:${escapeHtml(s.email||'')}" style="color:var(--orange)">${escapeHtml(s.email||'')}</a></td>
               <td>${escapeHtml(s.phone||'')}</td>
               <td>${s.website ? `<a href="https://${escapeHtml(s.website)}" target="_blank" style="color:var(--orange)">${escapeHtml(s.website)}</a>` : ''}</td>
-              <td>${s.moq||'—'}</td>
+              <td>${s.moq||'â€”'}</td>
               <td>${docCount === 0
-                ? '<span style="font-size:12px;color:var(--brown-light)">—</span>'
+                ? '<span style="font-size:12px;color:var(--brown-light)">â€”</span>'
                 : `<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:var(--brown-light);font-weight:600">${docCount} of ${VENDOR_DOC_TYPES.length}</span><div style="display:flex;flex-wrap:wrap;gap:3px">${docPills}</div></div>`
               }</td>
               <td class="row-actions">
@@ -8067,7 +8068,7 @@ function editSupplier(id) {
       <div style="margin-top:18px;padding:12px;background:var(--beige-light);border-radius:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <strong style="color:var(--brown);font-size:13px">Supplier Onboarding Documents</strong>
-          <span style="font-size:11px;color:var(--brown-light)">All optional · Max 5 MB each</span>
+          <span style="font-size:11px;color:var(--brown-light)">All optional Â· Max 5 MB each</span>
         </div>
         <div id="sup_docs_list" style="margin-top:6px"></div>
       </div>
@@ -8184,7 +8185,7 @@ function saveSupplier(id, isNew) {
   if (isNew) state.suppliers.push(data);
   else Object.assign(existing, data);
   try { saveState(); }
-  catch(err) { toast('Storage full — try removing a document or using smaller files.'); return; }
+  catch(err) { toast('Storage full â€” try removing a document or using smaller files.'); return; }
   closeModal();
   router('suppliers');
   toast('Supplier saved.');
@@ -8245,7 +8246,7 @@ function renderCustomers(el) {
               const agreement = c.copackingAgreement;
               const contactCell = (role) => {
                 const r = c[role];
-                if (!r || (!r.name && !r.email && !r.phone)) return '<span style="color:var(--brown-light);font-size:12px">—</span>';
+                if (!r || (!r.name && !r.email && !r.phone)) return '<span style="color:var(--brown-light);font-size:12px">â€”</span>';
                 return `
                   ${r.name ? `<div style="font-weight:600;font-size:13px">${escapeHtml(r.name)}</div>` : ''}
                   ${r.email ? `<div style="font-size:11px"><a href="mailto:${escapeHtml(r.email)}" style="color:var(--orange);text-decoration:none">${escapeHtml(r.email)}</a></div>` : ''}
@@ -8264,11 +8265,11 @@ function renderCustomers(el) {
                 <td>${contactCell('foodSafetyContact')}</td>
                 <td>${sheet
                   ? `<a href="${sheet.dataUrl}" download="${escapeHtml(sheet.name||sheet.fileName||'spec-sheet')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((sheet.name||sheet.fileName||'spec').slice(0,18))}</a>`
-                  : '<span style="font-size:12px;color:var(--brown-light)">—</span>'
+                  : '<span style="font-size:12px;color:var(--brown-light)">â€”</span>'
                 }</td>
                 <td>${agreement
                   ? `<a href="${agreement.dataUrl}" download="${escapeHtml(agreement.name||agreement.fileName||'agreement')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((agreement.name||agreement.fileName||'agreement').slice(0,18))}</a>`
-                  : '<span style="font-size:12px;color:var(--brown-light)">—</span>'
+                  : '<span style="font-size:12px;color:var(--brown-light)">â€”</span>'
                 }</td>
                 <td class="customer-actions-cell">
                   <div class="row-actions">
@@ -8427,7 +8428,7 @@ async function saveCustomer(id, isNew) {
   if (isNew) state.customers.push(data);
   else Object.assign(existing, data);
   try { saveState(); }
-  catch(err) { toast('Storage full — try smaller files.'); return; }
+  catch(err) { toast('Storage full â€” try smaller files.'); return; }
   closeModal();
   router('customers');
   toast('Customer saved.');
@@ -8475,7 +8476,7 @@ function editProduct(id) {
         <div class="form-row"><label>Name</label><input id="prod_name" value="${escapeHtml(p.name)}" required /></div>
         <div class="form-row"><label>Customer</label>
           <select id="prod_customer" required>
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.customers.map(c=>`<option value="${c.id}" ${p.customerId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
           </select>
         </div>
@@ -8502,7 +8503,7 @@ function editProduct(id) {
         <div class="form-row"><label>Case Qty</label><input type="number" min="0" step="1" id="prod_case_qty" value="${p.caseQty||0}" placeholder="Units per case" /></div>
         <div class="form-row"><label>Case Sticker</label>
           <select id="prod_case_sticker">
-            <option value="" ${!p.caseSticker?'selected':''}>— None —</option>
+            <option value="" ${!p.caseSticker?'selected':''}>â€” None â€”</option>
             <option ${p.caseSticker==='2x3'?'selected':''}>2x3</option>
             <option ${p.caseSticker==='Keyence'?'selected':''}>Keyence</option>
           </select>
@@ -8529,7 +8530,7 @@ function editProduct(id) {
         <div class="form-row">
           <label>Linked Finished Good Inventory Item</label>
           <select id="prod_fg">
-            <option value="">— Link later or create on first production —</option>
+            <option value="">â€” Link later or create on first production â€”</option>
             ${state.ingredients.filter(i=>i.category==='Finished Good').map(fg => `<option value="${fg.id}" ${p.finishedGoodId===fg.id?'selected':''}>${escapeHtml(fg.name)}</option>`).join('')}
           </select>
           <div class="help-text">Choose the inventory item that should increase when this product is completed in production. Leave blank to create or link it later.</div>
@@ -8639,12 +8640,12 @@ function renderFormulaRows() {
       const sub = ing ? ing.cost * r.qty : 0;
       return `<div class="po-line" style="${FORMULA_GRID}">
         <select onchange="formulaIngredientChange(${i},this.value)">
-          <option value="">— Select —</option>
+          <option value="">â€” Select â€”</option>
           ${state.ingredients.map(opt => `<option value="${opt.id}" ${r.ingredientId===opt.id?'selected':''}>${escapeHtml(opt.name)}</option>`).join('')}
         </select>
         <input type="number" min="0" step="0.001" value="${r.qty}" oninput="formulaQtyInput(${i},this.value)" />
         <input type="number" min="0" max="100" step="0.01" value="${r.pct||0}" oninput="formulaPctInput(${i},this.value)" placeholder="0" />
-        <div data-row-unit="${i}" style="text-align:center;color:var(--brown-light);font-size:13px">${ing ? escapeHtml(ing.unit) : '—'}</div>
+        <div data-row-unit="${i}" style="text-align:center;color:var(--brown-light);font-size:13px">${ing ? escapeHtml(ing.unit) : 'â€”'}</div>
         <div data-row-sub="${i}" style="text-align:right;font-weight:600;color:var(--brown)">${fmtMoney(sub)}</div>
         <button type="button" onclick="removeFormulaRow(${i})">&times;</button>
       </div>`;
@@ -8670,7 +8671,7 @@ function removeFormulaRow(idx) {
   editingFormula.splice(idx, 1);
   renderFormulaRows();
 }
-// Selecting an ingredient changes unit/cost displays — full re-render is fine because the select isn't being typed in
+// Selecting an ingredient changes unit/cost displays â€” full re-render is fine because the select isn't being typed in
 function formulaIngredientChange(idx, value) {
   editingFormula[idx].ingredientId = value;
   renderFormulaRows();
@@ -8750,7 +8751,7 @@ async function saveProduct(id, isNew) {
     nfpImage,
     notes: document.getElementById('prod_notes').value
   };
-  // validate formula percentages sum to 100 (with 0.5 tolerance) — only if any rows exist
+  // validate formula percentages sum to 100 (with 0.5 tolerance) â€” only if any rows exist
   const cleanFormula = editingFormula.filter(r => r.ingredientId && r.qty > 0).map(r => ({ ingredientId: r.ingredientId, qty: r.qty, pct: parseFloat(r.pct) || 0 }));
   if (cleanFormula.length) {
     const totalPct = cleanFormula.reduce((s, r) => s + r.pct, 0);
@@ -8788,7 +8789,7 @@ async function saveProduct(id, isNew) {
   try { saveState(); }
   catch(err) {
     if (isNew) state.products = state.products.filter(p => p.id !== id);
-    toast('Storage full — try smaller images or remove one.');
+    toast('Storage full â€” try smaller images or remove one.');
     return;
   }
   closeModal();
@@ -8847,7 +8848,7 @@ function viewProductImage(productId, kind) {
   const img = kind === 'nfp' ? p.nfpImage : p.productImage;
   if (!img) return;
   const title = kind === 'nfp' ? 'Nutrition Facts Panel' : 'Product Image';
-  openModal(`${title} — ${escapeHtml(p.name)}`, `
+  openModal(`${title} â€” ${escapeHtml(p.name)}`, `
     <div style="text-align:center">
       <img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:60vh;border-radius:6px;border:1px solid var(--grey-light)" />
       <div style="font-size:12px;color:var(--brown-light);margin-top:8px">${escapeHtml(img.name||'')} (${Math.round((img.size||0)/1024)} KB)</div>
@@ -8859,14 +8860,14 @@ function viewProductImage(productId, kind) {
   `);
 }
 function formulaPillHtml(p, bom) {
-  if (!bom || bom.length === 0) return '<span style="color:var(--brown-light);font-size:12px">—</span>';
+  if (!bom || bom.length === 0) return '<span style="color:var(--brown-light);font-size:12px">â€”</span>';
   const totalPct = bom.reduce((s, b) => s + (b.pct || 0), 0);
   const rows = bom.map(b => {
     const ing = getIngredient(b.ingredientId);
     return `<tr>
       <td>${escapeHtml(ing?.name || '(missing)')}</td>
       <td style="text-align:right">${b.qty} ${escapeHtml(ing?.unit||'')}</td>
-      <td style="text-align:right">${b.pct ? b.pct.toFixed(2) + '%' : '—'}</td>
+      <td style="text-align:right">${b.pct ? b.pct.toFixed(2) + '%' : 'â€”'}</td>
     </tr>`;
   }).join('');
   return `
@@ -8903,7 +8904,7 @@ function downloadProductFormula(productId) {
   if (!w) { toast('Popup blocked. Allow popups to download the formula.'); return; }
   const safeName = (p.sku || p.name || 'Formula').replace(/[^A-Za-z0-9_-]+/g, '_');
   w.document.write(`
-    <html><head><title>Formula — ${escapeHtml(p.sku||p.name||'Product')}</title>
+    <html><head><title>Formula â€” ${escapeHtml(p.sku||p.name||'Product')}</title>
     <style>
       body{font-family:Helvetica,Arial,sans-serif;padding:36px;color:#1A1A1A}
       h1{color:#5C3A21;margin:0 0 4px}
@@ -8925,9 +8926,9 @@ function downloadProductFormula(productId) {
       </div>
       <div style="text-align:right">
         <div class="label">Customer</div>
-        <div>${escapeHtml(cust?.name||'—')}</div>
+        <div>${escapeHtml(cust?.name||'â€”')}</div>
         <div class="label" style="margin-top:6px">Production Room</div>
-        <div>${escapeHtml(p.room||'—')}</div>
+        <div>${escapeHtml(p.room||'â€”')}</div>
       </div>
     </div>
     <div class="meta">
@@ -8946,7 +8947,7 @@ function downloadProductFormula(productId) {
             <td>${escapeHtml(ing.name)}</td>
             <td>${b.qty}</td>
             <td>${escapeHtml(ing.unit||'')}</td>
-            <td>${b.pct ? b.pct.toFixed(2)+'%' : '—'}</td>
+            <td>${b.pct ? b.pct.toFixed(2)+'%' : 'â€”'}</td>
             <td>${fmtMoney(ing.cost)}</td>
             <td>${fmtMoney(sub)}</td>
           </tr>`;
@@ -8995,18 +8996,18 @@ function renderProductList(el) {
             const bom = state.boms[p.id] || [];
             return `
             <tr>
-              <td>${p.productImage ? `<img src="${p.productImage.dataUrl}" alt="${escapeHtml(p.name)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','product')" />` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+              <td>${p.productImage ? `<img src="${p.productImage.dataUrl}" alt="${escapeHtml(p.name)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','product')" />` : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
               <td><strong>${escapeHtml(p.sku)}</strong></td>
               <td>${escapeHtml(p.name)}</td>
-              <td>${escapeHtml(getCustomer(p.customerId)?.name||'—')}</td>
-              <td><span class="room-dot" style="display:inline-block;background:${roomColor(p.room)}"></span> ${escapeHtml(p.room||'—')}</td>
-              <td>${p.size ? escapeHtml(p.size+(p.sizeUnit||'oz')) : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.caseQty || '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.caseSticker ? '<span class="pill">'+escapeHtml(p.caseSticker)+'</span>' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.dailyProductionRate ? p.dailyProductionRate + ' / day' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.kosher ? '<span class="badge badge-prod" title="Kosher Certified">&#10003; Kosher</span>' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.allergen ? `<span class="badge badge-low" title="${escapeHtml(p.allergenDetails||'Allergen')}">&#9888; ${escapeHtml(p.allergenDetails||'Yes')}</span>` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
-              <td>${p.nfpImage ? `<img src="${p.nfpImage.dataUrl}" alt="NFP" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','nfp')" />` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+              <td>${escapeHtml(getCustomer(p.customerId)?.name||'â€”')}</td>
+              <td><span class="room-dot" style="display:inline-block;background:${roomColor(p.room)}"></span> ${escapeHtml(p.room||'â€”')}</td>
+              <td>${p.size ? escapeHtml(p.size+(p.sizeUnit||'oz')) : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.caseQty || '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.caseSticker ? '<span class="pill">'+escapeHtml(p.caseSticker)+'</span>' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.dailyProductionRate ? p.dailyProductionRate + ' / day' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.kosher ? '<span class="badge badge-prod" title="Kosher Certified">&#10003; Kosher</span>' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.allergen ? `<span class="badge badge-low" title="${escapeHtml(p.allergenDetails||'Allergen')}">&#9888; ${escapeHtml(p.allergenDetails||'Yes')}</span>` : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
+              <td>${p.nfpImage ? `<img src="${p.nfpImage.dataUrl}" alt="NFP" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','nfp')" />` : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
               <td>${formulaPillHtml(p, bom)}</td>
               <td>${fmtMoney(p.price)}</td>
               <td class="row-actions">
@@ -9057,8 +9058,8 @@ function renderProductCalculator(el) {
       <div class="form-grid">
         <div class="form-row"><label>Load From Product</label>
           <select id="calc_product" onchange="calcLoadProduct()">
-            <option value="">— Build manually —</option>
-            ${state.products.map(p => `<option value="${p.id}" ${calcState.productId===p.id?'selected':''}>${escapeHtml(p.sku)} — ${escapeHtml(p.name)}</option>`).join('')}
+            <option value="">â€” Build manually â€”</option>
+            ${state.products.map(p => `<option value="${p.id}" ${calcState.productId===p.id?'selected':''}>${escapeHtml(p.sku)} â€” ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row"><label>Number of Units (Jars / Pouches)</label>
@@ -9159,11 +9160,11 @@ function renderCalcRows(kind) {
       const sub = (ing ? ing.cost : 0) * r.qtyPerUnit * LOSS_FACTOR;
       return `<div class="po-line">
         <select onchange="calcRowChange('${kind}',${i},'ingredientId',this.value)">
-          <option value="">— Select —</option>
+          <option value="">â€” Select â€”</option>
           ${state.ingredients.map(opt => `<option value="${opt.id}" ${r.ingredientId===opt.id?'selected':''}>${escapeHtml(opt.name)} (${escapeHtml(opt.unit)})</option>`).join('')}
         </select>
         <input type="number" min="0" step="0.001" value="${r.qtyPerUnit}" oninput="calcRowChange('${kind}',${i},'qtyPerUnit',this.value)" />
-        <div style="text-align:right;color:var(--brown-light);font-size:13px">${ing ? fmtMoney(ing.cost) : '—'}</div>
+        <div style="text-align:right;color:var(--brown-light);font-size:13px">${ing ? fmtMoney(ing.cost) : 'â€”'}</div>
         <div style="text-align:right;font-weight:600;color:var(--brown)">${fmtMoney(sub)}</div>
         <button type="button" onclick="removeCalcRow('${kind}',${i})">&times;</button>
       </div>`;
@@ -9519,7 +9520,7 @@ function renderUsers(el) {
                 <td><span class="badge ${u.role==='Admin'?'badge-prod':u.role==='Customer'?'badge-shipping':'badge-supply'}">${escapeHtml(u.role||'')}</span></td>
                 <td>${u.role === 'Customer'
                   ? (linked ? escapeHtml(linked.name) : '<span style="color:var(--danger);font-size:12px">Not linked</span>')
-                  : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+                  : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
                 <td>${fmtDate(u.addedAt)}</td>
                 <td class="row-actions">
                   ${u.role === 'Customer' && linked ? `<button class="btn btn-icon btn-sm" onclick="viewCustomerPortal('${u.customerId}')">View Portal</button>` : ''}
@@ -9553,7 +9554,7 @@ function roleDescription(r) {
     case 'Supply Chain & Procurement': return 'Supply Chain, Procurement, Suppliers, Inventory.';
     case 'Warehousing': return 'Inventory, Shipping. View Production Schedule.';
     case 'Production': return 'Production Schedule, Food Safety. View Inventory.';
-    case 'Customer': return 'External — sees only their own customer profile, their own POs (open & completed), and packaging + finished goods inventory tied to their products.';
+    case 'Customer': return 'External â€” sees only their own customer profile, their own POs (open & completed), and packaging + finished goods inventory tied to their products.';
     default: return '';
   }
 }
@@ -9576,7 +9577,7 @@ function editUser(id) {
       <div class="form-row" id="usr_customer_row" style="margin-top:12px;display:${u.role==='Customer'?'flex':'none'}">
         <label>Linked Customer Account *</label>
         <select id="usr_customer">
-          <option value="">— Select Customer —</option>
+          <option value="">â€” Select Customer â€”</option>
           ${state.customers.map(c=>`<option value="${c.id}" ${u.customerId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
         </select>
         <div class="help-text">Required for Customer role. The user will only see data tied to this customer.</div>
@@ -9667,7 +9668,7 @@ function viewCustomerPortalPreview(customerId) {
   const packaging = myIngredients.filter(i => i.unit === 'ea');
   const rawIngs = myIngredients.filter(i => i.unit !== 'ea');
 
-  openModal(`Customer Portal Preview — ${escapeHtml(cust.name)}`, `
+  openModal(`Customer Portal Preview â€” ${escapeHtml(cust.name)}`, `
     <div style="background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--brown)">
       <strong>Preview only.</strong> This is what a Customer-role user linked to <strong>${escapeHtml(cust.name)}</strong> would see when they log in. Backend customer scoping is available when AUTH_REQUIRED=true; this preview stays local for stakeholder review.
     </div>
@@ -9675,10 +9676,10 @@ function viewCustomerPortalPreview(customerId) {
     <table style="margin-bottom:14px">
       <tbody>
         <tr><td style="font-weight:600;width:140px">Company</td><td>${escapeHtml(cust.name)}</td></tr>
-        <tr><td style="font-weight:600">Contact</td><td>${escapeHtml(cust.contact||'—')}</td></tr>
-        <tr><td style="font-weight:600">Email</td><td>${escapeHtml(cust.email||'—')}</td></tr>
-        <tr><td style="font-weight:600">Phone</td><td>${escapeHtml(cust.phone||'—')}</td></tr>
-        <tr><td style="font-weight:600">Address</td><td>${escapeHtml(cust.address||'—')}</td></tr>
+        <tr><td style="font-weight:600">Contact</td><td>${escapeHtml(cust.contact||'â€”')}</td></tr>
+        <tr><td style="font-weight:600">Email</td><td>${escapeHtml(cust.email||'â€”')}</td></tr>
+        <tr><td style="font-weight:600">Phone</td><td>${escapeHtml(cust.phone||'â€”')}</td></tr>
+        <tr><td style="font-weight:600">Address</td><td>${escapeHtml(cust.address||'â€”')}</td></tr>
       </tbody>
     </table>
 
@@ -9708,7 +9709,7 @@ function viewCustomerPortalPreview(customerId) {
           <td>${fmtDate(p.poDate)}</td>
           <td>${p.lines.length}</td>
           <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
-          <td>${escapeHtml(p.shipping?.bol||'—')}</td>
+          <td>${escapeHtml(p.shipping?.bol||'â€”')}</td>
         </tr>`).join('')}
         </tbody>
       </table></div>`
@@ -9722,8 +9723,8 @@ function viewCustomerPortalPreview(customerId) {
         ${myProducts.map(p => `<tr>
           <td><strong>${escapeHtml(p.sku)}</strong></td>
           <td>${escapeHtml(p.name)}</td>
-          <td>${p.size ? escapeHtml(p.size+(p.sizeUnit||'oz')) : '—'}</td>
-          <td>${escapeHtml(p.room||'—')}</td>
+          <td>${p.size ? escapeHtml(p.size+(p.sizeUnit||'oz')) : 'â€”'}</td>
+          <td>${escapeHtml(p.room||'â€”')}</td>
         </tr>`).join('')}
         </tbody>
       </table></div>`
@@ -10145,12 +10146,12 @@ function syncItemLots(item) {
 }
 function inventoryCustomer(item) {
   if (item.customerId === 'general') return '<span class="pill">General</span>';
-  if (item.customerId) return getCustomer(item.customerId)?.name || '—';
+  if (item.customerId) return getCustomer(item.customerId)?.name || 'â€”';
   if ((item.category || 'Ingredient') === 'Packaging') {
     const productIds = Object.keys(state.boms || {}).filter(pid => (state.boms[pid] || []).some(b => b.ingredientId === item.id));
     const customerIds = [...new Set(productIds.map(pid => getProduct(pid)?.customerId).filter(Boolean))];
     if (customerIds.length === 0) return '<span class="pill">General</span>';
-    if (customerIds.length === 1) return getCustomer(customerIds[0])?.name || '—';
+    if (customerIds.length === 1) return getCustomer(customerIds[0])?.name || 'â€”';
     return `<span class="pill">${customerIds.length} customers</span>`;
   }
   return '<span class="pill">General</span>';
@@ -10248,7 +10249,7 @@ function renderInventory(el) {
                 `<div style="font-size:12px">${l.building ? '<span class="pill">'+escapeHtml(l.building)+'</span> ' : ''}${escapeHtml(l.location||'')}${l.qty ? ' <span style="color:var(--brown-light)">('+l.qty+')</span>' : ''}</div>`
               ).join('');
               const cells = [`<td><strong>${escapeHtml(i.name)}</strong></td>`];
-              cells.push(`<td>${lotPills || '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>`);
+              cells.push(`<td>${lotPills || '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>`);
               if (showCustomer) cells.push(`<td>${inventoryCustomer(i)}</td>`);
               const scAlloc = scMap[i.id] || 0;
               const prodAlloc = prodMap[i.id] || 0;
@@ -10261,19 +10262,19 @@ function renderInventory(el) {
                           + (prodAlloc > 0 ? `<span title="Approved / In Production">Prod ${prodAlloc.toFixed(2)}</span>` : '')
                           + `</div>`
                       : '')
-                : '<span style="color:var(--brown-light)">—</span>';
+                : '<span style="color:var(--brown-light)">â€”</span>';
               cells.push(
-                `<td>${escapeHtml(getSupplier(i.supplierId)?.name || '—')}</td>`,
+                `<td>${escapeHtml(getSupplier(i.supplierId)?.name || 'â€”')}</td>`,
                 `<td>${i.stock}</td>`,
                 `<td>${allocCell}</td>`,
                 `<td><strong style="color:${conflict ? 'var(--danger)' : (low ? '#a0470c' : 'var(--success)')}">${net.toFixed(2)}</strong></td>`,
                 `<td>${escapeHtml(i.unit)}</td>`,
                 `<td>${i.reorderLevel}</td>`
               );
-              if (showLeadTime) cells.push(`<td>${i.leadTimeDays ? i.leadTimeDays + ' days' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>`);
-              if (showCoa) cells.push(`<td>${i.coa ? `<a href="${i.coa.dataUrl}" download="${escapeHtml(i.coa.name)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(i.coa.name)}">&#128196; CoA</a>` : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>`);
+              if (showLeadTime) cells.push(`<td>${i.leadTimeDays ? i.leadTimeDays + ' days' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>`);
+              if (showCoa) cells.push(`<td>${i.coa ? `<a href="${i.coa.dataUrl}" download="${escapeHtml(i.coa.name)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(i.coa.name)}">&#128196; CoA</a>` : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>`);
               cells.push(
-                `<td>${locLines || '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>`,
+                `<td>${locLines || '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>`,
                 `<td>${statusBadge}</td>`,
                 `<td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="adjustStock('${i.id}')">Adjust</button>
@@ -10291,13 +10292,13 @@ function renderInventory(el) {
 }
 
 /* =========================================================================
-   MASTER LIST — single source of truth for inventory item names.
+   MASTER LIST â€” single source of truth for inventory item names.
    Every inventory item's name is chosen from here. New ingredients,
    finished goods, or packaging must be added to the Master List first.
    ========================================================================= */
 function masterCustomerName(m) {
   if (!m.customerId || m.customerId === 'general') return '<span class="pill">General</span>';
-  return escapeHtml(getCustomer(m.customerId)?.name || '—');
+  return escapeHtml(getCustomer(m.customerId)?.name || 'â€”');
 }
 function masterTypeLabel(m) {
   const raw = (m.itemType || '').replace(/_/g, ' ').trim();
@@ -10458,7 +10459,7 @@ async function deleteMasterItem(id) {
 }
 
 /* =========================================================================
-   RECEIVING LOG — record of inbound product receipts. Item Name, Unit of
+   RECEIVING LOG â€” record of inbound product receipts. Item Name, Unit of
    Measure, and Allergen all pull from the Master List; Vendor from Suppliers.
    ========================================================================= */
 function nextReceivingId() {
@@ -10496,21 +10497,21 @@ function renderReceivingLog(el) {
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
-          ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No receipts logged yet. Click “+ Log Receipt”.</td></tr>` :
+          ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No receipts logged yet. Click â€œ+ Log Receiptâ€.</td></tr>` :
             rows.map(r => `<tr>
               <td><strong>${escapeHtml(r.receivingId||'')}</strong></td>
               <td>${fmtDate(r.date)}</td>
-              <td>${escapeHtml(r.time||'—')}</td>
-              <td>${escapeHtml(r.itemName||'—')}</td>
-              <td>${r.packages!=null?escapeHtml(String(r.packages)):'—'}</td>
-              <td>${r.qtyPerPackage!=null?escapeHtml(String(r.qtyPerPackage)):'—'}</td>
-              <td><strong>${r.totalQty!=null?escapeHtml(String(r.totalQty)):'—'}</strong></td>
-              <td>${escapeHtml(r.uom||'—')}</td>
-              <td>${r.lot?'<span class="pill">'+escapeHtml(r.lot)+'</span>':'—'}</td>
+              <td>${escapeHtml(r.time||'â€”')}</td>
+              <td>${escapeHtml(r.itemName||'â€”')}</td>
+              <td>${r.packages!=null?escapeHtml(String(r.packages)):'â€”'}</td>
+              <td>${r.qtyPerPackage!=null?escapeHtml(String(r.qtyPerPackage)):'â€”'}</td>
+              <td><strong>${r.totalQty!=null?escapeHtml(String(r.totalQty)):'â€”'}</strong></td>
+              <td>${escapeHtml(r.uom||'â€”')}</td>
+              <td>${r.lot?'<span class="pill">'+escapeHtml(r.lot)+'</span>':'â€”'}</td>
               <td>${(r.allergens&&r.allergens.length)?r.allergens.map(a=>'<span class="badge badge-low" style="margin:1px 2px">'+escapeHtml(a)+'</span>').join(''):'<span style="color:var(--brown-light);font-size:12px">None</span>'}</td>
-              <td>${escapeHtml(r.receivedBy||'—')}</td>
-              <td>${escapeHtml(r.carrier||'—')}</td>
-              <td>${escapeHtml(getSupplier(r.supplierId)?.name||'—')}</td>
+              <td>${escapeHtml(r.receivedBy||'â€”')}</td>
+              <td>${escapeHtml(r.carrier||'â€”')}</td>
+              <td>${escapeHtml(getSupplier(r.supplierId)?.name||'â€”')}</td>
               <td class="row-actions">
                 <button class="btn btn-icon btn-sm" onclick="editReceiving('${r.id}')">Edit</button>
                 <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteReceiving('${r.id}')">Delete</button>
@@ -10543,7 +10544,7 @@ function editReceiving(id) {
         <div class="form-row"><label>Item Name</label>
           ${masterOpts.length ? `
             <select id="rcv_item" required onchange="receivingItemSelected()">
-              <option value="">— Select from Master List —</option>
+              <option value="">â€” Select from Master List â€”</option>
               ${masterOpts.map(m=>`<option value="${m.id}" data-uom="${escapeHtml(m.uom||'')}" data-allergens="${escapeHtml((m.allergens||[]).join('|'))}" ${r.masterItemId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
             </select>
             <div class="help-text">Unit of Measure &amp; Allergen are pulled from this item's Master List entry.</div>
@@ -10559,7 +10560,7 @@ function editReceiving(id) {
           <div class="help-text">Auto-calculated: # of Packages &times; Quantity per Package.</div>
         </div>
         <div class="form-row"><label>Unit of Measure</label>
-          <input id="rcv_uom" value="${escapeHtml(r.uom||'')}" readonly placeholder="—" style="background:var(--beige-light)" />
+          <input id="rcv_uom" value="${escapeHtml(r.uom||'')}" readonly placeholder="â€”" style="background:var(--beige-light)" />
           <div class="help-text">From the Master List.</div>
         </div>
         <div class="form-row"><label>Lot #</label><input type="text" id="rcv_lot" value="${escapeHtml(r.lot||'')}" placeholder="Lot #" /></div>
@@ -10567,7 +10568,7 @@ function editReceiving(id) {
         <div class="form-row"><label>Carrier</label><input type="text" id="rcv_carrier" value="${escapeHtml(r.carrier||'')}" placeholder="Shipping company" /></div>
         <div class="form-row"><label>Vendor</label>
           <select id="rcv_vendor">
-            <option value="">— Select Vendor —</option>
+            <option value="">â€” Select Vendor â€”</option>
             ${state.suppliers.map(s=>`<option value="${s.id}" ${r.supplierId===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
           </select>
         </div>
@@ -10666,7 +10667,7 @@ async function deleteReceiving(id) {
 }
 
 /* =========================================================================
-   MOVE LOG — record of inventory moves between locations, tied to a receipt.
+   MOVE LOG â€” record of inventory moves between locations, tied to a receipt.
    Receiving ID comes from the Receiving Log; locations are drawn from every
    location used anywhere (inventory lots + prior moves), with an inline
    "add new location" option.
@@ -10721,20 +10722,20 @@ function renderMoveLog(el) {
           ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No moves logged yet.</td></tr>` :
             rows.map(r => {
               const rec = (state.receivingLog || []).find(x => x.receivingId === r.receivingId);
-              const itemName = r.itemName || rec?.itemName || '—';
+              const itemName = r.itemName || rec?.itemName || 'â€”';
               return `<tr>
                 <td><strong>${escapeHtml(r.moveId||'')}</strong></td>
                 <td>${fmtDate(r.date)}</td>
-                <td>${escapeHtml(r.receivingId||'—')}</td>
+                <td>${escapeHtml(r.receivingId||'â€”')}</td>
                 <td>${escapeHtml(itemName)}</td>
-                <td>${r.lot?'<span class="pill">'+escapeHtml(r.lot)+'</span>':'—'}</td>
-                <td>${r.caseCount!=null&&r.caseCount!==''?escapeHtml(String(r.caseCount)):'—'}</td>
-                <td>${r.qtyPerCase!=null&&r.qtyPerCase!==''?escapeHtml(String(r.qtyPerCase)):'—'}</td>
-                <td><strong>${r.qtyMoved!=null?escapeHtml(String(r.qtyMoved)):'—'}</strong></td>
-                <td>${escapeHtml(r.uom||'—')}</td>
-                <td>${escapeHtml(r.movedBy||'—')}</td>
-                <td>${r.fromLocation?'<span class="pill">'+escapeHtml(r.fromLocation)+'</span>':'—'}</td>
-                <td>${r.toLocation?'<span class="pill">'+escapeHtml(r.toLocation)+'</span>':'—'}</td>
+                <td>${r.lot?'<span class="pill">'+escapeHtml(r.lot)+'</span>':'â€”'}</td>
+                <td>${r.caseCount!=null&&r.caseCount!==''?escapeHtml(String(r.caseCount)):'â€”'}</td>
+                <td>${r.qtyPerCase!=null&&r.qtyPerCase!==''?escapeHtml(String(r.qtyPerCase)):'â€”'}</td>
+                <td><strong>${r.qtyMoved!=null?escapeHtml(String(r.qtyMoved)):'â€”'}</strong></td>
+                <td>${escapeHtml(r.uom||'â€”')}</td>
+                <td>${escapeHtml(r.movedBy||'â€”')}</td>
+                <td>${r.fromLocation?'<span class="pill">'+escapeHtml(r.fromLocation)+'</span>':'â€”'}</td>
+                <td>${r.toLocation?'<span class="pill">'+escapeHtml(r.toLocation)+'</span>':'â€”'}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="editMove('${r.id}')">Edit</button>
                   <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteMove('${r.id}')">Delete</button>
@@ -10756,9 +10757,9 @@ function locationSelectHtml(which, current) {
   const isCustom = current && !locs.includes(current);
   return `
     <select id="mv_${which}" onchange="moveLocChanged('${which}')">
-      <option value="">— Select location —</option>
+      <option value="">â€” Select location â€”</option>
       ${locs.map(l => `<option value="${escapeHtml(l)}" ${current===l?'selected':''}>${escapeHtml(l)}</option>`).join('')}
-      <option value="__new__" ${isCustom?'selected':''}>+ Add new location…</option>
+      <option value="__new__" ${isCustom?'selected':''}>+ Add new locationâ€¦</option>
     </select>
     <input type="text" id="mv_${which}_new" placeholder="New location" value="${isCustom?escapeHtml(current):''}" style="margin-top:6px;display:${isCustom?'block':'none'}" />
   `;
@@ -10791,14 +10792,14 @@ function editMove(id) {
         <div class="form-row"><label>Time</label><input type="time" id="mv_time" value="${escapeHtml(r.time||nowTime)}" required /></div>
         <div class="form-row"><label>Receiving ID</label>
           <select id="mv_receiving" required onchange="moveReceivingSelected()">
-            <option value="">— Select Receiving ID —</option>
-            ${receipts.map(rc => `<option value="${escapeHtml(rc.receivingId)}" ${r.receivingId===rc.receivingId?'selected':''}>${escapeHtml(rc.receivingId)}${rc.itemName?' — '+escapeHtml(rc.itemName):''}</option>`).join('')}
+            <option value="">â€” Select Receiving ID â€”</option>
+            ${receipts.map(rc => `<option value="${escapeHtml(rc.receivingId)}" ${r.receivingId===rc.receivingId?'selected':''}>${escapeHtml(rc.receivingId)}${rc.itemName?' â€” '+escapeHtml(rc.itemName):''}</option>`).join('')}
           </select>
           <div class="help-text">Pulled from the Receiving Log. Selecting one fills in the item, lot &amp; unit.</div>
         </div>
         <div class="form-row"><label>Item Name</label>
           <select id="mv_item" onchange="moveItemSelected()">
-            <option value="">— Select from Master List —</option>
+            <option value="">â€” Select from Master List â€”</option>
             ${masterOpts.map(m=>`<option value="${m.id}" data-uom="${escapeHtml(m.uom||'')}" ${r.masterItemId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
           </select>
           <div class="help-text">Pulled from the Master List.</div>
@@ -10811,7 +10812,7 @@ function editMove(id) {
           <div class="help-text">Auto-calculated: Case Count &times; Quantity per Case.</div>
         </div>
         <div class="form-row"><label>Unit of Measurement</label>
-          <input id="mv_uom" value="${escapeHtml(r.uom||'')}" readonly placeholder="—" style="background:var(--beige-light)" />
+          <input id="mv_uom" value="${escapeHtml(r.uom||'')}" readonly placeholder="â€”" style="background:var(--beige-light)" />
           <div class="help-text">From the Master List.</div>
         </div>
         <div class="form-row"><label>Moved By</label><input type="text" id="mv_by" value="${escapeHtml(r.movedBy||'')}" placeholder="Employee name" /></div>
@@ -10935,7 +10936,7 @@ async function deleteMove(id) {
 }
 
 /* =========================================================================
-   SHIPPING LOG — auto-generated when a PO is marked shipped on the Shipping
+   SHIPPING LOG â€” auto-generated when a PO is marked shipped on the Shipping
    page (completeShipment). Read-only history of outbound shipments.
    ========================================================================= */
 function nextShippingId() {
@@ -11021,19 +11022,19 @@ function renderShippingLog(el) {
               const items = (r.items || []).filter(it => it.qty);
               const itemsHtml = items.length ? items.map(it => {
                 const p = getProduct(it.productId);
-                return `<div style="font-size:12px">${escapeHtml(p?.sku || p?.name || '—')} <span style="color:var(--brown-light)">&times;${escapeHtml(String(it.qty))}</span>${it.lot?' <span class="pill">'+escapeHtml(it.lot)+'</span>':''}</div>`;
-              }).join('') : '<span style="color:var(--brown-light);font-size:12px">—</span>';
+                return `<div style="font-size:12px">${escapeHtml(p?.sku || p?.name || 'â€”')} <span style="color:var(--brown-light)">&times;${escapeHtml(String(it.qty))}</span>${it.lot?' <span class="pill">'+escapeHtml(it.lot)+'</span>':''}</div>`;
+              }).join('') : '<span style="color:var(--brown-light);font-size:12px">â€”</span>';
               return `<tr>
                 <td><strong>${escapeHtml(r.shipId||'')}</strong></td>
                 <td>${fmtDate(r.date)}</td>
-                <td>${escapeHtml(r.poId||'—')}</td>
-                <td>${escapeHtml(getCustomer(r.customerId)?.name || '—')}</td>
-                <td>${r.brand?'<span class="pill">'+escapeHtml(r.brand)+'</span>':'—'}</td>
-                <td>${escapeHtml(r.carrier||'—')}</td>
-                <td>${escapeHtml(r.bol||'—')}</td>
-                <td>${escapeHtml(r.proNumber||'—')}</td>
+                <td>${escapeHtml(r.poId||'â€”')}</td>
+                <td>${escapeHtml(getCustomer(r.customerId)?.name || 'â€”')}</td>
+                <td>${r.brand?'<span class="pill">'+escapeHtml(r.brand)+'</span>':'â€”'}</td>
+                <td>${escapeHtml(r.carrier||'â€”')}</td>
+                <td>${escapeHtml(r.bol||'â€”')}</td>
+                <td>${escapeHtml(r.proNumber||'â€”')}</td>
                 <td>${r.pallets||0}</td>
-                <td>${r.weight?escapeHtml(String(r.weight))+' lb':'—'}</td>
+                <td>${r.weight?escapeHtml(String(r.weight))+' lb':'â€”'}</td>
                 <td>${itemsHtml}</td>
                 <td class="row-actions">
                   ${r._backendId ? '<span style="font-size:12px;color:var(--brown-light)">Backend</span>' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteShippingLog('${r.id}')">Delete</button>`}
@@ -11081,7 +11082,7 @@ function editIngredient(id) {
         <div class="form-row"><label>Item</label>
           ${masterOpts.length ? `
             <select id="ing_name" required onchange="masterItemSelected()">
-              <option value="">— Select from Master List —</option>
+              <option value="">â€” Select from Master List â€”</option>
               ${masterOpts.map(m=>`<option value="${escapeHtml(m.name)}" data-uom="${escapeHtml(m.uom||'')}" data-customer="${escapeHtml(m.customerId||'general')}" ${i.name===m.name?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
               ${(i.name && !nameInMaster) ? `<option value="${escapeHtml(i.name)}" selected>${escapeHtml(i.name)} (not in Master List)</option>` : ''}
             </select>
@@ -11100,7 +11101,7 @@ function editIngredient(id) {
         </div>
         <div class="form-row"><label>Supplier</label>
           <select id="ing_supplier">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.suppliers.map(s=>`<option value="${s.id}" ${i.supplierId===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
           </select>
         </div>
@@ -11163,7 +11164,7 @@ function renderIngredientLots() {
       <div class="po-line" style="${grid}">
         <input type="text" value="${escapeHtml(l.lotNumber||'')}" placeholder="Lot #" onchange="ingLotChange(${i},'lotNumber',this.value)" />
         <select onchange="ingLotChange(${i},'building',this.value)">
-          <option value="">— Building —</option>
+          <option value="">â€” Building â€”</option>
           ${BUILDINGS.map(b=>`<option ${l.building===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
         </select>
         <input type="text" value="${escapeHtml(l.location||'')}" placeholder="e.g. A-12, Rack 3" onchange="ingLotChange(${i},'location',this.value)" />
@@ -11286,7 +11287,7 @@ async function saveIngredient(id, isNew) {
   if (isNew) state.ingredients.push(data);
   else Object.assign(state.ingredients.find(i=>i.id===id), data);
   try { saveState(); }
-  catch(err) { toast('Storage full — try a smaller CoA file.'); return; }
+  catch(err) { toast('Storage full â€” try a smaller CoA file.'); return; }
   closeModal();
   invTab = cat;
   router('inventory');
@@ -11312,15 +11313,15 @@ function adjustStock(id) {
   const i = state.ingredients.find(x=>x.id===id);
   if (!i) return;
   const lots = Array.isArray(i.lots) && i.lots.length ? i.lots : [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }];
-  openModal('Adjust Stock — '+escapeHtml(i.name), `
+  openModal('Adjust Stock â€” '+escapeHtml(i.name), `
     <p style="margin:0 0 10px;font-size:13px;color:var(--brown-light)">Update the quantity at each lot / location. Total On Hand updates automatically.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Lot #</th><th>Building</th><th>Location</th><th style="width:120px">Qty</th></tr></thead>
       <tbody>
         ${lots.map((l, idx) => `<tr>
-          <td>${l.lotNumber ? '<span class="pill">'+escapeHtml(l.lotNumber)+'</span>' : '—'}</td>
-          <td>${escapeHtml(l.building||'—')}</td>
-          <td>${escapeHtml(l.location||'—')}</td>
+          <td>${l.lotNumber ? '<span class="pill">'+escapeHtml(l.lotNumber)+'</span>' : 'â€”'}</td>
+          <td>${escapeHtml(l.building||'â€”')}</td>
+          <td>${escapeHtml(l.location||'â€”')}</td>
           <td><input type="number" step="0.01" min="0" id="adj_qty_${idx}" value="${l.qty!=null?l.qty:0}" style="width:100%;padding:6px 8px;border:1px solid var(--grey);border-radius:4px" /></td>
         </tr>`).join('')}
       </tbody>
@@ -11612,7 +11613,7 @@ function libraryUpload(e) {
   let pending = files.length;
   files.forEach(f => {
     if (f.size > 5 * 1024 * 1024) {
-      toast(`Skipped "${f.name}" — over 5 MB.`);
+      toast(`Skipped "${f.name}" â€” over 5 MB.`);
       pending--;
       if (pending === 0) finish();
       return;
@@ -11635,7 +11636,7 @@ function libraryUpload(e) {
   });
   function finish() {
     try { saveState(); }
-    catch(err) { toast('Storage full — file not saved.'); return; }
+    catch(err) { toast('Storage full â€” file not saved.'); return; }
     e.target.value = '';
     router('content-library');
     toast('Files uploaded.');
@@ -11836,7 +11837,7 @@ function sendMessage() {
   ta.value = '';
   pendingChatAttachment = null;
   try { saveState(); }
-  catch(err) { toast('Storage full — message not saved.'); state.messages.pop(); return; }
+  catch(err) { toast('Storage full â€” message not saved.'); state.messages.pop(); return; }
   renderSlack(document.getElementById('content'));
 }
 function attachIcon(att) {
@@ -11891,7 +11892,7 @@ function renderFsSwabs(el) {
   const recs = (state.swabRecords||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   el.innerHTML = `
     <div class="card-header">
-      <h2>Swab Records — Environmental Monitoring</h2>
+      <h2>Swab Records â€” Environmental Monitoring</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('swab_records.csv', state.swabRecords)">Export CSV</button>
         <button class="btn" onclick="editSwab()">+ New Swab</button>
@@ -12010,7 +12011,7 @@ function renderFsComplaints(el) {
             <tr>
               <td>${fmtDate(c.date)}</td>
               <td><strong>${escapeHtml(c.sku||'')}</strong></td>
-              <td>${escapeHtml(getCustomer(c.customerId)?.name || '—')}</td>
+              <td>${escapeHtml(getCustomer(c.customerId)?.name || 'â€”')}</td>
               <td>${escapeHtml(c.lot||'')}</td>
               <td>${escapeHtml(c.type||'')}</td>
               <td><span class="badge ${c.severity==='High'?'sev-high':c.severity==='Medium'?'sev-med':'sev-low'}">${escapeHtml(c.severity||'')}</span></td>
@@ -12036,13 +12037,13 @@ function editComplaint(id) {
         <div class="form-row"><label>Date</label><input type="date" id="cp_date" value="${c.date}" required /></div>
         <div class="form-row"><label>SKU</label>
           <select id="cp_sku" required>
-            <option value="">— Select —</option>
-            ${state.products.map(p=>`<option value="${escapeHtml(p.sku)}" ${c.sku===p.sku?'selected':''}>${escapeHtml(p.sku)} — ${escapeHtml(p.name)}</option>`).join('')}
+            <option value="">â€” Select â€”</option>
+            ${state.products.map(p=>`<option value="${escapeHtml(p.sku)}" ${c.sku===p.sku?'selected':''}>${escapeHtml(p.sku)} â€” ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row"><label>Customer</label>
           <select id="cp_customer">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.customers.map(cu=>`<option value="${cu.id}" ${c.customerId===cu.id?'selected':''}>${escapeHtml(cu.name)}</option>`).join('')}
           </select>
         </div>
@@ -12114,8 +12115,8 @@ function renderFsLots(el) {
           state.lots.slice().sort((a,b)=>b.productionDate.localeCompare(a.productionDate)).map(l => `
             <tr>
               <td><strong>${escapeHtml(l.lotNumber)}</strong></td>
-              <td>${escapeHtml(getProduct(l.productId)?.name || '—')}</td>
-              <td>${escapeHtml(l.poId||'—')}</td>
+              <td>${escapeHtml(getProduct(l.productId)?.name || 'â€”')}</td>
+              <td>${escapeHtml(l.poId||'â€”')}</td>
               <td>${fmtDate(l.productionDate)}</td>
               <td>${l.quantity}</td>
               <td><span class="badge ${l.status==='Released'?'badge-prod':l.status==='Hold'?'badge-pending':'badge-low'}">${escapeHtml(l.status||'')}</span></td>
@@ -12138,13 +12139,13 @@ function editLot(id) {
         <div class="form-row"><label>Lot #</label><input id="lt_num" value="${escapeHtml(l.lotNumber)}" required /></div>
         <div class="form-row"><label>Product</label>
           <select id="lt_product" required>
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.products.map(p=>`<option value="${p.id}" ${l.productId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row"><label>PO #</label>
           <select id="lt_po">
-            <option value="">— None —</option>
+            <option value="">â€” None â€”</option>
             ${state.purchaseOrders.map(p=>`<option value="${escapeHtml(p.id)}" ${l.poId===p.id?'selected':''}>${escapeHtml(p.id)}</option>`).join('')}
           </select>
         </div>
@@ -12475,7 +12476,7 @@ function renderFsRecalls(el) {
             <tr>
               <td>${fmtDate(r.date)}</td>
               <td>${escapeHtml(r.lot||'')}</td>
-              <td>${escapeHtml(getProduct(r.productId)?.name||'—')}</td>
+              <td>${escapeHtml(getProduct(r.productId)?.name||'â€”')}</td>
               <td style="font-size:12px;max-width:280px">${escapeHtml(r.distributionTrace||'')}</td>
               <td>${r.timeMinutes||0}</td>
               <td><span class="badge ${r.result==='Pass'?'badge-prod':'badge-low'}">${escapeHtml(r.result||'')}</span></td>
@@ -12499,7 +12500,7 @@ function editRecall(id) {
         <div class="form-row"><label>Lot #</label><input id="rc_lot" value="${escapeHtml(r.lot||'')}" required /></div>
         <div class="form-row"><label>Product</label>
           <select id="rc_product">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${state.products.map(p=>`<option value="${p.id}" ${r.productId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
@@ -12617,8 +12618,8 @@ function renderMaintenanceSchedule(el) {
               <td>${fmtDate(e.date)}${overdue?' <span class="badge badge-low">Overdue</span>':''}</td>
               <td>${escapeHtml(e.frequency||'')}</td>
               <td>${escapeHtml(e.technician||'')}</td>
-              <td>${e.estimatedHours||'—'}</td>
-              <td>${e.lotoRequired ? '<span class="badge badge-low">LOTO</span>' : '—'}</td>
+              <td>${e.estimatedHours||'â€”'}</td>
+              <td>${e.lotoRequired ? '<span class="badge badge-low">LOTO</span>' : 'â€”'}</td>
               <td><span class="badge ${e.priority==='High'?'sev-high':e.priority==='Medium'?'sev-med':'sev-low'}">${escapeHtml(e.priority||'')}</span></td>
               <td><span class="badge ${e.status==='Completed'?'badge-prod':e.status==='In Progress'?'badge-pending':e.status==='Overdue'?'badge-low':'badge-supply'}">${escapeHtml(e.status||'')}</span></td>
               <td class="row-actions">
@@ -12685,7 +12686,7 @@ function editMaintenanceEvent(id, presetDate) {
       <div class="form-grid">
         <div class="form-row"><label>Equipment</label>
           <select id="mt_equipment" required>
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${EQUIPMENT_LIST.map(eq=>`<option ${e.equipment===eq?'selected':''}>${escapeHtml(eq)}</option>`).join('')}
           </select>
         </div>
@@ -12798,7 +12799,7 @@ function renderEquipmentIssues(el) {
               <td style="max-width:260px;font-size:12px">${escapeHtml(e.description||'')}</td>
               <td><span class="badge ${e.severity==='Critical'||e.severity==='High'?'sev-high':e.severity==='Medium'?'sev-med':'sev-low'}">${escapeHtml(e.severity||'')}</span></td>
               <td>${e.foodSafetyRisk ? `<span class="badge badge-low">&#9888; ${escapeHtml(e.riskType||'Yes')}</span>` : '<span style="font-size:12px;color:var(--brown-light)">No</span>'}</td>
-              <td style="font-size:12px">${escapeHtml(e.affectedLots||'—')}</td>
+              <td style="font-size:12px">${escapeHtml(e.affectedLots||'â€”')}</td>
               <td><span class="badge ${e.status==='Resolved'?'badge-prod':e.status==='In Progress'?'badge-pending':'badge-low'}">${escapeHtml(e.status||'')}</span></td>
               <td class="row-actions">
                 <button class="btn btn-icon btn-sm" onclick="editEquipmentIssue('${e.id}')">Edit</button>
@@ -12820,7 +12821,7 @@ function editEquipmentIssue(id) {
         <div class="form-row"><label>Date Reported</label><input type="date" id="eq_date" value="${e.date||''}" required /></div>
         <div class="form-row"><label>Equipment</label>
           <select id="eq_equipment" required>
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${EQUIPMENT_LIST.map(eq=>`<option ${e.equipment===eq?'selected':''}>${escapeHtml(eq)}</option>`).join('')}
           </select>
         </div>
@@ -12956,8 +12957,8 @@ function renderQualityAssurance(el) {
                   </td>
                   <td>${fmtDate(qualityActionTimestamp(p)?.slice(0,10)||'')}</td>
                   <td>${escapeHtml(qualityActionActor(p))}</td>
-                  <td>${escapeHtml(p.qaSkipReason || p.qaNotes || '—')}</td>
-                  <td>${p.status === 'shipping' || p.status === 'completed' ? '<span style="color:var(--success);font-size:12px">Post-shipment ready</span>' : '<span style="color:var(--brown-light);font-size:12px">—</span>'}</td>
+                  <td>${escapeHtml(p.qaSkipReason || p.qaNotes || 'â€”')}</td>
+                  <td>${p.status === 'shipping' || p.status === 'completed' ? '<span style="color:var(--success);font-size:12px">Post-shipment ready</span>' : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -12977,10 +12978,10 @@ function qaCardHtml(po) {
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
         <div>
-          <h3 style="margin:0">${po.id} — ${escapeHtml(cust?.name||'')}</h3>
+          <h3 style="margin:0">${po.id} â€” ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light);margin-top:2px">
             ${po.brand ? '<span class="pill">'+escapeHtml(po.brand)+'</span> ' : ''}
-            Produced ${fmtDate(po.productionDate)}${po.productionEndDate && po.productionEndDate !== po.productionDate ? ' &rarr; ' + fmtDate(po.productionEndDate) : ''} · ${dayCount} day${dayCount===1?'':'s'} · Room: ${escapeHtml(po.productionRoom||'—')}
+            Produced ${fmtDate(po.productionDate)}${po.productionEndDate && po.productionEndDate !== po.productionDate ? ' &rarr; ' + fmtDate(po.productionEndDate) : ''} Â· ${dayCount} day${dayCount===1?'':'s'} Â· Room: ${escapeHtml(po.productionRoom||'â€”')}
           </div>
         </div>
         <div>${statusBadge(po.status)}</div>
@@ -12988,11 +12989,11 @@ function qaCardHtml(po) {
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
           <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Units Produced</div>
-          <div style="font-size:18px;font-weight:700;color:var(--brown)">${poTotalUnits(po) || '—'}</div>
+          <div style="font-size:18px;font-weight:700;color:var(--brown)">${poTotalUnits(po) || 'â€”'}</div>
         </div>
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
           <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Cases</div>
-          <div style="font-size:18px;font-weight:700;color:var(--brown)">${poTotalCases(po) || '—'}</div>
+          <div style="font-size:18px;font-weight:700;color:var(--brown)">${poTotalCases(po) || 'â€”'}</div>
         </div>
         ${lots ? `<div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px"><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">Lots</div><div style="margin-top:3px">${lots}</div></div>` : ''}
       </div>
@@ -13001,7 +13002,7 @@ function qaCardHtml(po) {
         ${po.coa
           ? `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
               <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none;font-size:13px">&#128206; ${escapeHtml(po.coa.name)} (${Math.round((po.coa.size||0)/1024)} KB)</a>
-              <div style="font-size:11px;color:var(--brown-light)">Uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'—')}</div>
+              <div style="font-size:11px;color:var(--brown-light)">Uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'â€”')}</div>
             </div>`
           : `<div class="file-upload">
               <input type="file" id="coa_input_${po.id}" accept=".pdf,application/pdf,image/*" onchange="qualityCoaFileSelected(event,'${po.id}')" />
@@ -13216,7 +13217,7 @@ function renderProductionRequests(el) {
             return `<tr>
               <td>${fmtDate(r.date)}</td>
               <td>${escapeHtml(getCustomer(r.customerId)?.name||'')}</td>
-              <td><strong>${escapeHtml(fg?.name||'—')}</strong></td>
+              <td><strong>${escapeHtml(fg?.name||'â€”')}</strong></td>
               <td>${r.qtyRequested}</td>
               <td style="${low?'color:var(--danger);font-weight:600':''}">${onHand}${low?' &#9888;':''}</td>
               <td>${fmtDate(r.neededBy)}</td>
@@ -13244,13 +13245,13 @@ function editProductionRequest(id) {
       <div class="form-grid">
         <div class="form-row"><label>Distributor *</label>
           <select id="pr_customer" required onchange="prFgOptions()">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${pickPackCustomers().map(c=>`<option value="${c.id}" ${r.customerId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-row"><label>Product (Finished Good) *</label>
           <select id="pr_fg" required>
-            <option value="">— Pick distributor first —</option>
+            <option value="">â€” Pick distributor first â€”</option>
           </select>
           <div class="help-text" id="pr_onhand_help"></div>
         </div>
@@ -13277,7 +13278,7 @@ function prFgOptions(selectedFgId) {
   if (!sel) return;
   const customerId = document.getElementById('pr_customer').value;
   const fgs = customerId ? finishedGoodsForCustomer(customerId) : [];
-  sel.innerHTML = `<option value="">${customerId ? (fgs.length?'— Select —':'No finished goods for this distributor') : '— Pick distributor first —'}</option>` +
+  sel.innerHTML = `<option value="">${customerId ? (fgs.length?'â€” Select â€”':'No finished goods for this distributor') : 'â€” Pick distributor first â€”'}</option>` +
     fgs.map(f => `<option value="${f.id}" data-stock="${f.stock||0}" ${selectedFgId===f.id?'selected':''}>${escapeHtml(f.name)} (on hand: ${f.stock||0})</option>`).join('');
   sel.onchange = () => {
     const opt = sel.options[sel.selectedIndex];
@@ -13356,14 +13357,14 @@ function renderPickPackPOs(el, pos) {
               return `<tr>
                 <td><strong>${escapeHtml(p.id)}</strong></td>
                 <td>${escapeHtml(cust?.name||'')}</td>
-                <td><span class="pill">${escapeHtml(p.poNumber||'—')}</span></td>
+                <td><span class="pill">${escapeHtml(p.poNumber||'â€”')}</span></td>
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
                 <td>${stockBadge}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button><a class="btn btn-icon btn-sm" href="${p.poFile.dataUrl}" download="${escapeHtml(p.poFile.name)}" title="Download PO" style="text-decoration:none">&#11015;</a></div>`
-                  : '<span style="color:var(--brown-light);font-size:12px">—</span>'
+                  : '<span style="color:var(--brown-light);font-size:12px">â€”</span>'
                 }</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>
@@ -13381,7 +13382,7 @@ function renderPickPackPOs(el, pos) {
 function renderPickPackShipping(el, list) {
   el.innerHTML = `
     <div class="card-header">
-      <h2>Picked — Ready to Ship</h2>
+      <h2>Picked â€” Ready to Ship</h2>
       <span style="font-size:13px;color:var(--brown-light)">${list.length} order(s)</span>
     </div>
     <div class="help-text" style="margin-bottom:8px">Pick &amp; Pack orders that have been picked. Choose pallet (LTL) or parcel (UPS/FedEx/USPS) shipping, fill in the details, then mark shipped.</div>
@@ -13399,8 +13400,8 @@ function pickPackShippingCardHtml(p) {
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
         <div>
-          <h3 style="margin:0">${escapeHtml(p.id)} — ${escapeHtml(cust?.name||'')}</h3>
-          <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'—')} · Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} · Need by ${fmtDate(p.dateNeededToShip)}</div>
+          <h3 style="margin:0">${escapeHtml(p.id)} â€” ${escapeHtml(cust?.name||'')}</h3>
+          <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'â€”')} Â· Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} Â· Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
@@ -13484,16 +13485,16 @@ function renderPickPackShipped(el, list) {
           <tbody>
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
-            const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'—') : (p.bol||'—');
+            const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'â€”') : (p.bol||'â€”');
             return `<tr>
               <td><strong>${escapeHtml(p.id)}</strong></td>
               <td>${escapeHtml(cust?.name||'')}</td>
-              <td><span class="pill">${escapeHtml(p.poNumber||'—')}</span></td>
+              <td><span class="pill">${escapeHtml(p.poNumber||'â€”')}</span></td>
               <td>${fmtDate(p.shippedAt?.slice(0,10)||'')}</td>
               <td>${p.shippingMode==='parcel' ? '<span class="badge badge-shipping">Parcel</span>' : '<span class="badge badge-supply">Pallet</span>'}</td>
-              <td>${escapeHtml(p.parcelCarrier || p.carrier || '—')}</td>
+              <td>${escapeHtml(p.parcelCarrier || p.carrier || 'â€”')}</td>
               <td>${escapeHtml(ref)}</td>
-              <td>${(p.weight || p.packageWeight) ? (p.weight || p.packageWeight) + ' lb' : '—'}</td>
+              <td>${(p.weight || p.packageWeight) ? (p.weight || p.packageWeight) + ' lb' : 'â€”'}</td>
             </tr>`;
           }).join('')}
           </tbody>
@@ -13522,7 +13523,7 @@ function pickPackPoFormHtml(id) {
         <div class="form-row"><label>PP #</label><input id="pp_id" value="${escapeHtml(p.id)}" readonly /></div>
         <div class="form-row"><label>Distributor *</label>
           <select id="pp_customer" required onchange="rerenderPickPackLines()">
-            <option value="">— Select —</option>
+            <option value="">â€” Select â€”</option>
             ${pickPackCustomers().map(c => `<option value="${c.id}" ${p.customerId===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
           </select>
         </div>
@@ -13587,10 +13588,10 @@ function rerenderPickPackLines() {
       const ing = state.ingredients.find(x => x.id === l.ingredientId);
       const stock = ing?.stock || 0;
       const ok = stock >= l.qty;
-      const status = !l.ingredientId ? '—' : ok ? '<span class="badge badge-prod">OK</span>' : `<span class="badge badge-low">Short ${(l.qty - stock).toFixed(0)}</span>`;
+      const status = !l.ingredientId ? 'â€”' : ok ? '<span class="badge badge-prod">OK</span>' : `<span class="badge badge-low">Short ${(l.qty - stock).toFixed(0)}</span>`;
       return `<div class="po-line" style="grid-template-columns:2fr 1fr 1fr 1fr 40px">
         <select onchange="pickPackLineProduct(${i}, this.value)">
-          <option value="">— Select Finished Good —</option>
+          <option value="">â€” Select Finished Good â€”</option>
           ${fgs.length === 0
             ? `<option disabled>${customerId ? 'No finished goods linked to this distributor' : 'Pick a distributor first'}</option>`
             : fgs.map(f => `<option value="${f.id}" ${l.ingredientId===f.id?'selected':''}>${escapeHtml(f.name)}</option>`).join('')
@@ -13635,7 +13636,7 @@ function quickAddFinishedGood(customerId) {
 function addPickPackLine() {
   const customerId = document.getElementById('pp_customer')?.value || '';
   if (!customerId) { toast('Pick a distributor first.'); return; }
-  if (finishedGoodsForCustomer(customerId).length === 0) { toast('No Finished Goods for this distributor yet — add one first.'); rerenderPickPackLines(); return; }
+  if (finishedGoodsForCustomer(customerId).length === 0) { toast('No Finished Goods for this distributor yet â€” add one first.'); rerenderPickPackLines(); return; }
   editingPickPackLines.push({ ingredientId: '', qty: 1 });
   rerenderPickPackLines();
 }
@@ -13697,7 +13698,7 @@ async function savePickPackPO(id, isNew) {
   if (isNew) state.pickPackOrders.push(data);
   else Object.assign(state.pickPackOrders.find(p => p.id === id), data);
   try { saveState(); }
-  catch(err) { toast('Storage full — try a smaller file.'); return; }
+  catch(err) { toast('Storage full â€” try a smaller file.'); return; }
   closeModal();
   if (pickPackBackendIsConnected()) {
     try {
@@ -13917,6 +13918,258 @@ function viewPickPackPoFile(id) {
 /* =========================================================================
    FEEDBACK
    ========================================================================= */
+/* =========================================================================
+   RESEARCH BACKEND HELPERS
+   ========================================================================= */
+const RESEARCH_REQUEST_STATUSES = ['queue', 'completed', 'archived', 'all'];
+
+function researchBackendCanAccess() {
+  return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer';
+}
+
+function researchBackendIsConnected() {
+  return researchBackendCanAccess() && backendResearchState.status === 'connected';
+}
+
+function researchRequestBackendId(request) {
+  return request?._backendId || request?.requestId || request?.rdId || request?.requestNumber || request?.id || '';
+}
+
+function researchRequestKeys(request) {
+  return [...new Set([
+    request?._backendId,
+    request?.requestId,
+    request?.rdId,
+    request?.requestNumber,
+    request?.id
+  ].filter(Boolean).map(value => String(value)))];
+}
+
+function researchRequestMatches(localRequest, backendRequest) {
+  const localKeys = researchRequestKeys(localRequest);
+  return researchRequestKeys(backendRequest).some(key => localKeys.includes(key));
+}
+
+function fmtDateTime(value) {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function normalizeResearchTimelineEntry(entry, fallbackPrefix) {
+  if (!entry) return null;
+  const text = entry.text || entry.note || entry.comment || entry.body || '';
+  if (!text) return null;
+  return {
+    id: entry.id || uid(fallbackPrefix),
+    text,
+    ts: entry.createdAt || entry.ts || entry.timestamp || entry.submittedAt || new Date().toISOString(),
+    author: entry.author || entry.createdBy || entry.actor || entry.actorUserName || entry.userName || ''
+  };
+}
+
+function backendResearchRequestToLocal(record, existing = {}) {
+  const status = record.status || existing.status || 'queue';
+  const normalizedNotes = Array.isArray(record.workingNotes || record.notes)
+    ? (record.workingNotes || record.notes).map(item => normalizeResearchTimelineEntry(item, 'rdn')).filter(Boolean)
+    : (existing.notes || []);
+  const normalizedComments = Array.isArray(record.postProductionComments || record.comments)
+    ? (record.postProductionComments || record.comments).map(item => normalizeResearchTimelineEntry(item, 'rdc')).filter(Boolean)
+    : (existing.comments || []);
+  const fallbackId = record.requestId || record.rdId || record.requestNumber || record.id || existing.id || uid('rd');
+  return {
+    ...existing,
+    _backendId: record.id || existing._backendId || '',
+    id: existing.id || fallbackId,
+    requestId: record.requestId || record.rdId || record.requestNumber || record.id || existing.requestId || fallbackId,
+    rdId: existing.rdId || record.requestId || record.rdId || record.requestNumber || record.id || fallbackId,
+    customerId: record.customerId || record.customer?.id || existing.customerId || '',
+    packagingType: record.packagingType || existing.packagingType || '',
+    unitsRequested: Number.isFinite(Number(record.unitsRequested))
+      ? Number(record.unitsRequested)
+      : (existing.unitsRequested ?? 0),
+    productDescription: record.productDescription || existing.productDescription || '',
+    status,
+    submittedAt: record.submittedAt || record.createdAt || existing.submittedAt || new Date().toISOString(),
+    completedAt: status === 'completed' ? (record.completedAt || existing.completedAt || null) : null,
+    archivedAt: status === 'archived' ? (record.archivedAt || existing.archivedAt || null) : null,
+    notes: normalizedNotes,
+    comments: normalizedComments
+  };
+}
+
+function mergeBackendResearchRequests(records) {
+  const localRows = state.rdRequests || [];
+  const mapped = (records || []).map(record => backendResearchRequestToLocal(
+    record,
+    localRows.find(local => researchRequestMatches(local, record)) || {}
+  ));
+  const mergedKeys = new Set();
+  mapped.forEach(row => researchRequestKeys(row).forEach(key => mergedKeys.add(key)));
+  const remainingLocal = localRows.filter(row => !researchRequestKeys(row).some(key => mergedKeys.has(key)));
+  state.rdRequests = [...mapped, ...remainingLocal];
+  backendResearchState.requests = mapped;
+  try { saveState(); } catch (err) {}
+  return mapped;
+}
+
+function renderBackendResearchBanner() {
+  const connected = backendResearchState.status === 'connected';
+  const loading = backendResearchState.loading;
+  const authBlocked = !researchBackendCanAccess();
+  const state = connected ? 'connected' : authBlocked ? 'auth' : loading ? 'loading' : backendResearchState.status === 'error' ? 'error' : 'local';
+  const detail = connected
+    ? 'R&D requests, working notes, post-production comments, completion, and archive actions are reading from protected backend records when available.'
+    : authBlocked
+      ? 'Sign in as an employee/admin to load and save backend research records. Local demo requests remain visible.'
+      : (backendResearchState.lastError || 'Local R&D demo data remains visible while backend data is unavailable.');
+  return `<div data-backend-status="research">${renderDataStateBanner({ kind: 'research', state, detail })}</div>`;
+}
+
+async function loadBackendResearchRequests(status = 'all') {
+  if (!researchBackendCanAccess()) return backendResearchState.requests;
+  const queryStatus = RESEARCH_REQUEST_STATUSES.includes(status) ? status : 'all';
+  const records = await apiRequest(`/api/research/requests?status=${encodeURIComponent(queryStatus)}`);
+  return mergeBackendResearchRequests(records || []);
+}
+
+async function loadBackendResearchRequest(requestId) {
+  if (!researchBackendCanAccess()) return null;
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}`);
+  mergeBackendResearchRequests([record]);
+  return record;
+}
+
+async function loadBackendResearch() {
+  if (!researchBackendCanAccess() || backendResearchState.loading || backendResearchState.loaded) return backendResearchState.requests;
+  backendResearchState.loading = true;
+  try {
+    await loadBackendResearchRequests('all');
+    backendResearchState.status = 'connected';
+    backendResearchState.lastError = '';
+    backendResearchState.loaded = true;
+  } catch (error) {
+    backendResearchState.status = 'error';
+    backendResearchState.lastError = 'Research backend data is unavailable, so local demo R&D requests remain visible.';
+    backendResearchState.loaded = true;
+  } finally {
+    backendResearchState.loading = false;
+  }
+  return backendResearchState.requests;
+}
+
+async function createBackendResearchRequest(data) {
+  const record = await apiRequest('/api/research/requests', {
+    method: 'POST',
+    body: JSON.stringify({
+      requestId: data.requestId || data.rdId || data.id || null,
+      rdId: data.rdId || data.requestId || data.id || null,
+      customerId: data.customerId,
+      packagingType: data.packagingType,
+      unitsRequested: Number(data.unitsRequested || 0),
+      productDescription: data.productDescription,
+      status: data.status || 'queue',
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendResearchRequests([record]);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function updateBackendResearchRequest(data) {
+  const requestId = researchRequestBackendId(data);
+  if (!requestId) throw new Error('Backend R&D request is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      requestId: data.requestId || data.rdId || data.id || requestId,
+      rdId: data.rdId || data.requestId || data.id || requestId,
+      customerId: data.customerId,
+      packagingType: data.packagingType,
+      unitsRequested: Number(data.unitsRequested || 0),
+      productDescription: data.productDescription,
+      status: data.status || 'queue',
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendResearchRequests([record]);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function addBackendResearchNote(request, noteText) {
+  const requestId = researchRequestBackendId(request);
+  if (!requestId) throw new Error('Backend R&D note is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({
+      note: noteText,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  await loadBackendResearchRequest(requestId);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function addBackendResearchComment(request, commentText) {
+  const requestId = researchRequestBackendId(request);
+  if (!requestId) throw new Error('Backend R&D comment is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      comment: commentText,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  await loadBackendResearchRequest(requestId);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function completeBackendResearchRequest(request) {
+  const requestId = researchRequestBackendId(request);
+  if (!requestId) throw new Error('Backend R&D completion is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendResearchRequests([record]);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function reopenBackendResearchRequest(request) {
+  const requestId = researchRequestBackendId(request);
+  if (!requestId) throw new Error('Backend R&D reopen is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}/reopen`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendResearchRequests([record]);
+  backendResearchState.loaded = false;
+  return record;
+}
+
+async function archiveBackendResearchRequest(request) {
+  const requestId = researchRequestBackendId(request);
+  if (!requestId) throw new Error('Backend R&D archive is unavailable.');
+  const record = await apiRequest(`/api/research/requests/${encodeURIComponent(requestId)}/archive`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendResearchRequests([record]);
+  backendResearchState.loaded = false;
+  return record;
+}
+
 const FEEDBACK_TYPES = ['Bug / Error', 'Feature Request', 'General Feedback', 'Question'];
 const FEEDBACK_STATUSES = ['Open', 'Reviewed', 'In Progress', 'Resolved', "Won't Do"];
 function feedbackStatusClass(s) {
@@ -13987,14 +14240,14 @@ function renderFeedback(el) {
                 <tr>
                   <td>${fmtDate(f.date)}</td>
                   <td>
-                    <div>${escapeHtml(f.submittedBy||'—')}</div>
+                    <div>${escapeHtml(f.submittedBy||'â€”')}</div>
                     ${f.email ? `<div style="font-size:11px;color:var(--brown-light)">${escapeHtml(f.email)}</div>` : ''}
                   </td>
                   <td><span class="pill">${escapeHtml(f.type||'')}</span></td>
                   <td><strong>${escapeHtml(f.title||'')}</strong></td>
                   <td>${f.attachment
                     ? `<a href="${f.attachment.dataUrl}" download="${escapeHtml(f.attachment.name)}" style="color:var(--orange);font-size:12px;text-decoration:none">&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}</a>`
-                    : '<span style="font-size:12px;color:var(--brown-light)">—</span>'
+                    : '<span style="font-size:12px;color:var(--brown-light)">â€”</span>'
                   }</td>
                   <td>
                     <select onchange="updateFeedbackStatus('${f.id}', this.value)" style="font-size:12px;padding:4px 6px;border:1px solid var(--grey);border-radius:4px;background:var(--white)">
@@ -14060,7 +14313,7 @@ function submitFeedback() {
   state.feedback = state.feedback || [];
   state.feedback.push(data);
   try { saveState(); }
-  catch(err) { state.feedback.pop(); toast('Storage full — try a smaller file.'); return; }
+  catch(err) { state.feedback.pop(); toast('Storage full â€” try a smaller file.'); return; }
   router('feedback');
   toast('Thanks! Feedback submitted.');
 }
@@ -14091,7 +14344,7 @@ function viewFeedback(id) {
   openModal(escapeHtml(f.title || 'Feedback'), `
     <div style="margin-bottom:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
-        <div style="font-weight:600">${escapeHtml(f.submittedBy||'—')}</div>
+        <div style="font-weight:600">${escapeHtml(f.submittedBy||'â€”')}</div>
         ${f.email ? `<div style="font-size:12px;color:var(--brown-light)">${escapeHtml(f.email)}</div>` : ''}
       </div>
       <div style="text-align:right">
@@ -14139,7 +14392,7 @@ function nextRdId() {
 }
 
 function rdTabsHtml() {
-  const qN = (state.rdRequests || []).filter(r => r.status !== 'completed').length;
+  const qN = (state.rdRequests || []).filter(r => r.status !== 'completed' && r.status !== 'archived').length;
   const cN = (state.rdRequests || []).filter(r => r.status === 'completed').length;
   return `<div class="tabs" style="margin-bottom:14px">
     <button class="tab ${rdTab==='Queue'?'active':''}" onclick="setRdTab('Queue')">Queue <span class="tab-count">${qN}</span></button>
@@ -14148,9 +14401,14 @@ function rdTabsHtml() {
 }
 
 function renderRD(el) {
+  if (researchBackendCanAccess() && !backendResearchState.loaded && !backendResearchState.loading) {
+    loadBackendResearch().then(() => {
+      if (currentPage === 'rd') renderRD(document.getElementById('content'));
+    }).catch(() => {});
+  }
   const isCompleted = rdTab === 'Completed';
   const list = (state.rdRequests || [])
-    .filter(r => isCompleted ? r.status === 'completed' : r.status !== 'completed')
+    .filter(r => r.status !== 'archived' && (isCompleted ? r.status === 'completed' : r.status !== 'completed'))
     .slice()
     .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
 
@@ -14164,8 +14422,9 @@ function renderRD(el) {
         </div>
       </div>
       <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
-        Submit a product or packaging concept for R&amp;D. Active requests sit in the <strong>Queue</strong> tab; mark complete to move them to <strong>Completed</strong>. Each request supports working <strong>Notes</strong> (during R&amp;D) and post-production <strong>Comments</strong>.
+        Submit a product or packaging concept for R&amp;D. Active requests sit in the <strong>Queue</strong> tab; mark complete to move them to <strong>Completed</strong>. Archived requests stay hidden until reopened. Each request supports working <strong>Notes</strong> (during R&amp;D) and post-production <strong>Comments</strong>.
       </div>
+      ${renderBackendResearchBanner()}
       ${rdTabsHtml()}
       ${list.length === 0
         ? `<div class="empty">${isCompleted ? 'No completed R&D requests yet.' : 'No active R&D requests. Click "+ New R&D Request" to add one.'}</div>`
@@ -14179,9 +14438,11 @@ function rdCardHtml(r, isCompleted) {
   const cust = getCustomer(r.customerId);
   const submitted = r.submittedAt ? fmtDate(r.submittedAt.slice(0,10)) : '—';
   const completed = r.completedAt ? fmtDate(r.completedAt.slice(0,10)) : '';
-  const statusBadge = isCompleted
-    ? `<span class="badge badge-prod">Completed</span>`
-    : `<span class="badge">In Queue</span>`;
+  const statusBadge = r.status === 'archived'
+    ? `<span class="badge badge-complete">Archived</span>`
+    : isCompleted
+      ? `<span class="badge badge-prod">Completed</span>`
+      : `<span class="badge badge-pending">In Queue</span>`;
   const notes = (r.notes || []).slice().sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
   const comments = (r.comments || []).slice().sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
 
@@ -14189,7 +14450,7 @@ function rdCardHtml(r, isCompleted) {
     <div style="border:1px solid var(--grey-light);border-radius:8px;padding:14px;margin-bottom:14px;background:var(--white)">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
         <div>
-          <div style="font-weight:700;color:var(--brown)">${escapeHtml(r.rdId||'')} &middot; ${escapeHtml(cust?.name || '—')}</div>
+          <div style="font-weight:700;color:var(--brown)">${escapeHtml(r.rdId||r.requestId||r.id||'')} &middot; ${escapeHtml(cust?.name || '—')}</div>
           <div style="font-size:12px;color:var(--brown-light);margin-top:2px">
             Submitted ${submitted}${completed ? ' &middot; Completed ' + completed : ''}
           </div>
@@ -14201,13 +14462,14 @@ function rdCardHtml(r, isCompleted) {
             ? `<button class="btn btn-icon btn-sm" onclick="reopenRdRequest('${r.id}')">Reopen</button>`
             : `<button class="btn btn-sm" onclick="completeRdRequest('${r.id}')">Mark Complete</button>`
           }
-          <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteRdRequest('${r.id}')">Delete</button>
+          <button class="btn btn-icon btn-sm" onclick="archiveRdRequest('${r.id}')">Archive</button>
         </div>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;background:var(--beige-light);padding:10px;border-radius:6px;margin-bottom:12px">
         <div><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Packaging Type</div><div style="font-weight:600">${escapeHtml(r.packagingType || '—')}</div></div>
         <div><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Units Requested</div><div style="font-weight:600">${escapeHtml(String(r.unitsRequested ?? '—'))}</div></div>
+        <div><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase">Status</div><div style="font-weight:600">${escapeHtml((r.status || 'queue').replace(/_/g, ' '))}</div></div>
       </div>
 
       <div style="margin-bottom:12px">
@@ -14223,7 +14485,7 @@ function rdCardHtml(r, isCompleted) {
               ? '<div style="font-size:12px;color:var(--brown-light)">No notes yet.</div>'
               : notes.map(n => `
                   <div style="background:var(--beige-light);border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:13px">
-                    <div style="font-size:10px;color:var(--brown-light)">${fmtDate((n.ts||'').slice(0,10))}</div>
+                    <div style="font-size:10px;color:var(--brown-light)">${fmtDateTime(n.ts)}${n.author ? ` &middot; ${escapeHtml(n.author)}` : ''}</div>
                     <div style="white-space:pre-wrap">${escapeHtml(n.text||'')}</div>
                   </div>`).join('')
             }
@@ -14240,7 +14502,7 @@ function rdCardHtml(r, isCompleted) {
               ? '<div style="font-size:12px;color:var(--brown-light)">No comments yet.</div>'
               : comments.map(c => `
                   <div style="background:#f4f1ea;border-radius:6px;padding:6px 10px;margin-bottom:4px;font-size:13px">
-                    <div style="font-size:10px;color:var(--brown-light)">${fmtDate((c.ts||'').slice(0,10))}</div>
+                    <div style="font-size:10px;color:var(--brown-light)">${fmtDateTime(c.ts)}${c.author ? ` &middot; ${escapeHtml(c.author)}` : ''}</div>
                     <div style="white-space:pre-wrap">${escapeHtml(c.text||'')}</div>
                   </div>`).join('')
             }
@@ -14255,12 +14517,26 @@ function rdCardHtml(r, isCompleted) {
   `;
 }
 
-function editRdRequest(id) {
+async function editRdRequest(id) {
   const isNew = !id;
-  const r = isNew
-    ? { id: uid('rd'), rdId: nextRdId(), customerId: '', packagingType: '', unitsRequested: '', productDescription: '', submittedAt: new Date().toISOString(), status: 'queue', notes: [], comments: [], completedAt: null }
+  const newRdId = isNew ? nextRdId() : '';
+  const localRequest = isNew
+    ? { id: newRdId, requestId: newRdId, rdId: newRdId, customerId: '', packagingType: '', unitsRequested: '', productDescription: '', submittedAt: new Date().toISOString(), status: 'queue', notes: [], comments: [], completedAt: null, archivedAt: null }
     : (state.rdRequests || []).find(x => x.id === id);
-  if (!r) return;
+  if (!localRequest) return;
+  let r = localRequest;
+  if (!isNew && researchBackendIsConnected()) {
+    const requestId = researchRequestBackendId(localRequest);
+    if (requestId) {
+      try {
+        await loadBackendResearchRequest(requestId);
+        r = (state.rdRequests || []).find(x => x._backendId === requestId || x.id === requestId || x.rdId === requestId || x.requestId === requestId) || localRequest;
+      } catch (error) {
+        backendResearchState.status = 'error';
+        backendResearchState.lastError = 'Research request details are unavailable right now, so the local demo record remains editable.';
+      }
+    }
+  }
   const custOpts = state.customers.map(c => `<option value="${c.id}" ${c.id===r.customerId?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
   const pkgSuggest = ['8oz jar','16oz jar','Squeeze pouch 1.15oz','Squeeze pouch 32oz','Tub','Stick pack','Bulk pail','Bag-in-box','Other'];
   const datalistOpts = pkgSuggest.map(p => `<option value="${escapeHtml(p)}">`).join('');
@@ -14298,60 +14574,125 @@ function editRdRequest(id) {
   `);
 }
 
-function saveRdRequest(id, isNew) {
+async function saveRdRequest(id, isNew) {
   const customerId = document.getElementById('rd_customer').value;
   if (!customerId) { toast('Customer is required.'); return; }
   const packagingType = (document.getElementById('rd_packaging').value || '').trim();
   if (!packagingType) { toast('Packaging Type is required.'); return; }
   const unitsRaw = document.getElementById('rd_units').value;
   const unitsRequested = unitsRaw === '' ? '' : parseInt(unitsRaw, 10);
-  if (unitsRaw === '' || isNaN(unitsRequested) || unitsRequested < 0) { toast('Units Requested must be 0 or more.'); return; }
+  if (unitsRaw === '' || isNaN(unitsRequested) || unitsRequested <= 0) { toast('Units Requested must be greater than 0.'); return; }
   const productDescription = (document.getElementById('rd_desc').value || '').trim();
   if (!productDescription) { toast('Product Description is required.'); return; }
 
+  const current = (state.rdRequests || []).find(x => x.id === id) || {};
+  const rdId = isNew ? nextRdId() : (current.rdId || current.requestId || current.id || id);
+  const requestId = current.requestId || rdId;
+  const data = {
+    id: isNew ? rdId : id,
+    requestId,
+    rdId,
+    customerId,
+    packagingType,
+    unitsRequested,
+    productDescription,
+    submittedAt: current.submittedAt || new Date().toISOString(),
+    status: current.status || 'queue',
+    notes: current.notes || [],
+    comments: current.comments || [],
+    completedAt: current.completedAt || null,
+    archivedAt: current.archivedAt || null
+  };
+
   state.rdRequests = state.rdRequests || [];
   if (isNew) {
-    state.rdRequests.push({
-      id,
-      rdId: nextRdId(),
-      customerId, packagingType, unitsRequested, productDescription,
-      submittedAt: new Date().toISOString(),
-      status: 'queue',
-      notes: [], comments: [],
-      completedAt: null
-    });
+    state.rdRequests.push(data);
     toast('R&D request submitted.');
   } else {
     const r = state.rdRequests.find(x => x.id === id);
     if (r) {
-      Object.assign(r, { customerId, packagingType, unitsRequested, productDescription });
+      Object.assign(r, data);
       toast('R&D request updated.');
     }
   }
   try { saveState(); } catch(e) { toast('Storage full — try removing files or older entries.'); return; }
   closeModal();
+  if (researchBackendIsConnected()) {
+    try {
+      if (isNew) await createBackendResearchRequest(data);
+      else await updateBackendResearchRequest(data);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      rdTab = 'Queue';
+      router('rd');
+      toast(isNew ? 'R&D request submitted to backend.' : 'R&D request updated in backend.');
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      rdTab = 'Queue';
+      router('rd');
+      return;
+    }
+  }
   rdTab = 'Queue';
   router('rd');
 }
 
-function addRdNote(id) {
+async function addRdNote(id) {
   const inp = document.getElementById('rd_note_'+id);
   const text = (inp?.value || '').trim();
   if (!text) { toast('Type a note first.'); return; }
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
+  if (researchBackendIsConnected() && researchRequestBackendId(r)) {
+    try {
+      await addBackendResearchNote(r, text);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      router('rd');
+      toast('R&D note saved to backend.');
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend note save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      router('rd');
+      return;
+    }
+  }
   r.notes = r.notes || [];
   r.notes.push({ id: uid('rdn'), text, ts: new Date().toISOString() });
   saveState();
   router('rd');
 }
 
-function addRdComment(id) {
+async function addRdComment(id) {
   const inp = document.getElementById('rd_cmt_'+id);
   const text = (inp?.value || '').trim();
   if (!text) { toast('Type a comment first.'); return; }
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
+  if (researchBackendIsConnected() && researchRequestBackendId(r)) {
+    try {
+      await addBackendResearchComment(r, text);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      router('rd');
+      toast('R&D comment saved to backend.');
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend comment save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      router('rd');
+      return;
+    }
+  }
   r.comments = r.comments || [];
   r.comments.push({ id: uid('rdc'), text, ts: new Date().toISOString() });
   saveState();
@@ -14370,8 +14711,28 @@ async function completeRdRequest(id) {
     tone: 'workflow'
   });
   if (!ok) return;
+  if (researchBackendIsConnected() && researchRequestBackendId(r)) {
+    try {
+      await completeBackendResearchRequest(r);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      rdTab = 'Completed';
+      router('rd');
+      toast(`${r.rdId} marked complete in backend.`);
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend completion failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      rdTab = 'Completed';
+      router('rd');
+      return;
+    }
+  }
   r.status = 'completed';
   r.completedAt = new Date().toISOString();
+  r.archivedAt = null;
   saveState();
   rdTab = 'Completed';
   router('rd');
@@ -14390,30 +14751,68 @@ async function reopenRdRequest(id) {
     tone: 'workflow'
   });
   if (!ok) return;
+  if (researchBackendIsConnected() && researchRequestBackendId(r)) {
+    try {
+      await reopenBackendResearchRequest(r);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      rdTab = 'Queue';
+      router('rd');
+      toast(`${r.rdId} reopened in backend.`);
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend reopen failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      rdTab = 'Queue';
+      router('rd');
+      return;
+    }
+  }
   r.status = 'queue';
   r.completedAt = null;
+  r.archivedAt = null;
   saveState();
   rdTab = 'Queue';
   router('rd');
   toast(`${r.rdId} reopened.`);
 }
 
-async function deleteRdRequest(id) {
+async function archiveRdRequest(id) {
   const r = (state.rdRequests || []).find(x => x.id === id);
   if (!r) return;
   const ok = await openConfirmModal({
-    title: 'Delete R&D request',
+    title: 'Archive R&D request',
     record: r.rdId,
-    message: 'Delete this R&D request?',
-    risk: 'This cannot be undone from the browser.',
-    confirmLabel: 'Delete Request',
-    tone: 'danger'
+    message: 'Archive this R&D request?',
+    risk: 'Archived requests stay hidden from Queue and Completed until reopened.',
+    confirmLabel: 'Archive Request',
+    tone: 'workflow'
   });
   if (!ok) return;
-  state.rdRequests = (state.rdRequests || []).filter(x => x.id !== id);
+  if (researchBackendIsConnected() && researchRequestBackendId(r)) {
+    try {
+      await archiveBackendResearchRequest(r);
+      backendResearchState.status = 'connected';
+      backendResearchState.lastError = '';
+      backendResearchState.loaded = false;
+      router('rd');
+      toast(`${r.rdId} archived in backend.`);
+      return;
+    } catch (error) {
+      backendResearchState.status = 'error';
+      backendResearchState.lastError = 'Research backend archive failed, so the local demo fallback remains visible.';
+      toast(error.message || backendResearchState.lastError);
+      router('rd');
+      return;
+    }
+  }
+  r.status = 'archived';
+  r.archivedAt = new Date().toISOString();
   saveState();
   router('rd');
-  toast(`${r.rdId} deleted.`);
+  toast(`${r.rdId} archived.`);
 }
 
 /* =========================================================================
