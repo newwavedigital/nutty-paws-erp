@@ -8,6 +8,12 @@ import { hasCustomerAccess, requireAnyRole, requireAuthWhenEnabled, requireCusto
 import type { AuthContext, AuthStore } from "../auth/service";
 import { D1InventoryStore } from "../inventory/d1-store";
 import type { InventoryStore } from "../inventory/service";
+import {
+  notifySubmittedPurchaseOrder,
+  type NotificationEnv,
+  type NotifySubmittedPurchaseOrder,
+  type SubmittedPONotificationResult,
+} from "../notifications/service";
 import { D1PurchaseOrderStore } from "./d1-store";
 import {
   approvePurchaseOrderForProduction,
@@ -36,6 +42,7 @@ export function registerPurchaseOrderRoutes(
   createPOStore: POStoreFactory = (db) => new D1PurchaseOrderStore(db),
   createInventoryStore: InventoryStoreFactory = (db) => new D1InventoryStore(db),
   createAuthStore: AuthStoreFactory = (db) => new D1AuthStore(db),
+  notifySubmittedPO: NotifySubmittedPurchaseOrder = notifySubmittedPurchaseOrder,
 ) {
   app.get("/api/purchase-orders", async (c) => {
     const db = c.env?.DB;
@@ -94,14 +101,17 @@ export function registerPurchaseOrderRoutes(
 
   app.post("/api/purchase-orders/:purchaseOrderId/submit", async (c) => {
     const db = c.env?.DB;
+    const poStore = createPOStore(db);
     const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
-    const existing = auth ? await readPurchaseOrder(createPOStore(db), c.req.param("purchaseOrderId")) : null;
+    const existing = auth ? await readPurchaseOrder(poStore, c.req.param("purchaseOrderId")) : null;
     if (auth && existing) authorizePurchaseOrderCreate(auth, existing.customerId);
     const body = await optionalJsonObject(c);
-    const po = await submitPurchaseOrder(createPOStore(db), {
+    const actor = actorUserId(auth, body);
+    const po = await submitPurchaseOrder(poStore, {
       purchaseOrderId: c.req.param("purchaseOrderId"),
-      actorUserId: actorUserId(auth, body),
+      actorUserId: actor,
     });
+    await logSubmittedPONotification(poStore, c.env as NotificationEnv, po, actor, notifySubmittedPO);
 
     return ok(c, po);
   });
@@ -151,6 +161,41 @@ export function registerPurchaseOrderRoutes(
   });
 }
 
+async function logSubmittedPONotification(
+  store: PurchaseOrderStore,
+  env: NotificationEnv,
+  po: PurchaseOrderRecord,
+  actorUserId: string | undefined,
+  notifySubmittedPO: NotifySubmittedPurchaseOrder,
+) {
+  let result: SubmittedPONotificationResult;
+  try {
+    result = await notifySubmittedPO(env, po);
+  } catch (error) {
+    result = { status: "failed", error: errorMessage(error) };
+  }
+
+  const metadata: Record<string, unknown> = {
+    channel: "sendgrid",
+    notificationType: "submitted_po",
+    status: result.status,
+  };
+  if (result.status === "failed") metadata.error = result.error;
+  if (result.status === "skipped") metadata.reason = result.reason;
+
+  try {
+    await store.createAuditEvent({
+      actorUserId,
+      entityType: "purchase_order",
+      entityId: po.id,
+      action: `purchase_order.notification_${result.status}`,
+      metadata,
+    });
+  } catch (error) {
+    console.warn("Failed to record submitted-PO notification audit event", error);
+  }
+}
+
 async function optionalJsonObject(c: Context<AppBindings>) {
   if (!c.req.header("content-type")) {
     return {};
@@ -194,6 +239,10 @@ function optionalString(value: unknown, field: string) {
   }
 
   return asString(value, field);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown notification error";
 }
 
 function asNumber(value: unknown, field: string) {

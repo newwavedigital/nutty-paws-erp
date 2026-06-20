@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
+import type { NotifySubmittedPurchaseOrder } from "../src/notifications/service";
 import { registerPurchaseOrderRoutes } from "../src/purchase-orders/routes";
 import type { InventoryStore } from "../src/inventory/service";
 import type { PurchaseOrderRecord, PurchaseOrderStore } from "../src/purchase-orders/service";
@@ -96,8 +97,11 @@ function createInventoryStore(overrides: Partial<InventoryStore> = {}) {
 function createRouteApp(
   poStore: PurchaseOrderStore = createPOStore(),
   inventoryStore: InventoryStore = createInventoryStore(),
+  notifySubmittedPurchaseOrder?: NotifySubmittedPurchaseOrder,
 ) {
-  return createApp((route) => registerPurchaseOrderRoutes(route, () => poStore, () => inventoryStore));
+  return createApp((route) =>
+    registerPurchaseOrderRoutes(route, () => poStore, () => inventoryStore, undefined, notifySubmittedPurchaseOrder),
+  );
 }
 
 describe("purchase order routes", () => {
@@ -197,6 +201,94 @@ describe("purchase order routes", () => {
       ok: true,
       data: { status: "supply_chain_review" },
     });
+  });
+
+  it("logs submitted-PO notification delivery after successful submit", async () => {
+    const auditEvents: Array<{ action: string; metadata: Record<string, unknown> }> = [];
+    const poStore = createPOStore({
+      async createAuditEvent(input) {
+        auditEvents.push({ action: input.action, metadata: input.metadata });
+      },
+    });
+    const app = createRouteApp(poStore, createInventoryStore(), async () => ({ status: "sent" }));
+
+    const response = await app.request("/api/purchase-orders/po-1/submit", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual({
+      action: "purchase_order.notification_sent",
+      metadata: { channel: "sendgrid", notificationType: "submitted_po", status: "sent" },
+    });
+  });
+
+  it("logs submitted-PO notification failures without blocking submit", async () => {
+    const auditEvents: Array<{ action: string; metadata: Record<string, unknown> }> = [];
+    const poStore = createPOStore({
+      async createAuditEvent(input) {
+        auditEvents.push({ action: input.action, metadata: input.metadata });
+      },
+    });
+    const app = createRouteApp(poStore, createInventoryStore(), async () => ({
+      status: "failed",
+      error: "SendGrid down",
+    }));
+
+    const response = await app.request("/api/purchase-orders/po-1/submit", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual({
+      action: "purchase_order.notification_failed",
+      metadata: {
+        channel: "sendgrid",
+        notificationType: "submitted_po",
+        status: "failed",
+        error: "SendGrid down",
+      },
+    });
+  });
+
+  it("logs submitted-PO notification skips after successful submit", async () => {
+    const auditEvents: Array<{ action: string; metadata: Record<string, unknown> }> = [];
+    const poStore = createPOStore({
+      async createAuditEvent(input) {
+        auditEvents.push({ action: input.action, metadata: input.metadata });
+      },
+    });
+    const app = createRouteApp(poStore, createInventoryStore(), async () => ({
+      status: "skipped",
+      reason: "disabled",
+    }));
+
+    const response = await app.request("/api/purchase-orders/po-1/submit", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual({
+      action: "purchase_order.notification_skipped",
+      metadata: {
+        channel: "sendgrid",
+        notificationType: "submitted_po",
+        status: "skipped",
+        reason: "disabled",
+      },
+    });
+  });
+
+  it("does not notify when non-draft submit is rejected", async () => {
+    const poStore = createPOStore({
+      async getPurchaseOrder(id) {
+        return id === "po-1" ? makePO({ status: "supply_chain_review" }) : null;
+      },
+    });
+    let notifyCount = 0;
+    const app = createRouteApp(poStore, createInventoryStore(), async () => {
+      notifyCount += 1;
+      return { status: "sent" };
+    });
+
+    const response = await app.request("/api/purchase-orders/po-1/submit", { method: "POST" });
+
+    expect(response.status).toBe(409);
+    expect(notifyCount).toBe(0);
   });
 
   it("blocks ordinary edits to approved-for-production purchase orders", async () => {
