@@ -1891,6 +1891,7 @@ const backendProcurementState = { status: 'local', lastError: '', loading: false
 const backendProductionState = { status: 'local', lastError: '', loading: false, loaded: false, runs: [], logs: [] };
 const backendQualityState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [] };
 const backendShippingState = { status: 'local', lastError: '', loading: false, loaded: false, queue: [], logs: [] };
+const backendPickPackState = { status: 'local', lastError: '', loading: false, loaded: false, orders: [] };
 let confirmModalResolver = null;
 let confirmModalPreviousState = null;
 let backendAuthState = loadAuthState();
@@ -2124,7 +2125,7 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
-  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState].forEach(s => {
+  [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState, backendPickPackState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
     s.loading = false;
@@ -2137,6 +2138,7 @@ function resetBackendDataStates() {
   backendQualityState.queue = [];
   backendShippingState.queue = [];
   backendShippingState.logs = [];
+  backendPickPackState.orders = [];
 }
 
 function authHeaders() {
@@ -2420,6 +2422,20 @@ function renderBackendShippingBanner() {
     : (backendShippingState.lastError || 'Local shipping demo data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="shipping" style="border-left-color:${color}">
+    <strong>${title}</strong>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
+  </div>`;
+}
+
+function renderBackendPickPackBanner() {
+  const connected = backendPickPackState.status === 'connected';
+  const loading = backendPickPackState.loading;
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const detail = connected
+    ? 'Pick & Pack POs, picked status, shipping details, and shipped status are reading from protected backend records when available.'
+    : (backendPickPackState.lastError || 'Local Pick & Pack demo data remains visible while backend data is unavailable.');
+  const color = connected ? 'var(--success)' : 'var(--orange)';
+  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="pick-pack" style="border-left-color:${color}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -2749,6 +2765,238 @@ function isBackendMissingCarrierBolWarning(error) {
   const code = String(error?.envelope?.error?.code || error?.code || '').toLowerCase();
   const message = String(error?.message || error?.envelope?.error?.message || '').toLowerCase();
   return code.includes('missing') || (message.includes('missing') && (message.includes('bol') || message.includes('carrier')));
+}
+
+function pickPackBackendIsConnected() {
+  return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendPickPackState.status === 'connected';
+}
+
+function pickPackOrderBackendId(order) {
+  return order?._backendId || order?.id || '';
+}
+
+function pickPackOrderShippingDetailsPayload(order) {
+  const mode = order?.shippingMode || 'pallet';
+  const palletList = Array.isArray(order?.palletList) ? order.palletList : [];
+  const fallbackPalletList = mode === 'pallet' && palletList.length === 0 && (order?.length || order?.width || order?.height || order?.weight)
+    ? [{ length: order.length || 0, width: order.width || 0, height: order.height || 0, weight: order.weight || 0 }]
+    : palletList;
+  return {
+    shippingMode: mode,
+    carrier: mode === 'parcel' ? (order?.parcelCarrier || '') : (order?.carrier || ''),
+    trackingNumber: mode === 'parcel' ? (order?.trackingNumber || '') : (order?.trackingNumber || ''),
+    bolNumber: mode === 'parcel' ? null : (order?.bol || ''),
+    palletCount: mode === 'parcel' ? null : (order?.pallets || null),
+    weight: mode === 'parcel' ? ((Number(order?.packageWeight || order?.weight || 0) || null)) : ((Number(order?.weight || 0) || null)),
+    dimensionsJson: JSON.stringify(mode === 'parcel' ? [] : fallbackPalletList),
+    notes: order?.notes || null,
+    actorUserId: BACKEND_ACTOR_USER_ID
+  };
+}
+
+function backendPickPackOrderToLocal(order, existing = {}) {
+  const shippingDetails = order?.shippingDetails || {};
+  const dimensions = parseJsonFallback(shippingDetails.dimensionsJson, []);
+  const palletList = Array.isArray(dimensions)
+    ? dimensions
+    : Array.isArray(dimensions?.palletList)
+      ? dimensions.palletList
+      : [];
+  const firstPallet = palletList[0] || {};
+  const lines = (order?.lines || []).map((line) => ({
+    ingredientId: line.inventoryItemId || line.ingredientId || '',
+    inventoryItemId: line.inventoryItemId || line.ingredientId || '',
+    qty: Number(line.quantity ?? line.qty ?? 0),
+    pickedQuantity: Number(line.pickedQuantity ?? 0),
+    shortQuantity: Number(line.shortQuantity ?? 0),
+    itemName: line.itemName || '',
+    sku: line.sku || '',
+    customerId: line.customerId || ''
+  }));
+  return {
+    ...existing,
+    id: order.pickPackNumber || existing.id || order.id,
+    _backendId: order.id,
+    customerId: order.customerId || existing.customerId || '',
+    poNumber: order.customerPoNumber || existing.poNumber || '',
+    dateSubmitted: order.dateSubmitted || existing.dateSubmitted || '',
+    dateNeededToShip: order.dateNeededToShip || existing.dateNeededToShip || '',
+    poFile: existing.poFile || null,
+    notes: order.notes || existing.notes || '',
+    status: order.status || existing.status || 'open',
+    pickedAt: order.pickedAt || existing.pickedAt || '',
+    shippedAt: order.shippedAt || existing.shippedAt || '',
+    shortStockConfirmed: !!order.shortStockConfirmed,
+    shortStock: order.shortStock || existing.shortStock || [],
+    lines,
+    shippingMode: shippingDetails.shippingMode || existing.shippingMode || 'pallet',
+    carrier: shippingDetails.shippingMode === 'parcel' ? (shippingDetails.carrier || existing.parcelCarrier || '') : (shippingDetails.carrier || existing.carrier || ''),
+    parcelCarrier: shippingDetails.shippingMode === 'parcel' ? (shippingDetails.carrier || existing.parcelCarrier || '') : (existing.parcelCarrier || ''),
+    trackingNumber: shippingDetails.trackingNumber || existing.trackingNumber || '',
+    bol: shippingDetails.bolNumber || existing.bol || '',
+    pallets: shippingDetails.palletCount ?? existing.pallets ?? 0,
+    weight: shippingDetails.weight ?? existing.weight ?? 0,
+    packageWeight: shippingDetails.weight ?? existing.packageWeight ?? 0,
+    length: firstPallet.length ?? existing.length ?? 0,
+    width: firstPallet.width ?? existing.width ?? 0,
+    height: firstPallet.height ?? existing.height ?? 0,
+    palletList,
+    shippingDetails: Object.keys(shippingDetails).length ? { ...shippingDetails } : (existing.shippingDetails || null)
+  };
+}
+
+function mergeBackendPickPackOrders(records) {
+  const mapped = (records || []).map(order => backendPickPackOrderToLocal(order, (state.pickPackOrders || []).find(local => local._backendId === order.id || local.id === order.pickPackNumber || local.id === order.id) || {}));
+  const backendKeys = new Set();
+  mapped.forEach(order => {
+    [order._backendId, order.id, order.poNumber].filter(Boolean).forEach(key => backendKeys.add(String(key)));
+  });
+  const remainingLocal = (state.pickPackOrders || []).filter(order => {
+    const keys = [order._backendId, order.id, order.poNumber].filter(Boolean).map(String);
+    return !keys.some(key => backendKeys.has(key));
+  });
+  state.pickPackOrders = [...mapped, ...remainingLocal];
+  backendPickPackState.orders = mapped;
+  try { saveState(); } catch (err) {}
+  return mapped;
+}
+
+async function loadBackendPickPackOrders() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return backendPickPackState.orders;
+  const records = await apiRequest('/api/pick-pack/orders');
+  return mergeBackendPickPackOrders(records || []);
+}
+
+async function loadBackendPickPack() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendPickPackState.loading || backendPickPackState.loaded) return backendPickPackState.orders;
+  backendPickPackState.loading = true;
+  try {
+    await loadBackendPickPackOrders();
+    backendPickPackState.status = 'connected';
+    backendPickPackState.lastError = '';
+    backendPickPackState.loaded = true;
+  } catch (error) {
+    backendPickPackState.status = 'error';
+    backendPickPackState.lastError = 'Pick & Pack backend data is unavailable, so local Pick & Pack records remain visible.';
+    backendPickPackState.loaded = true;
+  } finally {
+    backendPickPackState.loading = false;
+  }
+}
+
+async function createBackendPickPackOrder(data) {
+  const order = await apiRequest('/api/pick-pack/orders', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerId: data.customerId,
+      customerPoNumber: data.poNumber || data.customerPoNumber || null,
+      dateSubmitted: data.dateSubmitted || null,
+      dateNeededToShip: data.dateNeededToShip || null,
+      poFileId: data.poFile?._backendFileId || data.poFile?.id || data.poFileId || null,
+      notes: data.notes || null,
+      actorUserId: BACKEND_ACTOR_USER_ID,
+      lines: (data.lines || []).map(line => ({
+        inventoryItemId: line.inventoryItemId || line.ingredientId || '',
+        quantity: Number(line.quantity || line.qty || 0)
+      }))
+    })
+  });
+  mergeBackendPickPackOrders([order]);
+  backendPickPackState.loaded = false;
+  return order;
+}
+
+async function updateBackendPickPackOrder(data) {
+  const orderId = pickPackOrderBackendId(data);
+  if (!orderId) throw new Error('Backend Pick & Pack order is unavailable.');
+  const order = await apiRequest(`/api/pick-pack/orders/${encodeURIComponent(orderId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      customerId: data.customerId,
+      customerPoNumber: data.poNumber || data.customerPoNumber || null,
+      dateSubmitted: data.dateSubmitted || null,
+      dateNeededToShip: data.dateNeededToShip || null,
+      poFileId: data.poFile?._backendFileId || data.poFile?.id || data.poFileId || null,
+      notes: data.notes || null,
+      actorUserId: BACKEND_ACTOR_USER_ID,
+      lines: (data.lines || []).map(line => ({
+        inventoryItemId: line.inventoryItemId || line.ingredientId || '',
+        quantity: Number(line.quantity || line.qty || 0)
+      }))
+    })
+  });
+  mergeBackendPickPackOrders([order]);
+  backendPickPackState.loaded = false;
+  return order;
+}
+
+async function markBackendPickPackPicked(order, options = {}) {
+  const orderId = pickPackOrderBackendId(order);
+  if (!orderId) throw new Error('Backend Pick & Pack pick is unavailable.');
+  const updated = await apiRequest(`/api/pick-pack/orders/${encodeURIComponent(orderId)}/mark-picked`, {
+    method: 'POST',
+    body: JSON.stringify({
+      confirmShortStock: !!options.confirmShortStock,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendPickPackOrders([updated]);
+  backendPickPackState.loaded = false;
+  return updated;
+}
+
+async function saveBackendPickPackShippingDetails(order) {
+  const orderId = pickPackOrderBackendId(order);
+  if (!orderId) throw new Error('Backend Pick & Pack shipping details are unavailable.');
+  const updated = await apiRequest(`/api/pick-pack/orders/${encodeURIComponent(orderId)}/shipping`, {
+    method: 'PATCH',
+    body: JSON.stringify(pickPackOrderShippingDetailsPayload(order))
+  });
+  if (updated && (updated.lines || updated.status || updated.pickPackNumber || updated.customerId || updated.shippingDetails)) {
+    mergeBackendPickPackOrders([updated]);
+  } else {
+    const local = (state.pickPackOrders || []).find(localOrder => localOrder._backendId === orderId || localOrder.id === orderId);
+    if (local) {
+      Object.assign(local, {
+        shippingMode: order.shippingMode || local.shippingMode || 'pallet',
+        carrier: order.shippingMode === 'parcel' ? (order.parcelCarrier || local.parcelCarrier || '') : (order.carrier || local.carrier || ''),
+        parcelCarrier: order.shippingMode === 'parcel' ? (order.parcelCarrier || local.parcelCarrier || '') : (local.parcelCarrier || ''),
+        trackingNumber: order.trackingNumber || local.trackingNumber || '',
+        bol: order.bol || local.bol || '',
+        pallets: order.pallets ?? local.pallets ?? 0,
+        weight: order.weight ?? order.packageWeight ?? local.weight ?? 0,
+        packageWeight: order.packageWeight ?? order.weight ?? local.packageWeight ?? 0,
+        length: order.length ?? local.length ?? 0,
+        width: order.width ?? local.width ?? 0,
+        height: order.height ?? local.height ?? 0,
+        palletList: Array.isArray(order.palletList) ? order.palletList : (local.palletList || []),
+        notes: order.notes || local.notes || ''
+      });
+      try { saveState(); } catch (err) {}
+    }
+  }
+  backendPickPackState.loaded = false;
+  return updated;
+}
+
+async function markBackendPickPackShipped(order) {
+  const orderId = pickPackOrderBackendId(order);
+  if (!orderId) throw new Error('Backend Pick & Pack ship is unavailable.');
+  const updated = await apiRequest(`/api/pick-pack/orders/${encodeURIComponent(orderId)}/mark-shipped`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...pickPackOrderShippingDetailsPayload(order)
+    })
+  });
+  mergeBackendPickPackOrders([updated]);
+  backendPickPackState.loaded = false;
+  return updated;
+}
+
+function isBackendShortStockWarning(error) {
+  const code = String(error?.envelope?.error?.code || error?.code || '').toLowerCase();
+  const message = String(error?.message || error?.envelope?.error?.message || '').toLowerCase();
+  return (code.includes('short') && code.includes('stock')) || (message.includes('short') && message.includes('stock'));
 }
 
 function qualityActionActor(po) {
@@ -12908,11 +13156,15 @@ function finishedGoodsForCustomer(customerId) {
 }
 
 function renderPickPack(el) {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendPickPackState.loaded && !backendPickPackState.loading) {
+    loadBackendPickPack().then(() => { if (currentPage === 'pick-pack') router('pick-pack'); }).catch(() => {});
+  }
   const open = (state.pickPackOrders || []).filter(p => p.status === 'open');
   const ship = (state.pickPackOrders || []).filter(p => p.status === 'picked');
   const done = (state.pickPackOrders || []).filter(p => p.status === 'shipped');
   const openReqs = (state.productionRequests||[]).filter(r => r.status !== 'Fulfilled' && r.status !== 'Declined').length;
   el.innerHTML = `
+    ${renderBackendPickPackBanner()}
     <div class="card">
       <div class="tabs">
         <button class="tab ${pickPackTab==='pos'?'active':''}" onclick="setPickPackTab('pos')">Purchase Orders <span class="tab-count">${open.length}</span></button>
@@ -13422,7 +13674,7 @@ function clearPickPackFile() {
   info.classList.remove('has');
 }
 
-function savePickPackPO(id, isNew) {
+async function savePickPackPO(id, isNew) {
   const customerId = document.getElementById('pp_customer').value;
   if (!customerId) { toast('Distributor required.'); return; }
   const lines = editingPickPackLines.filter(l => l.ingredientId && l.qty > 0);
@@ -13447,6 +13699,26 @@ function savePickPackPO(id, isNew) {
   try { saveState(); }
   catch(err) { toast('Storage full — try a smaller file.'); return; }
   closeModal();
+  if (pickPackBackendIsConnected()) {
+    try {
+      const savedOrder = state.pickPackOrders.find(p => p.id === id) || data;
+      const backendOrderId = savedOrder._backendId || '';
+      if (backendOrderId) await updateBackendPickPackOrder(savedOrder);
+      else await createBackendPickPackOrder(savedOrder);
+      backendPickPackState.status = 'connected';
+      backendPickPackState.lastError = '';
+      pickPackTab = 'pos';
+      router('pick-pack');
+      toast(isNew ? `${id} created in backend.` : `${id} saved in backend.`);
+      return;
+    } catch (error) {
+      backendPickPackState.status = 'error';
+      backendPickPackState.lastError = 'Pick & Pack backend save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendPickPackState.lastError);
+      router('pick-pack');
+      return;
+    }
+  }
   router('pick-pack');
   toast(isNew ? `${id} created.` : `${id} saved.`);
 }
@@ -13466,6 +13738,47 @@ function pickPackStockCheck(p) {
 async function markPickPackPicked(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
+  if (pickPackBackendIsConnected() && p._backendId) {
+    try {
+      await markBackendPickPackPicked(p);
+      backendPickPackState.status = 'connected';
+      backendPickPackState.lastError = '';
+      pickPackTab = 'shipping';
+      router('pick-pack');
+      toast(`${id} picked in backend. Inventory deducted, moved to Shipping.`);
+      return;
+    } catch (error) {
+      if (isBackendShortStockWarning(error)) {
+        const shortages = error?.envelope?.error?.details?.shortages || error?.details?.shortages || [];
+        const summary = shortages.map(s => `${s.itemName || s.item || s.inventoryItemId || 'Item'}: short ${s.shortQuantity ?? Math.max(0, (Number(s.requestedQuantity || 0) - Number(s.availableQuantity || 0)))}`).join('\n');
+        const ok = await openConfirmModal({
+          title: 'Pick with short stock',
+          record: id,
+          message: 'This order is short on finished-goods stock. Mark it picked anyway?',
+          risk: summary || 'Finished-goods stock is short on one or more lines.',
+          confirmLabel: 'Mark Picked',
+          tone: 'workflow'
+        });
+        if (!ok) return;
+        try {
+          await markBackendPickPackPicked(p, { confirmShortStock: true });
+          backendPickPackState.status = 'connected';
+          backendPickPackState.lastError = '';
+          pickPackTab = 'shipping';
+          router('pick-pack');
+          toast(`${id} picked in backend. Inventory deducted, moved to Shipping.`);
+          return;
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+      backendPickPackState.status = 'error';
+      backendPickPackState.lastError = 'Pick & Pack backend picking failed, so the local demo fallback remains visible.';
+      toast(error.message || backendPickPackState.lastError);
+      router('pick-pack');
+      return;
+    }
+  }
   const check = pickPackStockCheck(p);
   if (!check.ok) {
     const ok = await openConfirmModal({
@@ -13492,7 +13805,7 @@ async function markPickPackPicked(id) {
   toast(`${id} picked. Inventory deducted, moved to Shipping.`);
 }
 
-function savePickPackShippingForm(id) {
+async function savePickPackShippingForm(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
   const mode = p.shippingMode || 'pallet';
@@ -13511,10 +13824,24 @@ function savePickPackShippingForm(id) {
   }
   p.notes = document.getElementById('pp_sh_notes_'+id).value;
   saveState();
+  if (pickPackBackendIsConnected() && p._backendId) {
+    try {
+      await saveBackendPickPackShippingDetails(p);
+      backendPickPackState.status = 'connected';
+      backendPickPackState.lastError = '';
+      toast('Shipping info saved to backend.');
+      return;
+    } catch (error) {
+      backendPickPackState.status = 'error';
+      backendPickPackState.lastError = 'Pick & Pack backend shipping save failed, so the local demo fallback remains visible.';
+      toast(error.message || backendPickPackState.lastError);
+      return;
+    }
+  }
   toast('Shipping info saved.');
 }
 async function markPickPackShipped(id) {
-  savePickPackShippingForm(id);
+  await savePickPackShippingForm(id);
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
   if (p.shippingMode === 'parcel' && !p.trackingNumber) {
@@ -13538,6 +13865,24 @@ async function markPickPackShipped(id) {
       tone: 'workflow'
     });
     if (!ok) return;
+  }
+  if (pickPackBackendIsConnected() && p._backendId) {
+    try {
+      await saveBackendPickPackShippingDetails(p);
+      await markBackendPickPackShipped(p);
+      backendPickPackState.status = 'connected';
+      backendPickPackState.lastError = '';
+      pickPackTab = 'shipped';
+      router('pick-pack');
+      toast(`${id} marked shipped in backend.`);
+      return;
+    } catch (error) {
+      backendPickPackState.status = 'error';
+      backendPickPackState.lastError = 'Pick & Pack backend shipping completion failed, so the local demo fallback remains visible.';
+      toast(error.message || backendPickPackState.lastError);
+      router('pick-pack');
+      return;
+    }
   }
   p.status = 'shipped';
   p.shippedAt = new Date().toISOString();

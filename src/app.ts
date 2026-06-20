@@ -11,6 +11,7 @@ import { registerFileRoutes } from "./files/routes";
 import { registerProcurementRoutes } from "./procurement/routes";
 import { registerProductionRoutes } from "./production/routes";
 import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
+import { registerPickPackRoutes } from "./pick-pack/routes";
 import { registerUserRoutes } from "./users/routes";
 import type { AuthContext } from "./auth/service";
 
@@ -53,6 +54,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
   registerInventoryRoutes(app);
   registerQualityRoutes(app);
   registerShippingRoutes(app);
+  registerPickPackRoutes(app);
   registerProcurementRoutes(app);
   registerProductionRoutes(app);
 

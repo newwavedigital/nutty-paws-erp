@@ -13,6 +13,7 @@ const migrationPaths = [
   "migrations/0006_phase_2b_sprint_7_production_schedule.sql",
   "migrations/0007_phase_2b_sprint_8_quality_assurance.sql",
   "migrations/0008_phase_2b_sprint_9_shipping_stocking.sql",
+  "migrations/0009_phase_2b_sprint_10_pick_pack.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -81,6 +82,9 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "inventory_reservations",
         "master_items",
         "move_entries",
+        "pick_pack_order_lines",
+        "pick_pack_orders",
+        "pick_pack_shipping_details",
         "procurement_order_lines",
         "procurement_orders",
         "procurement_receipt_lines",
@@ -369,6 +373,61 @@ describe("Phase 2A D1 baseline schema migration", () => {
 
       expect(shippingInsert.at(-1)?.results).toContainEqual(
         expect.objectContaining({ status: "shipping" }),
+      );
+
+      const pickPackOrderColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('pick_pack_orders');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(pickPackOrderColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "pick_pack_number", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "picked_at" }),
+          expect.objectContaining({ name: "shipped_at" }),
+          expect.objectContaining({ name: "short_stock_json", notnull: 1 }),
+        ]),
+      );
+
+      const pickPackLineColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('pick_pack_order_lines');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(pickPackLineColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "inventory_item_id", notnull: 1 }),
+          expect.objectContaining({ name: "quantity", notnull: 1 }),
+          expect.objectContaining({ name: "picked_quantity", notnull: 1 }),
+          expect.objectContaining({ name: "short_quantity", notnull: 1 }),
+        ]),
+      );
+
+      const pickPackShippingColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('pick_pack_shipping_details');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(pickPackShippingColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "pick_pack_order_id", notnull: 1 }),
+          expect.objectContaining({ name: "shipping_mode", notnull: 1 }),
+          expect.objectContaining({ name: "dimensions_json", notnull: 1 }),
+        ]),
+      );
+
+      const pickPackIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('pick_pack_orders');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(pickPackIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_pick_pack_orders_status" }),
+          expect.objectContaining({ name: "idx_pick_pack_orders_customer_id" }),
+          expect.objectContaining({ name: "idx_pick_pack_orders_needed" }),
+        ]),
       );
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
