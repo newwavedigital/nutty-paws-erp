@@ -34,4 +34,14 @@ describe("Sprint A9 account menu and auth-on staging markers", () => {
       expect(html).not.toContain("Optional for Phase 2A review");
     }
   });
+
+  test("keeps Account Management linked customer display readable", () => {
+    for (const html of [rootHtml, publicHtml]) {
+      expect(html).toContain("function customerDisplayNameForUser");
+      expect(html).toContain("function linkedCustomerCellHtml");
+      expect(html).toContain("Customer Demo 1");
+      expect(html).toContain('<span style="color:var(--brown-light);font-size:12px">-</span>');
+      expect(html).toContain('<span style="color:var(--danger);font-size:12px">Not linked</span>');
+    }
+  });
 });

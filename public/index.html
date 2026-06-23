@@ -9541,6 +9541,21 @@ function upsertLocalUserFromBackend(user) {
   else state.users.push(mapped);
 }
 
+function customerDisplayNameForUser(user) {
+  if (user.role !== 'Customer') return '-';
+  if (!user.customerId) return '';
+  const linked = getCustomer(user.customerId);
+  if (linked?.name) return linked.name;
+  if (user.customerId === 'customer_demo_1') return 'Customer Demo 1';
+  return user.customerId;
+}
+
+function linkedCustomerCellHtml(user) {
+  if (user.role !== 'Customer') return '<span style="color:var(--brown-light);font-size:12px">-</span>';
+  const label = customerDisplayNameForUser(user);
+  return label ? escapeHtml(label) : '<span style="color:var(--danger);font-size:12px">Not linked</span>';
+}
+
 function canManageBackendUsers() {
   return (backendAuthState.roles || []).includes('Admin');
 }
@@ -9595,9 +9610,7 @@ function renderUsers(el) {
                 <td><strong>${escapeHtml(u.name)}</strong></td>
                 <td><a href="mailto:${escapeHtml(u.email||'')}" style="color:var(--orange)">${escapeHtml(u.email||'')}</a></td>
                 <td><span class="badge ${u.role==='Admin'?'badge-prod':u.role==='Customer'?'badge-shipping':'badge-supply'}">${escapeHtml(u.role||'')}</span></td>
-                <td>${u.role === 'Customer'
-                  ? (linked ? escapeHtml(linked.name) : '<span style="color:var(--danger);font-size:12px">Not linked</span>')
-                  : '<span style="color:var(--brown-light);font-size:12px">Ã¢â‚¬â€</span>'}</td>
+                <td>${linkedCustomerCellHtml(u)}</td>
                 <td>${fmtDate(u.addedAt)}</td>
                 <td class="row-actions">
                   ${u.role === 'Customer' && linked ? `<button class="btn btn-icon btn-sm" onclick="viewCustomerPortal('${u.customerId}')">View Portal</button>` : ''}
