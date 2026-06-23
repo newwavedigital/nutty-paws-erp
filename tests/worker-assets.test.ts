@@ -19,7 +19,34 @@ describe("Worker staging frontend assets", () => {
 
   test("keeps the deployed static prototype in sync with the source prototype", () => {
     expect(publicIndex).toBe(rootIndex);
-    expect(publicIndex).toContain("Purchase Orders");
+    for (const marker of [
+      "Production",
+      "Warehousing",
+      "Operations",
+      "Records",
+      "Support",
+      "Purchase Orders",
+      "Supply Chain",
+      "Production Schedule",
+      "Quality Assurance",
+      "Research & Development",
+      "Shipping",
+      "Inventory",
+      "Pick & Pack",
+      "Products",
+      "Suppliers",
+      "Customers",
+      "Procurement",
+      "Food Safety",
+      "Machinery",
+      "Content Library",
+      "Team Chat",
+      "Feedback",
+      "Account Management",
+    ]) {
+      expect(publicIndex).toContain(marker);
+    }
+    expect(publicIndex).not.toContain("Assignments");
     expect(publicIndex).toContain("Backend connected");
   });
 });

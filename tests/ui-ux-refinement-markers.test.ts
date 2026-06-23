@@ -33,16 +33,44 @@ describe("UI/UX refinement markers", () => {
     }
   });
 
-  test("groups sidebar navigation around operational workflow areas", () => {
-    for (const marker of [
-      "nav-section-label",
-      "Orders",
-      "Inventory",
+  test("groups sidebar navigation around the requested operational areas in order", () => {
+    const expectedOrder = [
       "Production",
+      "Purchase Orders",
+      "Supply Chain",
+      "Production Schedule",
+      "Quality Assurance",
+      "Research &amp; Development",
+      "Warehousing",
+      "Shipping",
+      "Inventory",
+      "Pick &amp; Pack",
+      "Operations",
+      "Products",
+      "Suppliers",
+      "Customers",
+      "Procurement",
       "Records",
-      "Admin / Support",
-    ]) {
-      expect(rootHtml).toContain(marker);
+      "Food Safety",
+      "Machinery",
+      "Content Library",
+      "Team Chat",
+      "Support",
+      "Feedback",
+      "Account Management",
+    ];
+
+    for (const html of [rootHtml, publicHtml]) {
+      const navStart = html.indexOf('<nav id="nav">');
+      const navEnd = html.indexOf('</nav>', navStart);
+      const navHtml = html.slice(navStart, navEnd);
+      let lastIndex = -1;
+      for (const marker of expectedOrder) {
+        const index = navHtml.indexOf(marker);
+        expect(index, marker).toBeGreaterThan(lastIndex);
+        lastIndex = index;
+      }
+      expect(navHtml).not.toContain("Assignments");
     }
   });
 
