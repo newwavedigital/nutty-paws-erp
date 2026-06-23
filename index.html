@@ -155,8 +155,77 @@
   }
   .hamburger:hover { background: var(--orange); color: var(--white); }
   .page-title { font-size: 20px; font-weight: 700; color: var(--brown); }
-  .topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .topbar-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   .topbar-right .date { font-size: 13px; color: var(--brown-light); }
+  .topbar-account-wrap { position: relative; }
+  .topbar-account {
+    border: 1px solid var(--grey-light);
+    background: var(--white);
+    color: var(--brown);
+    border-radius: 999px;
+    min-height: 38px;
+    padding: 4px 10px 4px 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    max-width: 260px;
+  }
+  .topbar-account:hover { border-color: var(--orange); }
+  .topbar-account-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    background: var(--brown);
+    color: var(--white);
+    font-weight: 700;
+    font-size: 12px;
+    flex: 0 0 auto;
+  }
+  .topbar-account-text {
+    min-width: 0;
+    display: grid;
+    line-height: 1.15;
+    text-align: left;
+  }
+  .topbar-account-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brown);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .topbar-account-role {
+    font-size: 11px;
+    color: var(--brown-light);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .topbar-account-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    width: min(280px, calc(100vw - 32px));
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+    padding: 12px;
+    z-index: 80;
+  }
+  .topbar-account-menu[hidden] { display: none; }
+  .topbar-account-profile {
+    border-bottom: 1px solid var(--grey-light);
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+  .topbar-account-profile strong { display: block; color: var(--brown); font-size: 14px; }
+  .topbar-account-profile span { display: block; color: var(--brown-light); font-size: 12px; margin-top: 3px; word-break: break-word; }
+  .topbar-account-actions { display: grid; gap: 6px; }
 
   .content { padding: 24px; }
 
@@ -1635,6 +1704,7 @@
     <div class="page-title" id="pageTitle">Dashboard</div>
     <div class="topbar-right">
       <span class="date" id="todayDate"></span>
+      <div class="topbar-account-wrap" id="topbarAccount"></div>
     </div>
   </header>
   <main class="content" id="content"></main>
@@ -2044,6 +2114,7 @@ function setBackendAuth(data) {
   };
   resetBackendDataStates();
   saveAuthState();
+  updateTopbarAccount();
 }
 
 function clearBackendAuth() {
@@ -2051,6 +2122,7 @@ function clearBackendAuth() {
   saveAuthState();
   backendUserState.status = 'local';
   resetBackendDataStates();
+  updateTopbarAccount();
 }
 
 function resetBackendDataStates() {
@@ -2072,6 +2144,78 @@ function resetBackendDataStates() {
 
 function authHeaders() {
   return backendAuthState.token ? { Authorization: `Bearer ${backendAuthState.token}` } : {};
+}
+
+function primaryBackendRole() {
+  return (backendAuthState.roles || [])[0] || backendAuthState.user?.roles?.[0] || '';
+}
+
+function accountInitials(name = '') {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return String(name || '?').slice(0, 2).toUpperCase();
+}
+
+function renderTopbarAccount() {
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const user = backendAuthState.user || {};
+  const name = signedIn ? (user.displayName || user.email || 'Signed in') : 'Sign in';
+  const role = signedIn ? (primaryBackendRole() || user.userType || 'Account') : 'Staging access';
+  const email = user.email || '';
+  const customerAccess = (backendAuthState.customerAccess || [])[0];
+
+  if (!signedIn) {
+    return `<button class="topbar-account" type="button" data-topbar-account="signed-out" onclick="openBackendLogin()" aria-label="Sign in">
+      <span class="topbar-account-avatar">IN</span>
+      <span class="topbar-account-text">
+        <span class="topbar-account-name">Sign in</span>
+        <span class="topbar-account-role">Staging access</span>
+      </span>
+    </button>`;
+  }
+
+  return `<button class="topbar-account" type="button" data-topbar-account="signed-in" onclick="toggleTopbarAccountMenu(event)" aria-expanded="false" aria-controls="topbarAccountMenu">
+      <span class="topbar-account-avatar">${escapeHtml(accountInitials(name))}</span>
+      <span class="topbar-account-text">
+        <span class="topbar-account-name">${escapeHtml(name)}</span>
+        <span class="topbar-account-role">${escapeHtml(role)}</span>
+      </span>
+    </button>
+    <div class="topbar-account-menu" id="topbarAccountMenu" data-topbar-account-menu hidden>
+      <div class="topbar-account-profile">
+        <strong>${escapeHtml(name)}</strong>
+        <span>${escapeHtml(email)}</span>
+        <span>${escapeHtml(role)}</span>
+        ${customerAccess ? `<span>Customer access: ${escapeHtml(customerAccess.customerId)}</span>` : ''}
+      </div>
+      <div class="topbar-account-actions">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="refreshBackendAuth()">Refresh profile</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="router('users')">Profile settings</button>
+        <button class="btn btn-sm" type="button" onclick="logoutBackendAuth()">Logout</button>
+      </div>
+    </div>`;
+}
+
+function updateTopbarAccount() {
+  const el = document.getElementById('topbarAccount');
+  if (el) el.innerHTML = renderTopbarAccount();
+}
+
+function toggleTopbarAccountMenu(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById('topbarAccountMenu');
+  const button = document.querySelector('[data-topbar-account="signed-in"]');
+  if (!menu) return;
+  const willOpen = menu.hasAttribute('hidden');
+  menu.toggleAttribute('hidden', !willOpen);
+  if (button) button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
+function closeTopbarAccountMenu() {
+  const menu = document.getElementById('topbarAccountMenu');
+  const button = document.querySelector('[data-topbar-account="signed-in"]');
+  if (menu) menu.setAttribute('hidden', '');
+  if (button) button.setAttribute('aria-expanded', 'false');
 }
 
 /* =========================================================================
@@ -2148,7 +2292,7 @@ function renderBackendStatusBanner(context = 'purchase-orders') {
       ? 'This screen is reading protected backend records when available.'
       : authWaiting
         ? 'Sign in from Account Management to connect this screen to protected backend data.'
-        : 'Showing local demo data. Changes may not be saved to the backend.'
+        : 'Offline preview is visible. Sign in to load and save protected backend records.'
   });
 }
 
@@ -2175,13 +2319,13 @@ function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' }
   const config = {
     connected: ['Backend connected', 'ok', 'var(--success)'],
     loading: ['Checking backend...', '', 'var(--orange)'],
-    auth: ['Auth required', '', 'var(--orange)'],
+    auth: ['Sign in required', '', 'var(--orange)'],
     error: ['Backend unavailable', 'bad', 'var(--danger)'],
-    local: ['Demo data active', '', 'var(--orange)']
-  }[state] || ['Demo data active', '', 'var(--orange)'];
+    local: ['Offline preview', '', 'var(--orange)']
+  }[state] || ['Offline preview', '', 'var(--orange)'];
   return `<div class="inv-check ${config[1]}" data-backend-status="${escapeAttr(kind)}" style="border-left-color:${config[2]}">
     <strong>${escapeHtml(config[0])}</strong>
-    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail || 'Showing local demo data. Changes may not be saved to the backend.')}</div>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail || 'Offline preview is visible until protected backend records load.')}</div>
   </div>`;
 }
 
@@ -2278,20 +2422,20 @@ function opsStatus(label, tone) {
 function renderBackendDataStatusBanner(kind, dataState) {
   const connected = dataState.status === 'connected';
   const loading = dataState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const details = {
     customers: connected
       ? 'Customer data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
     products: connected
       ? 'Product data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
     'master-items': connected
       ? 'Master List data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Local customer/product demo data remains visible while backend data is unavailable.'),
+      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
     inventory: connected
       ? 'Inventory, Receiving Log, Move Log, and stock signals are reading from protected backend records when available.'
-      : (dataState.lastError || 'Local inventory demo data remains visible while backend data is unavailable.')
+      : (dataState.lastError || 'Browser inventory preview data remains visible while backend data is unavailable.')
   };
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${kind}" style="border-left-color:${color}">
@@ -2303,10 +2447,10 @@ function renderBackendDataStatusBanner(kind, dataState) {
 function renderBackendProcurementBanner() {
   const connected = backendProcurementState.status === 'connected';
   const loading = backendProcurementState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const detail = connected
     ? 'Need To Order, supplier POs, and receipt updates are reading from protected backend records when available.'
-    : (backendProcurementState.lastError || 'Local procurement demo data remains visible while backend data is unavailable.');
+    : (backendProcurementState.lastError || 'Browser procurement preview data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="procurement" style="border-left-color:${color}">
     <strong>${title}</strong>
@@ -2317,10 +2461,10 @@ function renderBackendProcurementBanner() {
 function renderBackendProductionBanner() {
   const connected = backendProductionState.status === 'connected';
   const loading = backendProductionState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const detail = connected
     ? 'Production Schedule, Production Log, QA routing, and correction actions are reading from protected backend records when available.'
-    : (backendProductionState.lastError || 'Local production demo data remains visible while backend data is unavailable.');
+    : (backendProductionState.lastError || 'Browser production preview data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="production" style="border-left-color:${color}">
     <strong>${title}</strong>
@@ -2331,10 +2475,10 @@ function renderBackendProductionBanner() {
 function renderBackendQualityBanner() {
   const connected = backendQualityState.status === 'connected';
   const loading = backendQualityState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const detail = connected
     ? 'QA queue, COA release, skip actions, and post-shipment COA links are reading from protected backend records when available.'
-    : (backendQualityState.lastError || 'Local QA demo data remains visible while backend data is unavailable.');
+    : (backendQualityState.lastError || 'Browser QA preview data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="quality" style="border-left-color:${color}">
     <strong>${title}</strong>
@@ -2345,10 +2489,10 @@ function renderBackendQualityBanner() {
 function renderBackendShippingBanner() {
   const connected = backendShippingState.status === 'connected';
   const loading = backendShippingState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const detail = connected
     ? 'Shipping queue, shipment documents, shipped status, stocking status, and Shipping Log rows are reading from protected backend records when available.'
-    : (backendShippingState.lastError || 'Local shipping demo data remains visible while backend data is unavailable.');
+    : (backendShippingState.lastError || 'Browser shipping preview data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="shipping" style="border-left-color:${color}">
     <strong>${title}</strong>
@@ -2359,10 +2503,10 @@ function renderBackendShippingBanner() {
 function renderBackendPickPackBanner() {
   const connected = backendPickPackState.status === 'connected';
   const loading = backendPickPackState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Demo data active';
+  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
   const detail = connected
     ? 'Pick & Pack POs, picked status, shipping details, and shipped status are reading from protected backend records when available.'
-    : (backendPickPackState.lastError || 'Local Pick & Pack demo data remains visible while backend data is unavailable.');
+    : (backendPickPackState.lastError || 'Browser Pick & Pack preview data remains visible while backend data is unavailable.');
   const color = connected ? 'var(--success)' : 'var(--orange)';
   return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="pick-pack" style="border-left-color:${color}">
     <strong>${title}</strong>
@@ -4512,6 +4656,8 @@ function ensureFinishedGoodForProduct(product, brand) {
 
 function router(page) {
   currentPage = page || 'dashboard';
+  closeTopbarAccountMenu();
+  updateTopbarAccount();
   document.querySelectorAll('.sidebar nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.page === currentPage);
   });
@@ -4558,6 +4704,9 @@ document.querySelectorAll('.sidebar nav a').forEach(a => {
   a.addEventListener('click', () => router(a.dataset.page));
 });
 document.getElementById('brandHeader').addEventListener('click', () => router('dashboard'));
+document.addEventListener('click', (event) => {
+  if (!event.target.closest || !event.target.closest('#topbarAccount')) closeTopbarAccountMenu();
+});
 
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', {
   weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
@@ -9234,13 +9383,13 @@ function backendAuthPanelHtml() {
     ? (backendAuthState.customerAccess || [])[0]
     : null;
   const userLabel = signedIn
-    ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' ? ' + escapeHtml(roles) : ''}`
+    ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' - ' + escapeHtml(roles) : ''}`
     : 'Backend session inactive';
   const statusText = backendUserState.status === 'connected'
     ? 'Backend Account Management is connected.'
     : backendUserState.status === 'error'
-      ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so local demo users remain visible.')
-      : 'Create the first admin or log in to manage backend users. Local demo users remain visible for this preview.';
+      ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so browser-preview users remain visible.')
+      : 'Create the first admin or log in to manage backend users. Browser-preview users remain visible until the backend list loads.';
   return `
     <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
@@ -9269,8 +9418,8 @@ async function refreshBackendAuth() {
   } catch (err) {
     clearBackendAuth();
     backendUserState.status = 'error';
-    backendUserState.lastError = 'Backend auth session expired or unavailable; local demo users remain active.';
-    toast('Backend session unavailable. Local demo mode remains active.');
+    backendUserState.lastError = 'Backend auth session expired or unavailable; browser-preview users remain active.';
+    toast('Backend session unavailable. Browser-preview data remains visible.');
     if (currentPage === 'users') router('users');
   }
 }
@@ -9302,7 +9451,7 @@ function openBackendSetup() {
     })
     .catch(() => {
       const el = document.getElementById('auth_setup_status');
-      if (el) el.textContent = 'Setup status is unavailable right now; local demo mode remains safe.';
+      if (el) el.textContent = 'Setup status is unavailable right now; use an approved sample account or retry.';
     });
 }
 
@@ -9328,7 +9477,7 @@ async function submitBackendSetup() {
 
 function openBackendLogin() {
   openModal('Backend Login', `
-    <div class="help-text" style="margin-bottom:12px">Optional for Phase 2A review. When AUTH_REQUIRED=false, the prototype still works without login.</div>
+    <div class="help-text" style="margin-bottom:12px">Use an approved staging sample account. Signing in loads protected backend records and role-based access.</div>
     <form onsubmit="event.preventDefault();submitBackendLogin()">
       <div class="form-grid">
         <div class="form-row"><label>Email</label><input type="email" id="auth_login_email" required /></div>
@@ -9367,7 +9516,7 @@ async function logoutBackendAuth() {
   } catch (err) {}
   clearBackendAuth();
   router('users');
-  toast('Logged out. Local demo users remain available.');
+  toast('Logged out. Sign in again to load protected backend records.');
 }
 
 function backendUserToLocalUser(user) {
@@ -9412,7 +9561,7 @@ async function loadBackendUsers() {
     saveState();
   } catch (err) {
     backendUserState.status = 'error';
-    backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+    backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
   } finally {
     backendUserState.loadingUsers = false;
   }
@@ -9562,7 +9711,7 @@ async function saveUser(id, isNew) {
       return;
     } catch (err) {
       backendUserState.status = 'error';
-      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
       toast(backendUserState.lastError);
     }
   }
@@ -10043,7 +10192,7 @@ async function deleteUser(id) {
       return;
     } catch (err) {
       backendUserState.status = 'error';
-      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping local demo users active.';
+      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
       toast(backendUserState.lastError);
     }
   }

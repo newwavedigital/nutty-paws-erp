@@ -6,7 +6,7 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	ASSETS: Fetcher;
 	ENVIRONMENT: "staging";
-	AUTH_REQUIRED: "false";
+	AUTH_REQUIRED: "true";
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

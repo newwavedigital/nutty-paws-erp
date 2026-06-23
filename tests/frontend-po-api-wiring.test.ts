@@ -9,7 +9,7 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("async function apiRequest");
     expect(html).toContain("function renderBackendStatusBanner");
     expect(html).toContain("Backend connected");
-    expect(html).toContain("Demo data active");
+    expect(html).toContain("Offline preview");
   });
 
   test("uses the purchase-order API endpoints for list/create/read/update and workflow commands", () => {
@@ -42,7 +42,7 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("Customer backend session active; admin user list is hidden.");
     expect(html).toContain("data-auth-panel");
     expect(html).toContain("Create the first admin or log in to manage backend users");
-    expect(html).toContain("Backend Account Management is unavailable, so local demo users remain visible.");
+    expect(html).toContain("Backend Account Management is unavailable, so browser-preview users remain visible.");
   });
 
   test("includes Sprint 2 customer portal and PO file API wiring", () => {

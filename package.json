@@ -9,6 +9,7 @@
         "test:watch": "vitest",
         "typecheck": "tsc --noEmit",
         "check:deploy-config": "node scripts/validate-deploy-config.mjs wrangler.jsonc",
+        "sample:accounts": "node scripts/sample-accounts.mjs",
         "cf:types": "wrangler types",
         "verify": "node scripts/verify.mjs",
         "deploy": "wrangler deploy"

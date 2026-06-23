@@ -10,7 +10,7 @@
   },
   "vars": {
     "ENVIRONMENT": "staging",
-    "AUTH_REQUIRED": "false"
+    "AUTH_REQUIRED": "true"
   },
   "assets": {
     "directory": "./public",
