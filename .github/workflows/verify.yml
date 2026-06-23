@@ -1,0 +1,55 @@
+name: Verify
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/verify.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "wrangler.jsonc"
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "migrations/**"
+      - "index.html"
+      - "public/**"
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/verify.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "wrangler.jsonc"
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "migrations/**"
+      - "index.html"
+      - "public/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+      - run: npm run verify
