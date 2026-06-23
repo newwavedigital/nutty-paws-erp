@@ -11,6 +11,11 @@ const packageLockJson = JSON.parse(readFileSync(resolve(__dirname, "..", "packag
 };
 
 describe("UI/UX refinement markers", () => {
+  const htmlEntrypoints = [
+    ["root", rootHtml],
+    ["public", publicHtml],
+  ] as const;
+
   test("defines shared operational UI helpers for the single-file frontend", () => {
     for (const marker of [
       "function renderPageShellHeader",
@@ -76,5 +81,62 @@ describe("UI/UX refinement markers", () => {
     expect(packageJson.version).toBe("0.5.0-alpha.0");
     expect(packageLockJson.version).toBe("0.5.0-alpha.0");
     expect(packageLockJson.packages[""].version).toBe("0.5.0-alpha.0");
+  });
+
+  test("adds keyboard and role contracts to sidebar navigation", () => {
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      expect(html, entrypoint).toContain('role="button"');
+      expect(html, entrypoint).toContain('tabindex="0"');
+      expect(html, entrypoint).toContain("handleSidebarNavKeydown");
+      expect(html, entrypoint).toContain("activateSidebarNavLink");
+    }
+  });
+
+  test("defines visible focus styles for primary interactive controls", () => {
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      expect(html, entrypoint).toContain(":focus-visible");
+      for (const selector of [
+        ".sidebar nav a:focus-visible",
+        ".hamburger:focus-visible",
+        ".modal-close:focus-visible",
+        ".topbar-account:focus-visible",
+        ".tab:focus-visible",
+        ".btn:focus-visible",
+        "input:focus-visible",
+        "select:focus-visible",
+        "textarea:focus-visible",
+      ]) {
+        expect(html, `${entrypoint} missing ${selector}`).toContain(selector);
+      }
+    }
+  });
+
+  test("keeps hamburger expanded state synchronized for responsive sidebar states", () => {
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      expect(html, entrypoint).toContain('id="hamburger" aria-label="Toggle menu" aria-expanded="true"');
+      expect(html, entrypoint).toContain("function setHamburgerExpanded");
+      expect(html, entrypoint).toContain("function syncHamburgerExpandedState");
+      expect(html, entrypoint).toContain("visualViewport");
+      expect(html, entrypoint).toContain("setHamburgerExpanded(");
+    }
+  });
+
+  test("adds modal dialog semantics and focus-management helpers", () => {
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      expect(html, entrypoint).toContain('id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"');
+      for (const marker of [
+        "lastModalTrigger",
+        "function getModalFocusableElements",
+        "function focusFirstModalElement",
+        "function trapModalFocus",
+        "lastModalTrigger.focus",
+        "function captureModalFieldState",
+        "function restoreModalFieldState",
+        "fieldState: captureModalFieldState",
+        "restoreModalFieldState",
+      ]) {
+        expect(html, `${entrypoint} missing ${marker}`).toContain(marker);
+      }
+    }
   });
 });

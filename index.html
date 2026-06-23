@@ -154,6 +154,18 @@
     color: var(--brown);
   }
   .hamburger:hover { background: var(--orange); color: var(--white); }
+  .sidebar nav a:focus-visible,
+  .hamburger:focus-visible,
+  .modal-close:focus-visible,
+  .topbar-account:focus-visible,
+  .tab:focus-visible,
+  .btn:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 3px solid rgba(224,123,42,0.45);
+    outline-offset: 2px;
+  }
   .page-title { font-size: 20px; font-weight: 700; color: var(--brown); }
   .topbar-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   .topbar-right .date { font-size: 13px; color: var(--brown-light); }
@@ -1670,28 +1682,28 @@
   </div>
   <nav id="nav">
     <div class="nav-section-label">Orders</div>
-    <a data-page="purchase-orders"><span class="icon">&#9776;</span> Purchase Orders</a>
-    <a data-page="supply-chain"><span class="icon">&#9881;</span> Supply Chain</a>
+    <a data-page="purchase-orders" role="button" tabindex="0"><span class="icon">&#9776;</span> Purchase Orders</a>
+    <a data-page="supply-chain" role="button" tabindex="0"><span class="icon">&#9881;</span> Supply Chain</a>
     <div class="nav-section-label">Production</div>
-    <a data-page="production"><span class="icon">&#9632;</span> Production Schedule</a>
-    <a data-page="quality-assurance"><span class="icon">&#9745;</span> Quality Assurance</a>
-    <a data-page="shipping"><span class="icon">&#9654;</span> Shipping</a>
-    <a data-page="pick-pack"><span class="icon">&#10063;</span> Pick &amp; Pack</a>
+    <a data-page="production" role="button" tabindex="0"><span class="icon">&#9632;</span> Production Schedule</a>
+    <a data-page="quality-assurance" role="button" tabindex="0"><span class="icon">&#9745;</span> Quality Assurance</a>
+    <a data-page="shipping" role="button" tabindex="0"><span class="icon">&#9654;</span> Shipping</a>
+    <a data-page="pick-pack" role="button" tabindex="0"><span class="icon">&#10063;</span> Pick &amp; Pack</a>
     <div class="nav-section-label">Inventory</div>
-    <a data-page="inventory"><span class="icon">&#9646;</span> Inventory</a>
-    <a data-page="products"><span class="icon">&#9635;</span> Products</a>
-    <a data-page="procurement"><span class="icon">&#9733;</span> Procurement</a>
-    <a data-page="suppliers"><span class="icon">&#9650;</span> Suppliers</a>
+    <a data-page="inventory" role="button" tabindex="0"><span class="icon">&#9646;</span> Inventory</a>
+    <a data-page="products" role="button" tabindex="0"><span class="icon">&#9635;</span> Products</a>
+    <a data-page="procurement" role="button" tabindex="0"><span class="icon">&#9733;</span> Procurement</a>
+    <a data-page="suppliers" role="button" tabindex="0"><span class="icon">&#9650;</span> Suppliers</a>
     <div class="nav-section-label">Records</div>
-    <a data-page="customers"><span class="icon">&#9679;</span> Customers</a>
-    <a data-page="food-safety"><span class="icon">&#9873;</span> Food Safety</a>
-    <a data-page="rd"><span class="icon">&#9874;</span> Research &amp; Development</a>
-    <a data-page="machinery"><span class="icon">&#9881;</span> Machinery</a>
+    <a data-page="customers" role="button" tabindex="0"><span class="icon">&#9679;</span> Customers</a>
+    <a data-page="food-safety" role="button" tabindex="0"><span class="icon">&#9873;</span> Food Safety</a>
+    <a data-page="rd" role="button" tabindex="0"><span class="icon">&#9874;</span> Research &amp; Development</a>
+    <a data-page="machinery" role="button" tabindex="0"><span class="icon">&#9881;</span> Machinery</a>
     <div class="nav-section-label">Admin / Support</div>
-    <a data-page="content-library"><span class="icon">&#9698;</span> Content Library</a>
-    <a data-page="slack"><span class="icon">&#9993;</span> Team Chat</a>
-    <a data-page="feedback"><span class="icon">&#9755;</span> Feedback</a>
-    <a data-page="users"><span class="icon">&#9786;</span> Account Management</a>
+    <a data-page="content-library" role="button" tabindex="0"><span class="icon">&#9698;</span> Content Library</a>
+    <a data-page="slack" role="button" tabindex="0"><span class="icon">&#9993;</span> Team Chat</a>
+    <a data-page="feedback" role="button" tabindex="0"><span class="icon">&#9755;</span> Feedback</a>
+    <a data-page="users" role="button" tabindex="0"><span class="icon">&#9786;</span> Account Management</a>
   </nav>
   <div class="sidebar-footer">
     <span>Phase 2B Alpha</span>
@@ -1700,7 +1712,7 @@
 
 <div class="main" id="main">
   <header class="topbar">
-    <button class="hamburger" id="hamburger" aria-label="Toggle menu">&#9776;</button>
+    <button class="hamburger" id="hamburger" aria-label="Toggle menu" aria-expanded="true">&#9776;</button>
     <div class="page-title" id="pageTitle">Dashboard</div>
     <div class="topbar-right">
       <span class="date" id="todayDate"></span>
@@ -1710,8 +1722,8 @@
   <main class="content" id="content"></main>
 </div>
 
-<div class="modal-overlay" id="modal">
-  <div class="modal">
+<div class="modal-overlay" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal" tabindex="-1">
     <div class="modal-header">
       <h2 id="modalTitle">Modal</h2>
       <button class="modal-close" onclick="closeModal()">&times;</button>
@@ -1840,6 +1852,7 @@ let pendingCustomerPortalFile = null;
 const pendingShipmentDocumentFiles = new Map();
 let customerPortalDirty = false;
 let customerPortalSubmitting = false;
+let lastModalTrigger = null;
 
 function createWorkingStore(initialData = {}) {
   return {
@@ -4517,6 +4530,67 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+function getModalFocusableElements() {
+  const modal = document.getElementById('modal');
+  if (!modal?.classList.contains('open')) return [];
+  return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+    .filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+function captureModalFieldState(root) {
+  return Array.from(root.querySelectorAll('input, textarea, select')).map((el, index) => ({
+    index,
+    id: el.id || '',
+    name: el.getAttribute('name') || '',
+    value: el.value,
+    checked: Boolean(el.checked),
+    selectedIndex: typeof el.selectedIndex === 'number' ? el.selectedIndex : -1
+  }));
+}
+
+function restoreModalFieldState(root, fieldState = []) {
+  const fields = Array.from(root.querySelectorAll('input, textarea, select'));
+  fieldState.forEach(saved => {
+    const field = (saved.id && root.querySelector(`#${CSS.escape(saved.id)}`))
+      || (saved.name && root.querySelector(`[name="${CSS.escape(saved.name)}"]`))
+      || fields[saved.index];
+    if (!field) return;
+    if ('checked' in field) field.checked = saved.checked;
+    if ('value' in field) field.value = saved.value;
+    if (saved.selectedIndex >= 0 && 'selectedIndex' in field) field.selectedIndex = saved.selectedIndex;
+  });
+}
+
+function focusFirstModalElement() {
+  const focusable = getModalFocusableElements();
+  const target = focusable[0] || document.querySelector('.modal');
+  if (target?.focus) target.focus({ preventScroll: true });
+}
+
+function trapModalFocus(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeModal();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = getModalFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function openConfirmModal({
   title = 'Confirm action',
   record = '',
@@ -4528,12 +4602,17 @@ function openConfirmModal({
 } = {}) {
   if (confirmModalResolver) resolveConfirmModal(false);
   const overlay = document.getElementById('modal');
+  const activeElement = document.activeElement;
+  if (activeElement && !overlay.contains(activeElement)) {
+    lastModalTrigger = activeElement;
+  }
   const modal = document.querySelector('.modal');
   confirmModalPreviousState = {
     open: overlay.classList.contains('open'),
     modalClass: modal?.className || 'modal',
     title: document.getElementById('modalTitle').innerHTML,
-    body: document.getElementById('modalBody').innerHTML
+    body: document.getElementById('modalBody').innerHTML,
+    fieldState: captureModalFieldState(overlay)
   };
   if (modal) modal.className = 'modal confirm-modal';
   document.getElementById('modalTitle').textContent = title;
@@ -4548,6 +4627,7 @@ function openConfirmModal({
       </div>
     </div>`;
   overlay.classList.add('open');
+  setTimeout(focusFirstModalElement, 0);
   return new Promise(resolve => {
     confirmModalResolver = resolve;
   });
@@ -4562,10 +4642,13 @@ function resolveConfirmModal(result) {
     if (modal) modal.className = confirmModalPreviousState.modalClass;
     document.getElementById('modalTitle').innerHTML = confirmModalPreviousState.title;
     document.getElementById('modalBody').innerHTML = confirmModalPreviousState.body;
+    restoreModalFieldState(overlay, confirmModalPreviousState.fieldState);
     overlay.classList.add('open');
+    setTimeout(focusFirstModalElement, 0);
   } else {
     overlay.classList.remove('open');
     if (modal) modal.className = 'modal stitch-modal';
+    if (lastModalTrigger?.focus) lastModalTrigger.focus({ preventScroll: true });
   }
   confirmModalPreviousState = null;
   if (resolver) resolver(Boolean(result));
@@ -4893,7 +4976,32 @@ function router(page) {
   // mobile: auto-close sidebar after nav
   if (window.innerWidth <= 720) {
     document.getElementById('sidebar').classList.remove('open');
+    setHamburgerExpanded(false);
   }
+}
+
+function setHamburgerExpanded(expanded) {
+  const hamburger = document.getElementById('hamburger');
+  if (hamburger) hamburger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function syncHamburgerExpandedState() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const expanded = window.innerWidth <= 720
+    ? sidebar.classList.contains('open')
+    : !sidebar.classList.contains('collapsed');
+  setHamburgerExpanded(expanded);
+}
+
+function activateSidebarNavLink(link) {
+  if (link?.dataset?.page) router(link.dataset.page);
+}
+
+function handleSidebarNavKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  activateSidebarNavLink(event.currentTarget);
 }
 
 document.getElementById('hamburger').addEventListener('click', () => {
@@ -4904,14 +5012,19 @@ document.getElementById('hamburger').addEventListener('click', () => {
     sb.classList.toggle('collapsed');
     document.getElementById('main').classList.toggle('expanded');
   }
+  syncHamburgerExpandedState();
 });
 document.querySelectorAll('.sidebar nav a').forEach(a => {
-  a.addEventListener('click', () => router(a.dataset.page));
+  a.addEventListener('click', () => activateSidebarNavLink(a));
+  a.addEventListener('keydown', handleSidebarNavKeydown);
 });
 document.getElementById('brandHeader').addEventListener('click', () => router('dashboard'));
 document.addEventListener('click', (event) => {
   if (!event.target.closest || !event.target.closest('#topbarAccount')) closeTopbarAccountMenu();
 });
+window.addEventListener('resize', syncHamburgerExpandedState);
+window.visualViewport?.addEventListener('resize', syncHamburgerExpandedState);
+syncHamburgerExpandedState();
 
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', {
   weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
@@ -4921,11 +5034,16 @@ document.getElementById('todayDate').textContent = new Date().toLocaleDateString
    MODAL
    ========================================================================= */
 function openModal(title, html) {
+  const activeElement = document.activeElement;
+  if (activeElement && !document.getElementById('modal').contains(activeElement)) {
+    lastModalTrigger = activeElement;
+  }
   const modal = document.querySelector('.modal');
   if (modal) modal.className = 'modal stitch-modal';
   document.getElementById('modalTitle').innerHTML = title;
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('open');
+  setTimeout(focusFirstModalElement, 0);
 }
 function closeModal() {
   if (confirmModalResolver) {
@@ -4938,10 +5056,12 @@ function closeModal() {
   }
   customerPortalDirty = false;
   document.getElementById('modal').classList.remove('open');
+  if (lastModalTrigger?.focus) lastModalTrigger.focus({ preventScroll: true });
 }
 document.getElementById('modal').addEventListener('click', (e) => {
   if (e.target.id === 'modal') closeModal();
 });
+document.getElementById('modal').addEventListener('keydown', trapModalFocus);
 
 /* =========================================================================
    DASHBOARD
