@@ -16,6 +16,7 @@ const migrationPaths = [
   "migrations/0009_phase_2b_sprint_10_pick_pack.sql",
   "migrations/0010_phase_2b_sprint_11_research_workflow.sql",
   "migrations/0011_phase_2b_data_architecture_missing_modules.sql",
+  "migrations/0012_phase_2b_a10_file_metadata_scope.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -165,6 +166,43 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "idx_file_metadata_active_owner" }),
           expect.objectContaining({ name: "idx_file_metadata_status" }),
         ]),
+      );
+
+      const a10FileScopeInsert = d1Execute(persistDir, [
+        "--command",
+        `
+          INSERT INTO file_metadata (
+            id,
+            owner_type,
+            owner_id,
+            file_category,
+            storage_provider,
+            storage_key,
+            file_name,
+            content_type,
+            size_bytes,
+            status
+          )
+          VALUES (
+            'file-schema-a10-supplier',
+            'supplier',
+            'supplier-schema',
+            'supplier_document',
+            'r2',
+            'files/supplier/supplier-schema/supplier_document/schema.txt',
+            'schema.txt',
+            'text/plain',
+            1,
+            'active'
+          );
+          SELECT owner_type, file_category
+          FROM file_metadata
+          WHERE id = 'file-schema-a10-supplier';
+        `,
+      ]);
+
+      expect(a10FileScopeInsert.at(-1)?.results).toContainEqual(
+        expect.objectContaining({ owner_type: "supplier", file_category: "supplier_document" }),
       );
 
       const bomColumns = d1Execute(persistDir, [
