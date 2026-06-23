@@ -1763,6 +1763,43 @@ const SAMPLE_DATA = {
   productionRequests: []
 };
 
+function createEmptyAppState() {
+  return {
+    customers: [],
+    products: [],
+    boms: {},
+    purchaseOrders: [],
+    ingredients: [],
+    masterItems: [],
+    suppliers: [],
+    libraryFolders: [],
+    libraryFiles: [],
+    channels: [],
+    messages: [],
+    complaints: [],
+    lots: [],
+    sanitationLogs: [],
+    ccpLogs: [],
+    ncrs: [],
+    recalls: [],
+    procurementOrders: [],
+    users: [],
+    specSheets: [],
+    publicLinks: [],
+    feedback: [],
+    pickPackOrders: [],
+    maintenanceEvents: [],
+    equipmentIssues: [],
+    swabRecords: [],
+    productionRequests: [],
+    receivingLog: [],
+    moveLog: [],
+    shippingLog: [],
+    productionLog: [],
+    rdRequests: []
+  };
+}
+
 // Master List: units of measure + allergen options. Every inventory item's name is
 // drawn from the Master List, the single source of truth for item definitions.
 // Declared before loadState() runs because seeding the Master List references them.
@@ -1906,6 +1943,7 @@ function loadState() {
     if (raw) {
       const s = JSON.parse(raw);
       // migration: ensure new collections exist
+      const emptyState = createEmptyAppState();
       const defaults = ['libraryFolders','libraryFiles','channels','messages','complaints','lots','sanitationLogs','ccpLogs','ncrs','recalls','procurementOrders','users','specSheets','publicLinks','feedback','pickPackOrders','maintenanceEvents','equipmentIssues','swabRecords','productionRequests','receivingLog','moveLog','shippingLog','productionLog','rdRequests'];
       // ensure pick-and-pack customer records exist (auto-create if missing)
       s.customers = s.customers || [];
@@ -1925,14 +1963,12 @@ function loadState() {
           .filter(Boolean);
         const hasAnyPpFg = s.ingredients.some(i => i.category === 'Finished Good' && ppCustIds.includes(i.customerId));
         if (!hasAnyPpFg) {
-          (SAMPLE_DATA.ingredients || []).filter(i => ['i12','i13','i14','i15','i16','i17'].includes(i.id)).forEach(seed => {
-            if (!s.ingredients.some(x => x.id === seed.id)) s.ingredients.push(JSON.parse(JSON.stringify(seed)));
-          });
+          s._ppFgSeedSkippedForBackendAuthority = true;
         }
         s._ppFgSeeded = true;
       }
-      defaults.forEach(k => { if (!s[k]) s[k] = JSON.parse(JSON.stringify(SAMPLE_DATA[k] || [])); });
-      if (!s.boms) s.boms = JSON.parse(JSON.stringify(SAMPLE_DATA.boms || {}));
+      defaults.forEach(k => { if (!s[k]) s[k] = JSON.parse(JSON.stringify(emptyState[k] || [])); });
+      if (!s.boms) s.boms = JSON.parse(JSON.stringify(emptyState.boms || {}));
       // migration: ensure suppliers have files array + docs object + productLines
       (s.suppliers || []).forEach(sp => {
         if (!sp.files) sp.files = [];
@@ -1990,7 +2026,7 @@ function loadState() {
       return s;
     }
   } catch (e) {}
-  const fresh = JSON.parse(JSON.stringify(SAMPLE_DATA));
+  const fresh = createEmptyAppState();
   ensureMasterItems(fresh);
   ensureShippingLog(fresh);
   ensureProductionLog(fresh);
@@ -2275,6 +2311,180 @@ async function apiFormRequest(path, formData, options = {}) {
   backendApiState.lastError = '';
   return envelope.data;
 }
+
+const A10_DATA_RECORD_MODULES = {
+  suppliers: {
+    path: '/api/suppliers',
+    cacheKey: 'a10_suppliers',
+    stateKeys: ['suppliers'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
+    apply(records) { state.suppliers = records.map(this.toLocal); }
+  },
+  contentLibrary: {
+    path: '/api/content-library',
+    cacheKey: 'a10_content_library',
+    stateKeys: ['libraryFolders', 'libraryFiles'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
+    apply(records) {
+      const rows = records.map(this.toLocal);
+      state.libraryFolders = rows.filter(row => row.kind === 'folder');
+      state.libraryFiles = rows.filter(row => row.kind === 'file');
+    }
+  },
+  teamChat: {
+    path: '/api/team-chat',
+    cacheKey: 'a10_team_chat',
+    stateKeys: ['channels', 'messages'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '', text: record.payload?.text || record.title || '' }),
+    apply(records) {
+      const rows = records.map(this.toLocal);
+      state.channels = rows.filter(row => row.kind === 'channel');
+      state.messages = rows.filter(row => row.kind === 'message');
+    }
+  },
+  foodSafety: {
+    path: '/api/food-safety',
+    cacheKey: 'a10_food_safety',
+    stateKeys: ['complaints', 'sanitationLogs', 'swabRecords', 'ccpLogs', 'ncrs', 'recalls'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, title: record.payload?.title || record.title || '' }),
+    apply(records) {
+      const rows = records.map(this.toLocal);
+      state.complaints = rows.filter(row => row.kind === 'complaint');
+      state.sanitationLogs = rows.filter(row => row.kind === 'sanitation');
+      state.swabRecords = rows.filter(row => row.kind === 'swab');
+      state.ccpLogs = rows.filter(row => row.kind === 'ccp');
+      state.ncrs = rows.filter(row => row.kind === 'ncr');
+      state.recalls = rows.filter(row => row.kind === 'recall');
+    }
+  },
+  machinery: {
+    path: '/api/machinery',
+    cacheKey: 'a10_machinery',
+    stateKeys: ['maintenanceEvents', 'equipmentIssues'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, title: record.payload?.title || record.title || '' }),
+    apply(records) {
+      const rows = records.map(this.toLocal);
+      state.maintenanceEvents = rows.filter(row => row.kind === 'maintenance');
+      state.equipmentIssues = rows.filter(row => row.kind === 'issue');
+    }
+  },
+  feedback: {
+    path: '/api/feedback',
+    cacheKey: 'a10_feedback',
+    stateKeys: ['feedback'],
+    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, title: record.payload?.title || record.title || '' }),
+    apply(records) { state.feedback = records.map(this.toLocal); }
+  }
+};
+
+const a10DataRecordState = Object.fromEntries(Object.keys(A10_DATA_RECORD_MODULES).map(moduleName => [
+  moduleName,
+  { status: 'idle', loading: false, loaded: false, lastError: '' }
+]));
+
+function hydrateA10DataRecordCaches() {
+  Object.entries(A10_DATA_RECORD_MODULES).forEach(([moduleName, config]) => {
+    const cached = hydrateWorkingModuleFromCache(config.cacheKey);
+    if (cached) {
+      config.apply(cached.records || []);
+      a10DataRecordState[moduleName].status = 'stale';
+    }
+  });
+}
+
+async function refreshA10DataRecordModule(moduleName, options = {}) {
+  const config = A10_DATA_RECORD_MODULES[moduleName];
+  if (!config) return [];
+  const moduleState = a10DataRecordState[moduleName];
+  if (moduleState.loading) return workingStore.modules[config.cacheKey]?.records || [];
+  moduleState.loading = true;
+  moduleState.status = 'loading';
+  moduleState.lastError = '';
+  try {
+    const records = await refreshWorkingModuleFromBackend(
+      config.cacheKey,
+      () => apiRequest(config.path),
+      { force: options.force ?? true, ttlMs: DEFAULT_CACHE_TTLS.workflow }
+    );
+    config.apply(records.records || []);
+    moduleState.status = 'connected';
+    moduleState.loaded = true;
+    return records.records || [];
+  } catch (error) {
+    const cached = hydrateWorkingModuleFromCache(config.cacheKey);
+    if (cached) config.apply(cached.records || []);
+    moduleState.status = cached ? 'stale' : 'error';
+    moduleState.lastError = error?.message || 'Backend data is unavailable.';
+    return cached?.records || [];
+  } finally {
+    moduleState.loading = false;
+  }
+}
+
+function a10RecordKindForPayload(payload, fallback) {
+  return payload.kind || fallback || 'general';
+}
+
+function a10RecordTitle(payload, fallback = '') {
+  return payload.name || payload.title || payload.equipment || payload.description || payload.text || fallback || 'Untitled record';
+}
+
+async function saveA10DataRecord(moduleName, kind, payload, options = {}) {
+  const config = A10_DATA_RECORD_MODULES[moduleName];
+  if (!config) throw new Error(`Unknown data-record module: ${moduleName}`);
+  const existingId = Object.prototype.hasOwnProperty.call(options, 'recordId')
+    ? options.recordId
+    : (payload._backendId || null);
+  const body = {
+    kind: a10RecordKindForPayload(payload, kind),
+    title: a10RecordTitle(payload, kind),
+    payload: { ...payload, kind: a10RecordKindForPayload(payload, kind) },
+    fileIds: Array.isArray(payload.fileIds) ? payload.fileIds : []
+  };
+  delete body.payload._backendId;
+  const saved = existingId
+    ? await apiRequest(`${config.path}/${encodeURIComponent(existingId)}`, { method: 'PATCH', body: JSON.stringify(body) })
+    : await apiRequest(config.path, { method: 'POST', body: JSON.stringify(body) });
+  await refreshA10DataRecordModule(moduleName, { force: true });
+  return saved;
+}
+
+async function archiveA10DataRecord(moduleName, recordId) {
+  const config = A10_DATA_RECORD_MODULES[moduleName];
+  if (!config) throw new Error(`Unknown data-record module: ${moduleName}`);
+  await apiRequest(`${config.path}/${encodeURIComponent(recordId)}`, { method: 'DELETE' });
+  await refreshA10DataRecordModule(moduleName, { force: true });
+}
+
+async function uploadA10FileReference(ownerType, ownerId, fileCategory, file) {
+  const form = new FormData();
+  form.append('ownerType', ownerType);
+  form.append('ownerId', ownerId);
+  form.append('fileCategory', fileCategory);
+  form.append('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+function renderA10DataRecordBanner(moduleName) {
+  const moduleState = a10DataRecordState[moduleName] || {};
+  const stateKind = moduleState.status === 'connected'
+    ? 'connected'
+    : moduleState.status === 'loading'
+      ? 'loading'
+      : moduleState.status === 'stale'
+        ? 'local'
+        : 'auth';
+  const detail = moduleState.status === 'connected'
+    ? 'Backend connected. This screen is reading D1 records.'
+    : moduleState.status === 'stale'
+      ? 'Backend data is unavailable. Showing stale backend-confirmed cache only.'
+      : moduleState.status === 'loading'
+        ? 'Loading protected backend records.'
+        : 'Sign in as an employee/admin to load and save backend records.';
+  return renderDataStateBanner({ kind: moduleName, state: stateKind, detail });
+}
+
+hydrateA10DataRecordCaches();
 
 function markBackendUnavailable(error) {
   backendApiState.status = 'local';
@@ -2692,7 +2902,7 @@ function backendShippingLogToLocal(log, existing = {}) {
 function mergeBackendShippingLogs(logs) {
   const mapped = (logs || []).map(log => backendShippingLogToLocal(log, (state.shippingLog || []).find(local => local._backendId === log.id || local.id === log.id) || {}));
   backendShippingState.logs = mapped;
-  state.shippingLog = mergeByBackendId(state.shippingLog || [], logs || [], backendShippingLogToLocal);
+  state.shippingLog = mapBackendSnapshot(state.shippingLog || [], logs || [], backendShippingLogToLocal);
   try { saveState(); } catch (err) {}
   return mapped;
 }
@@ -3422,21 +3632,16 @@ function parseJsonFallback(value, fallback) {
   }
 }
 
-function mergeByBackendId(localRows, backendRows, mapper) {
-  const mapped = backendRows.map(row => mapper(row, localRows.find(local => local._backendId === row.id || local.id === row.id)));
-  const backendIds = new Set(mapped.map(row => row._backendId || row.id));
-  return [
-    ...mapped,
-    ...localRows.filter(row => !row._backendId || !backendIds.has(row._backendId))
-  ];
+function mapBackendSnapshot(localRows, backendRows, mapper) {
+  return (backendRows || []).map(row => mapper(row, (localRows || []).find(local => local._backendId === row.id || local.id === row.id)));
 }
 
 function mergeBackendCustomers(customers) {
-  state.customers = mergeByBackendId(state.customers || [], customers || [], backendCustomerToLocalCustomer);
+  state.customers = mapBackendSnapshot(state.customers || [], customers || [], backendCustomerToLocalCustomer);
 }
 
 function mergeBackendProducts(products) {
-  state.products = mergeByBackendId(state.products || [], products || [], backendProductToLocalProduct);
+  state.products = mapBackendSnapshot(state.products || [], products || [], backendProductToLocalProduct);
   state.boms = state.boms || {};
   (products || []).forEach(product => {
     if (Array.isArray(product.bomItems)) {
@@ -3450,23 +3655,23 @@ function mergeBackendProducts(products) {
 }
 
 function mergeBackendMasterItems(items) {
-  state.masterItems = mergeByBackendId(state.masterItems || [], items || [], backendMasterItemToLocalMasterItem);
+  state.masterItems = mapBackendSnapshot(state.masterItems || [], items || [], backendMasterItemToLocalMasterItem);
 }
 
 function mergeBackendInventoryItems(items) {
-  state.ingredients = mergeByBackendId(state.ingredients || [], items || [], backendInventoryItemToLocalIngredient);
+  state.ingredients = mapBackendSnapshot(state.ingredients || [], items || [], backendInventoryItemToLocalIngredient);
 }
 
 function mergeBackendReceivingEntries(entries) {
-  state.receivingLog = mergeByBackendId(state.receivingLog || [], entries || [], backendReceivingToLocal);
+  state.receivingLog = mapBackendSnapshot(state.receivingLog || [], entries || [], backendReceivingToLocal);
 }
 
 function mergeBackendMoveEntries(entries) {
-  state.moveLog = mergeByBackendId(state.moveLog || [], entries || [], backendMoveToLocal);
+  state.moveLog = mapBackendSnapshot(state.moveLog || [], entries || [], backendMoveToLocal);
 }
 
 function mergeBackendProcurementOrders(orders) {
-  state.procurementOrders = mergeByBackendId(state.procurementOrders || [], orders || [], backendProcurementOrderToLocal);
+  state.procurementOrders = mapBackendSnapshot(state.procurementOrders || [], orders || [], backendProcurementOrderToLocal);
 }
 
 function backendProductionRunToLocal(run, existing = {}) {
@@ -3532,7 +3737,7 @@ function mergeBackendProductionRuns(runs) {
 
 function mergeBackendProductionLogs(logs) {
   backendProductionState.logs = logs || [];
-  state.productionLog = mergeByBackendId(state.productionLog || [], logs || [], backendProductionLogToLocal);
+  state.productionLog = mapBackendSnapshot(state.productionLog || [], logs || [], backendProductionLogToLocal);
 }
 
 async function loadBackendProduction() {
@@ -8060,7 +8265,11 @@ function printBOL(id) { printDocuments(id); }
    SUPPLIERS
    ========================================================================= */
 function renderSuppliers(el) {
+  if (!a10DataRecordState.suppliers.loaded && !a10DataRecordState.suppliers.loading) {
+    refreshA10DataRecordModule('suppliers').then(() => { if (currentPage === 'suppliers') router('suppliers'); }).catch(() => {});
+  }
   el.innerHTML = `
+    ${renderA10DataRecordBanner('suppliers')}
     <div class="card">
       <div class="card-header">
         <h2>Suppliers</h2>
@@ -8080,7 +8289,8 @@ function renderSuppliers(el) {
             const docs = s.docs || {};
             const docPills = VENDOR_DOC_TYPES.filter(d => docs[d.key]).map(d => {
               const f = docs[d.key];
-              return `<a href="${f.dataUrl}" download="${escapeHtml(f.name)}" class="pill" style="cursor:pointer;text-decoration:none" title="${escapeHtml(d.label)}: ${escapeHtml(f.name)}">&#128206; ${escapeHtml(d.label.split(' ')[0])}</a>`;
+              const href = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f.dataUrl || '#');
+              return `<a href="${href}" download="${escapeHtml(f.name)}" class="pill" style="cursor:pointer;text-decoration:none" title="${escapeHtml(d.label)}: ${escapeHtml(f.name)}">&#128206; ${escapeHtml(d.label.split(' ')[0])}</a>`;
             }).join('');
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
@@ -8204,12 +8414,13 @@ function renderSupplierDocsList() {
   if (!cont) return;
   cont.innerHTML = VENDOR_DOC_TYPES.map(d => {
     const f = supplierEditingDocs[d.key];
+    const href = f?.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f?.dataUrl || '#');
     return `
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--grey-light);border-radius:6px;margin-bottom:6px;background:var(--white)">
         <div>
           <div style="font-weight:600;color:var(--brown);font-size:13px">${escapeHtml(d.label)}</div>
           ${f
-            ? `<div style="margin-top:3px"><a href="${f.dataUrl}" download="${escapeHtml(f.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(f.name)}</a> <span style="color:var(--brown-light);font-size:11px">(${formatBytes(f.size)})</span></div>`
+            ? `<div style="margin-top:3px"><a href="${href}" download="${escapeHtml(f.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(f.name)}</a> <span style="color:var(--brown-light);font-size:11px">(${formatBytes(f.size)})</span></div>`
             : `<div style="font-size:12px;color:var(--brown-light);margin-top:3px">Not uploaded</div>`
           }
         </div>
@@ -8226,23 +8437,22 @@ function supplierDocPicked(e, docKey) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast(`File too large (max 5 MB).`); e.target.value = ''; return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    supplierEditingDocs[docKey] = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
-    e.target.value = '';
-    renderSupplierDocsList();
-  };
-  reader.readAsDataURL(f);
+  supplierEditingDocs[docKey] = { name: f.name, type: f.type, size: f.size, file: f };
+  e.target.value = '';
+  renderSupplierDocsList();
 }
 function removeSupplierDoc(docKey) {
   supplierEditingDocs[docKey] = null;
   renderSupplierDocsList();
 }
 
-function saveSupplier(id, isNew) {
+async function saveSupplier(id, isNew) {
   const docs = {};
   VENDOR_DOC_TYPES.forEach(d => {
-    if (supplierEditingDocs[d.key]) docs[d.key] = supplierEditingDocs[d.key];
+    if (supplierEditingDocs[d.key]) {
+      const { file, ...docMeta } = supplierEditingDocs[d.key];
+      docs[d.key] = docMeta;
+    }
   });
   const existing = state.suppliers.find(s=>s.id===id);
   const productLines = supplierEditingProducts.filter(p => (p.product||'').trim());
@@ -8259,13 +8469,26 @@ function saveSupplier(id, isNew) {
     docs,
     files: existing?.files || []  // preserve any legacy generic files
   };
-  if (isNew) state.suppliers.push(data);
-  else Object.assign(existing, data);
-  try { saveState(); }
-  catch(err) { toast('Storage full Ã¢â‚¬â€ try removing a document or using smaller files.'); return; }
-  closeModal();
-  router('suppliers');
-  toast('Supplier saved.');
+  try {
+    let saved = await saveA10DataRecord('suppliers', 'supplier', data, { recordId: isNew ? null : (existing?._backendId || id) });
+    const uploadedDocs = { ...docs };
+    let uploadedAny = false;
+    for (const d of VENDOR_DOC_TYPES) {
+      const pending = supplierEditingDocs[d.key];
+      if (!pending?.file) continue;
+      const uploaded = await uploadA10FileReference('supplier', saved.id, 'supplier_document', pending.file);
+      uploadedDocs[d.key] = { name: pending.name, type: pending.type, size: pending.size, fileId: uploaded.id };
+      uploadedAny = true;
+    }
+    if (uploadedAny) {
+      saved = await saveA10DataRecord('suppliers', 'supplier', { ...data, docs: uploadedDocs, fileIds: Object.values(uploadedDocs).map(doc => doc.fileId).filter(Boolean) }, { recordId: saved.id });
+    }
+    closeModal();
+    router('suppliers');
+    toast('Supplier saved.');
+  } catch (err) {
+    toast(err.message || 'Supplier could not be saved to the backend.');
+  }
 }
 async function deleteSupplier(id) {
   const supplier = getSupplier(id);
@@ -8278,10 +8501,13 @@ async function deleteSupplier(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.suppliers = state.suppliers.filter(s => s.id !== id);
-  saveState();
-  router('suppliers');
-  toast('Supplier deleted.');
+  try {
+    await archiveA10DataRecord('suppliers', supplier?._backendId || id);
+    router('suppliers');
+    toast('Supplier deleted.');
+  } catch (err) {
+    toast(err.message || 'Supplier could not be deleted from the backend.');
+  }
 }
 
 /* =========================================================================
@@ -11476,12 +11702,16 @@ function libDescendantFolderIds(folderId) {
   return out;
 }
 function renderContentLibrary(el) {
+  if (!a10DataRecordState.contentLibrary.loaded && !a10DataRecordState.contentLibrary.loading) {
+    refreshA10DataRecordModule('contentLibrary').then(() => { if (currentPage === 'content-library') router('content-library'); }).catch(() => {});
+  }
   const folder = currentFolder ? state.libraryFolders.find(f => f.id === currentFolder) : null;
   // show subfolders of currentFolder (or top-level if root)
   const folders = state.libraryFolders.filter(f => (f.parentId || null) === currentFolder);
   const files = state.libraryFiles.filter(f => (f.folderId || null) === currentFolder);
   const trail = libBreadcrumb(currentFolder);
   el.innerHTML = `
+    ${renderA10DataRecordBanner('contentLibrary')}
     <div class="card">
       <div class="card-header">
         <h2>${currentFolder ? escapeHtml(folder?.name || 'Folder') : 'Content Library'}</h2>
@@ -11533,16 +11763,17 @@ function renderContentLibrary(el) {
             }).join('')}
             ${files.map(f => {
               const ext = (f.name.split('.').pop()||'').toLowerCase();
+              const downloadHref = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f.dataUrl || '#');
               return `<tr class="lib-row" data-file-id="${f.id}"
                   draggable="true"
                   ondragstart="libDragStart(event,'file','${f.id}')">
                 <td style="text-align:center;font-size:18px;color:var(--orange)">${fileIcon(f.type, f.name)}</td>
-                <td><a href="${f.dataUrl}" download="${escapeHtml(f.name)}" style="color:var(--brown);font-weight:600;text-decoration:none">${escapeHtml(f.name)}</a></td>
+                <td><a href="${downloadHref}" download="${escapeHtml(f.name)}" style="color:var(--brown);font-weight:600;text-decoration:none">${escapeHtml(f.name)}</a></td>
                 <td style="font-size:12px;color:var(--brown-light);text-transform:uppercase">${escapeHtml(ext||'file')}</td>
                 <td style="font-size:12px">${formatBytes(f.size)}</td>
                 <td style="font-size:12px">${fmtDate(f.uploadedAt)}</td>
                 <td class="row-actions">
-                  <a href="${f.dataUrl}" download="${escapeHtml(f.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a>
+                  <a href="${downloadHref}" download="${escapeHtml(f.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a>
                   <button class="btn btn-icon btn-sm" onclick="moveFile('${f.id}')">Move</button>
                   <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLibraryFile('${f.id}')">Delete</button>
                 </td>
@@ -11582,41 +11813,38 @@ function libDragOverRoot(e) {
   e.currentTarget.style.background = 'var(--beige)';
 }
 function libDragLeaveRoot(e) { e.currentTarget.style.background = ''; }
-function libDrop(e, targetFolderId) {
+async function libDrop(e, targetFolderId) {
   e.preventDefault();
   e.stopPropagation();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
   if (libDragPayload.kind === 'file') {
     const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) f.folderId = targetFolderId;
-    saveState();
+    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: targetFolderId }, { recordId: f._backendId || f.id });
     toast('File moved.');
   } else if (libDragPayload.kind === 'folder') {
     if (libDragPayload.id === targetFolderId) return;
     const desc = libDescendantFolderIds(libDragPayload.id);
     if (desc.has(targetFolderId)) { toast("Can't move a folder into itself."); return; }
     const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) f.parentId = targetFolderId;
-    saveState();
+    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: targetFolderId }, { recordId: f._backendId || f.id });
     toast('Folder moved.');
   }
   libDragPayload = null;
   router('content-library');
 }
-function libDropOnRoot(e) {
+async function libDropOnRoot(e) {
   e.preventDefault();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
   if (libDragPayload.kind === 'file') {
     const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) f.folderId = null;
+    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }, { recordId: f._backendId || f.id });
   } else if (libDragPayload.kind === 'folder') {
     const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) f.parentId = null;
+    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: null }, { recordId: f._backendId || f.id });
   }
   libDragPayload = null;
-  saveState();
   router('content-library');
   toast('Moved to root.');
 }
@@ -11641,22 +11869,28 @@ function openLibraryFolder(id) {
   currentFolder = id;
   router('content-library');
 }
-function newLibraryFolder() {
+async function newLibraryFolder() {
   const name = prompt('Folder name:');
   if (!name || !name.trim()) return;
-  state.libraryFolders.push({ id: uid('f'), name: name.trim(), parentId: currentFolder, createdAt: new Date().toISOString().slice(0,10) });
-  saveState();
-  router('content-library');
-  toast('Folder created.');
+  try {
+    await saveA10DataRecord('contentLibrary', 'folder', { id: uid('f'), kind: 'folder', name: name.trim(), parentId: currentFolder, createdAt: new Date().toISOString().slice(0,10) });
+    router('content-library');
+    toast('Folder created.');
+  } catch (err) {
+    toast(err.message || 'Folder could not be saved to the backend.');
+  }
 }
-function renameFolder(id) {
+async function renameFolder(id) {
   const f = state.libraryFolders.find(x => x.id === id);
   if (!f) return;
   const name = prompt('Rename folder:', f.name);
   if (!name || !name.trim()) return;
-  f.name = name.trim();
-  saveState();
-  router('content-library');
+  try {
+    await saveA10DataRecord('contentLibrary', 'folder', { ...f, name: name.trim() }, { recordId: f._backendId || id });
+    router('content-library');
+  } catch (err) {
+    toast(err.message || 'Folder could not be renamed.');
+  }
 }
 async function deleteFolder(id) {
   const desc = libDescendantFolderIds(id);
@@ -11675,13 +11909,19 @@ async function deleteFolder(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.libraryFolders = state.libraryFolders.filter(f => !desc.has(f.id));
-  state.libraryFiles = state.libraryFiles.filter(f => !desc.has(f.folderId));
-  saveState();
-  router('content-library');
-  toast('Folder deleted.');
+  try {
+    const records = [
+      ...state.libraryFiles.filter(f => desc.has(f.folderId)).map(f => f._backendId || f.id),
+      ...state.libraryFolders.filter(f => desc.has(f.id)).map(f => f._backendId || f.id)
+    ];
+    for (const recordId of records) await archiveA10DataRecord('contentLibrary', recordId);
+    router('content-library');
+    toast('Folder deleted.');
+  } catch (err) {
+    toast(err.message || 'Folder could not be deleted.');
+  }
 }
-function moveFolder(id) {
+async function moveFolder(id) {
   const desc = libDescendantFolderIds(id);
   const opts = [{label:'(Root)', val:''}, ...state.libraryFolders.filter(f => !desc.has(f.id)).map(f => {
     const trail = libBreadcrumb(f.id);
@@ -11692,44 +11932,43 @@ function moveFolder(id) {
   if (isNaN(idx) || !opts[idx]) return;
   const target = opts[idx].val || null;
   const f = state.libraryFolders.find(x => x.id === id);
-  if (f) f.parentId = target;
-  saveState();
-  router('content-library');
-  toast('Folder moved.');
+  if (!f) return;
+  try {
+    await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: target }, { recordId: f._backendId || id });
+    router('content-library');
+    toast('Folder moved.');
+  } catch (err) {
+    toast(err.message || 'Folder could not be moved.');
+  }
 }
-function libraryUpload(e) {
+async function libraryUpload(e) {
   const files = Array.from(e.target.files || []);
   if (files.length === 0) return;
-  let pending = files.length;
-  files.forEach(f => {
+  try {
+    for (const f of files) {
     if (f.size > 5 * 1024 * 1024) {
       toast(`Skipped "${f.name}" Ã¢â‚¬â€ over 5 MB.`);
-      pending--;
-      if (pending === 0) finish();
-      return;
+      continue;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      state.libraryFiles.push({
+      const recordPayload = {
         id: uid('lf'),
+        kind: 'file',
         folderId: currentFolder,
         name: f.name,
         type: f.type,
         size: f.size,
-        dataUrl: reader.result,
-        uploadedAt: new Date().toISOString().slice(0,10)
-      });
-      pending--;
-      if (pending === 0) finish();
-    };
-    reader.readAsDataURL(f);
-  });
-  function finish() {
-    try { saveState(); }
-    catch(err) { toast('Storage full Ã¢â‚¬â€ file not saved.'); return; }
+        uploadedAt: new Date().toISOString().slice(0,10),
+        fileIds: []
+      };
+      const saved = await saveA10DataRecord('contentLibrary', 'file', recordPayload);
+      const uploaded = await uploadA10FileReference('content_library', saved.id, 'content_library_file', f);
+      await saveA10DataRecord('contentLibrary', 'file', { ...recordPayload, fileId: uploaded.id, fileIds: [uploaded.id] }, { recordId: saved.id });
+    }
     e.target.value = '';
     router('content-library');
     toast('Files uploaded.');
+  } catch(err) {
+    toast(err.message || 'File could not be uploaded to R2.');
   }
 }
 async function deleteLibraryFile(id) {
@@ -11743,11 +11982,14 @@ async function deleteLibraryFile(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.libraryFiles = state.libraryFiles.filter(f => f.id !== id);
-  saveState();
-  router('content-library');
+  try {
+    await archiveA10DataRecord('contentLibrary', file?._backendId || id);
+    router('content-library');
+  } catch (err) {
+    toast(err.message || 'File could not be deleted from the backend.');
+  }
 }
-function moveFile(id) {
+async function moveFile(id) {
   const f = state.libraryFiles.find(x => x.id === id);
   if (!f) return;
   const opts = [{label:'(Root)', val:''}, ...state.libraryFolders.map(fo => {
@@ -11757,10 +11999,13 @@ function moveFile(id) {
   const choice = prompt('Move to which folder?\n' + opts.map((o,i)=>`${i}. ${o.label}`).join('\n'), '0');
   const idx = parseInt(choice, 10);
   if (isNaN(idx) || !opts[idx]) return;
-  f.folderId = opts[idx].val || null;
-  saveState();
-  router('content-library');
-  toast('File moved.');
+  try {
+    await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: opts[idx].val || null }, { recordId: f._backendId || id });
+    router('content-library');
+    toast('File moved.');
+  } catch (err) {
+    toast(err.message || 'File could not be moved.');
+  }
 }
 
 /* =========================================================================
@@ -11768,6 +12013,9 @@ function moveFile(id) {
    ========================================================================= */
 let activeChannel = null;
 function renderSlack(el) {
+  if (!a10DataRecordState.teamChat.loaded && !a10DataRecordState.teamChat.loading) {
+    refreshA10DataRecordModule('teamChat').then(() => { if (currentPage === 'team-chat') router('team-chat'); }).catch(() => {});
+  }
   if (!activeChannel || !state.channels.find(c => c.id === activeChannel)) {
     activeChannel = state.channels[0]?.id || null;
   }
@@ -11777,6 +12025,7 @@ function renderSlack(el) {
     .sort((a,b) => a.timestamp.localeCompare(b.timestamp));
 
   el.innerHTML = `
+    ${renderA10DataRecordBanner('teamChat')}
     <div class="chat-layout">
       <div class="channel-list">
         <div class="channel-list-header">
@@ -11807,7 +12056,7 @@ function renderSlack(el) {
                   <div class="chat-body">
                     <div class="chat-meta"><strong>${escapeHtml(m.author||'')}</strong> ${formatChatTime(m.timestamp)}</div>
                     ${m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : ''}
-                    ${m.attachment ? `<a href="${m.attachment.dataUrl}" download="${escapeHtml(m.attachment.name)}" class="chat-attach">${attachIcon(m.attachment)} <span>${escapeHtml(m.attachment.name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(m.attachment.size)}</span></a>` : ''}
+                    ${m.attachment ? `<a href="${m.attachment.fileId ? '/api/files/'+encodeURIComponent(m.attachment.fileId)+'/download' : (m.attachment.dataUrl || '#')}" download="${escapeHtml(m.attachment.name)}" class="chat-attach">${attachIcon(m.attachment)} <span>${escapeHtml(m.attachment.name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(m.attachment.size)}</span></a>` : ''}
                   </div>
                 </div>
               `).join('')
@@ -11845,15 +12094,18 @@ function setChannel(id) {
   activeChannel = id;
   renderSlack(document.getElementById('content'));
 }
-function newChannel() {
+async function newChannel() {
   const name = prompt('Channel name (no spaces):');
   if (!name || !name.trim()) return;
   const desc = prompt('Channel description (optional):') || '';
   const id = uid('ch');
-  state.channels.push({ id, name: name.trim().toLowerCase().replace(/\s+/g,'-'), description: desc, createdAt: new Date().toISOString().slice(0,10) });
-  activeChannel = id;
-  saveState();
-  renderSlack(document.getElementById('content'));
+  try {
+    const saved = await saveA10DataRecord('teamChat', 'channel', { id, kind: 'channel', name: name.trim().toLowerCase().replace(/\s+/g,'-'), description: desc, createdAt: new Date().toISOString().slice(0,10) });
+    activeChannel = saved.id;
+    renderSlack(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Channel could not be saved to the backend.');
+  }
 }
 async function deleteChannel(id) {
   const channel = state.channels.find(c => c.id === id);
@@ -11866,23 +12118,29 @@ async function deleteChannel(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.channels = state.channels.filter(c => c.id !== id);
-  state.messages = state.messages.filter(m => m.channelId !== id);
-  if (activeChannel === id) activeChannel = state.channels[0]?.id || null;
-  saveState();
-  renderSlack(document.getElementById('content'));
+  try {
+    const messages = state.messages.filter(m => m.channelId === id).map(m => m._backendId || m.id);
+    for (const messageId of messages) await archiveA10DataRecord('teamChat', messageId);
+    await archiveA10DataRecord('teamChat', channel?._backendId || id);
+    if (activeChannel === id) activeChannel = state.channels[0]?.id || null;
+    renderSlack(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Channel could not be deleted from the backend.');
+  }
 }
-function renameChannel(id) {
+async function renameChannel(id) {
   const ch = state.channels.find(c => c.id === id);
   if (!ch) return;
   const name = prompt('Rename channel:', ch.name);
   if (!name || !name.trim()) return;
-  ch.name = name.trim().toLowerCase().replace(/\s+/g, '-');
   const desc = prompt('Channel description (optional):', ch.description || '');
-  if (desc !== null) ch.description = desc;
-  saveState();
-  renderSlack(document.getElementById('content'));
-  toast('Channel updated.');
+  try {
+    await saveA10DataRecord('teamChat', 'channel', { ...ch, name: name.trim().toLowerCase().replace(/\s+/g, '-'), description: desc !== null ? desc : ch.description }, { recordId: ch._backendId || id });
+    renderSlack(document.getElementById('content'));
+    toast('Channel updated.');
+  } catch (err) {
+    toast(err.message || 'Channel could not be updated.');
+  }
 }
 
 let pendingChatAttachment = null;
@@ -11893,16 +12151,12 @@ function chatFileSelected(e) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    pendingChatAttachment = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
-    const info = document.getElementById('chatAttachInfo');
-    if (info) {
-      info.style.display = 'flex';
-      info.innerHTML = `<span>&#128206; ${escapeHtml(f.name)} (${formatBytes(f.size)})</span><button onclick="clearChatAttachment()" style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:14px">&times;</button>`;
-    }
-  };
-  reader.readAsDataURL(f);
+  pendingChatAttachment = { name: f.name, type: f.type, size: f.size, file: f };
+  const info = document.getElementById('chatAttachInfo');
+  if (info) {
+    info.style.display = 'flex';
+    info.innerHTML = `<span>&#128206; ${escapeHtml(f.name)} (${formatBytes(f.size)})</span><button onclick="clearChatAttachment()" style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:14px">&times;</button>`;
+  }
 }
 function clearChatAttachment() {
   pendingChatAttachment = null;
@@ -11911,7 +12165,7 @@ function clearChatAttachment() {
   const info = document.getElementById('chatAttachInfo');
   if (info) { info.style.display = 'none'; info.innerHTML = ''; }
 }
-function sendMessage() {
+async function sendMessage() {
   const ta = document.getElementById('chatInput');
   const txt = ta.value.trim();
   if (!txt && !pendingChatAttachment) return;
@@ -11922,13 +12176,23 @@ function sendMessage() {
     text: txt,
     timestamp: new Date().toISOString()
   };
-  if (pendingChatAttachment) msg.attachment = pendingChatAttachment;
-  state.messages.push(msg);
-  ta.value = '';
-  pendingChatAttachment = null;
-  try { saveState(); }
-  catch(err) { toast('Storage full Ã¢â‚¬â€ message not saved.'); state.messages.pop(); return; }
-  renderSlack(document.getElementById('content'));
+  try {
+    let saved = await saveA10DataRecord('teamChat', 'message', { ...msg, kind: 'message' });
+    if (pendingChatAttachment?.file) {
+      const uploaded = await uploadA10FileReference('team_chat', saved.id, 'chat_attachment', pendingChatAttachment.file);
+      saved = await saveA10DataRecord('teamChat', 'message', {
+        ...msg,
+        kind: 'message',
+        attachment: { name: pendingChatAttachment.name, type: pendingChatAttachment.type, size: pendingChatAttachment.size, fileId: uploaded.id },
+        fileIds: [uploaded.id]
+      }, { recordId: saved.id });
+    }
+    ta.value = '';
+    pendingChatAttachment = null;
+    renderSlack(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Message could not be saved to the backend.');
+  }
 }
 function attachIcon(att) {
   if (att && att.type && att.type.startsWith('image/')) return '&#127912;';
@@ -11948,6 +12212,9 @@ let fsTab = 'complaints';
 function setFsTab(t) { fsTab = t; renderFoodSafety(document.getElementById('content')); }
 
 function renderFoodSafety(el) {
+  if (!a10DataRecordState.foodSafety.loaded && !a10DataRecordState.foodSafety.loading) {
+    refreshA10DataRecordModule('foodSafety').then(() => { if (currentPage === 'food-safety') router('food-safety'); }).catch(() => {});
+  }
   const tabs = [
     { id: 'complaints', label: 'Complaints & Feedback', count: state.complaints.length },
     { id: 'lots', label: 'Lot Tracking', count: state.lots.length },
@@ -11958,6 +12225,7 @@ function renderFoodSafety(el) {
     { id: 'recalls', label: 'Mock Recalls', count: state.recalls.length }
   ];
   el.innerHTML = `
+    ${renderA10DataRecordBanner('foodSafety')}
     <div class="card">
       <div class="tabs">
         ${tabs.map(t => `<button class="tab ${fsTab===t.id?'active':''}" onclick="setFsTab('${t.id}')">${escapeHtml(t.label)} <span class="tab-count">${t.count}</span></button>`).join('')}
@@ -12050,7 +12318,7 @@ function editSwab(id) {
     </form>
   `);
 }
-function saveSwab(id, isNew) {
+async function saveSwab(id, isNew) {
   const data = {
     id,
     date: document.getElementById('sw_date').value,
@@ -12065,20 +12333,26 @@ function saveSwab(id, isNew) {
     reswabResult: document.getElementById('sw_reswab').value,
     notes: document.getElementById('sw_notes').value
   };
-  state.swabRecords = state.swabRecords || [];
-  if (isNew) state.swabRecords.push(data);
-  else Object.assign(state.swabRecords.find(s=>s.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
-  toast('Swab record saved.');
+  const existing = (state.swabRecords || []).find(s=>s.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'swab', { ...data, kind: 'swab' }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+    toast('Swab record saved.');
+  } catch (err) {
+    toast(err.message || 'Swab record could not be saved.');
+  }
 }
 async function deleteSwab(id) {
   const ok = await openConfirmModal({ title: 'Delete swab record', record: id, message: 'Delete this swab record?', risk: 'This removes the local food-safety log row.', confirmLabel: 'Delete Record', tone: 'danger' });
   if (!ok) return;
-  state.swabRecords = state.swabRecords.filter(s=>s.id!==id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.swabRecords || []).find(s=>s.id===id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Swab record could not be deleted.');
+  }
 }
 
 /* ----- Complaints ----- */
@@ -12161,7 +12435,7 @@ function editComplaint(id) {
     </form>
   `);
 }
-function saveComplaint(id, isNew) {
+async function saveComplaint(id, isNew) {
   const data = {
     id,
     date: document.getElementById('cp_date').value,
@@ -12172,19 +12446,26 @@ function saveComplaint(id, isNew) {
     severity: document.getElementById('cp_severity').value,
     summary: document.getElementById('cp_summary').value
   };
-  if (isNew) state.complaints.push(data);
-  else Object.assign(state.complaints.find(c=>c.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
-  toast('Complaint saved.');
+  const existing = (state.complaints || []).find(c=>c.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'complaint', { ...data, kind: 'complaint', title: data.summary || data.type || 'Complaint' }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+    toast('Complaint saved.');
+  } catch (err) {
+    toast(err.message || 'Complaint could not be saved.');
+  }
 }
 async function deleteComplaint(id) {
   const ok = await openConfirmModal({ title: 'Delete complaint', record: id, message: 'Delete this complaint record?', risk: 'This removes the local complaint row.', confirmLabel: 'Delete Complaint', tone: 'danger' });
   if (!ok) return;
-  state.complaints = state.complaints.filter(c => c.id !== id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.complaints || []).find(c => c.id === id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Complaint could not be deleted.');
+  }
 }
 
 /* ----- Lot Tracking ----- */
@@ -12342,7 +12623,7 @@ function editSanitation(id) {
     </form>
   `);
 }
-function saveSanitation(id, isNew) {
+async function saveSanitation(id, isNew) {
   const data = {
     id,
     date: document.getElementById('sn_date').value,
@@ -12351,18 +12632,25 @@ function saveSanitation(id, isNew) {
     verifiedBy: document.getElementById('sn_ver').value,
     notes: document.getElementById('sn_notes').value
   };
-  if (isNew) state.sanitationLogs.push(data);
-  else Object.assign(state.sanitationLogs.find(s=>s.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
+  const existing = (state.sanitationLogs || []).find(s=>s.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'sanitation', { ...data, kind: 'sanitation', title: `${data.area || 'Sanitation'} ${data.date || ''}`.trim() }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Sanitation log could not be saved.');
+  }
 }
 async function deleteSanitation(id) {
   const ok = await openConfirmModal({ title: 'Delete sanitation log', record: id, message: 'Delete this sanitation log entry?', risk: 'This removes the local sanitation log row.', confirmLabel: 'Delete Log', tone: 'danger' });
   if (!ok) return;
-  state.sanitationLogs = state.sanitationLogs.filter(s => s.id !== id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.sanitationLogs || []).find(s => s.id === id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Sanitation log could not be deleted.');
+  }
 }
 
 /* ----- CCP / HACCP ----- */
@@ -12434,7 +12722,7 @@ function editCcp(id) {
     </form>
   `);
 }
-function saveCcp(id, isNew) {
+async function saveCcp(id, isNew) {
   const data = {
     id,
     date: document.getElementById('cc_date').value,
@@ -12444,18 +12732,25 @@ function saveCcp(id, isNew) {
     result: document.getElementById('cc_result').value,
     correctiveAction: document.getElementById('cc_corr').value
   };
-  if (isNew) state.ccpLogs.push(data);
-  else Object.assign(state.ccpLogs.find(c=>c.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
+  const existing = (state.ccpLogs || []).find(c=>c.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'ccp', { ...data, kind: 'ccp', title: `${data.step || 'CCP'} ${data.date || ''}`.trim() }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'CCP log could not be saved.');
+  }
 }
 async function deleteCcp(id) {
   const ok = await openConfirmModal({ title: 'Delete CCP log', record: id, message: 'Delete this CCP / HACCP log entry?', risk: 'This removes the local CCP log row.', confirmLabel: 'Delete Log', tone: 'danger' });
   if (!ok) return;
-  state.ccpLogs = state.ccpLogs.filter(c => c.id !== id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.ccpLogs || []).find(c => c.id === id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'CCP log could not be deleted.');
+  }
 }
 
 /* ----- Non-Conformance / CAPA ----- */
@@ -12523,7 +12818,7 @@ function editNcr(id) {
     </form>
   `);
 }
-function saveNcr(id, isNew) {
+async function saveNcr(id, isNew) {
   const data = {
     id,
     date: document.getElementById('nc_date').value,
@@ -12533,18 +12828,25 @@ function saveNcr(id, isNew) {
     owner: document.getElementById('nc_owner').value,
     status: document.getElementById('nc_status').value
   };
-  if (isNew) state.ncrs.push(data);
-  else Object.assign(state.ncrs.find(n=>n.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
+  const existing = (state.ncrs || []).find(n=>n.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'ncr', { ...data, kind: 'ncr', title: data.issue || 'Non-Conformance' }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'NCR could not be saved.');
+  }
 }
 async function deleteNcr(id) {
   const ok = await openConfirmModal({ title: 'Delete NCR', record: id, message: 'Delete this non-conformance / CAPA record?', risk: 'This removes the local NCR row.', confirmLabel: 'Delete NCR', tone: 'danger' });
   if (!ok) return;
-  state.ncrs = state.ncrs.filter(n => n.id !== id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.ncrs || []).find(n => n.id === id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'NCR could not be deleted.');
+  }
 }
 
 /* ----- Mock Recalls ----- */
@@ -12612,7 +12914,7 @@ function editRecall(id) {
     </form>
   `);
 }
-function saveRecall(id, isNew) {
+async function saveRecall(id, isNew) {
   const data = {
     id,
     date: document.getElementById('rc_date').value,
@@ -12622,18 +12924,25 @@ function saveRecall(id, isNew) {
     timeMinutes: parseInt(document.getElementById('rc_time').value, 10) || 0,
     result: document.getElementById('rc_result').value
   };
-  if (isNew) state.recalls.push(data);
-  else Object.assign(state.recalls.find(r=>r.id===id), data);
-  saveState();
-  closeModal();
-  renderFoodSafety(document.getElementById('content'));
+  const existing = (state.recalls || []).find(r=>r.id===id);
+  try {
+    await saveA10DataRecord('foodSafety', 'recall', { ...data, kind: 'recall', title: data.lot || 'Mock Recall' }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Mock recall could not be saved.');
+  }
 }
 async function deleteRecall(id) {
   const ok = await openConfirmModal({ title: 'Delete mock recall', record: id, message: 'Delete this mock recall record?', risk: 'This removes the local mock recall row.', confirmLabel: 'Delete Recall', tone: 'danger' });
   if (!ok) return;
-  state.recalls = state.recalls.filter(r => r.id !== id);
-  saveState();
-  renderFoodSafety(document.getElementById('content'));
+  const row = (state.recalls || []).find(r => r.id === id);
+  try {
+    await archiveA10DataRecord('foodSafety', row?._backendId || id);
+    renderFoodSafety(document.getElementById('content'));
+  } catch (err) {
+    toast(err.message || 'Mock recall could not be deleted.');
+  }
 }
 
 /* =========================================================================
@@ -12658,7 +12967,11 @@ function setMachineryTab(t) { machineryTab = t; renderMachinery(document.getElem
 let maintMonth = new Date(); maintMonth.setDate(1);
 
 function renderMachinery(el) {
+  if (!a10DataRecordState.machinery.loaded && !a10DataRecordState.machinery.loading) {
+    refreshA10DataRecordModule('machinery').then(() => { if (currentPage === 'machinery') router('machinery'); }).catch(() => {});
+  }
   el.innerHTML = `
+    ${renderA10DataRecordBanner('machinery')}
     <div class="card">
       <div class="tabs">
         <button class="tab ${machineryTab==='maintenance'?'active':''}" onclick="setMachineryTab('maintenance')">Maintenance Schedule <span class="tab-count">${(state.maintenanceEvents||[]).length}</span></button>
@@ -12819,7 +13132,7 @@ function editMaintenanceEvent(id, presetDate) {
     </form>
   `);
 }
-function saveMaintenance(id, isNew) {
+async function saveMaintenance(id, isNew) {
   const start = document.getElementById('mt_date').value;
   const end = document.getElementById('mt_enddate').value || start;
   if (end && start && end < start) { toast('End date must be on or after start date.'); return; }
@@ -12841,29 +13154,37 @@ function saveMaintenance(id, isNew) {
     completedDate: (state.maintenanceEvents||[]).find(x=>x.id===id)?.completedDate || ''
   };
   if (!data.equipment) { toast('Equipment required.'); return; }
-  state.maintenanceEvents = state.maintenanceEvents || [];
-  if (isNew) state.maintenanceEvents.push(data);
-  else Object.assign(state.maintenanceEvents.find(x=>x.id===id), data);
-  saveState();
-  closeModal();
-  router('machinery');
-  toast('Maintenance saved.');
+  const existing = (state.maintenanceEvents || []).find(x=>x.id===id);
+  try {
+    await saveA10DataRecord('machinery', 'maintenance', { ...data, kind: 'maintenance', title: `${data.equipment} ${data.type}`.trim() }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    router('machinery');
+    toast('Maintenance saved.');
+  } catch (err) {
+    toast(err.message || 'Maintenance could not be saved.');
+  }
 }
-function completeMaintenance(id) {
+async function completeMaintenance(id) {
   const e = (state.maintenanceEvents||[]).find(x=>x.id===id);
   if (!e) return;
-  e.status = 'Completed';
-  e.completedDate = new Date().toISOString().slice(0,10);
-  saveState();
-  router('machinery');
-  toast('Maintenance marked complete.');
+  try {
+    await saveA10DataRecord('machinery', 'maintenance', { ...e, kind: 'maintenance', status: 'Completed', completedDate: new Date().toISOString().slice(0,10) }, { recordId: e._backendId || id });
+    router('machinery');
+    toast('Maintenance marked complete.');
+  } catch (err) {
+    toast(err.message || 'Maintenance completion could not be saved.');
+  }
 }
 async function deleteMaintenance(id) {
   const ok = await openConfirmModal({ title: 'Delete maintenance event', record: id, message: 'Delete this maintenance event?', risk: 'This removes the local maintenance schedule row.', confirmLabel: 'Delete Event', tone: 'danger' });
   if (!ok) return;
-  state.maintenanceEvents = state.maintenanceEvents.filter(x=>x.id!==id);
-  saveState();
-  router('machinery');
+  const row = (state.maintenanceEvents || []).find(x=>x.id===id);
+  try {
+    await archiveA10DataRecord('machinery', row?._backendId || id);
+    router('machinery');
+  } catch (err) {
+    toast(err.message || 'Maintenance event could not be deleted.');
+  }
 }
 
 /* ----- Equipment Issues Log (SQF) ----- */
@@ -12960,7 +13281,7 @@ function editEquipmentIssue(id) {
     </form>
   `);
 }
-function saveEquipmentIssue(id, isNew) {
+async function saveEquipmentIssue(id, isNew) {
   const fsRisk = document.getElementById('eq_fsrisk').checked;
   const data = {
     id,
@@ -12982,20 +13303,26 @@ function saveEquipmentIssue(id, isNew) {
     verifiedBy: document.getElementById('eq_verifiedby').value
   };
   if (!data.equipment) { toast('Equipment required.'); return; }
-  state.equipmentIssues = state.equipmentIssues || [];
-  if (isNew) state.equipmentIssues.push(data);
-  else Object.assign(state.equipmentIssues.find(x=>x.id===id), data);
-  saveState();
-  closeModal();
-  router('machinery');
-  toast('Equipment issue saved.');
+  const existing = (state.equipmentIssues || []).find(x=>x.id===id);
+  try {
+    await saveA10DataRecord('machinery', 'issue', { ...data, kind: 'issue', title: `${data.equipment} ${data.description}`.trim() }, { recordId: isNew ? null : (existing?._backendId || id) });
+    closeModal();
+    router('machinery');
+    toast('Equipment issue saved.');
+  } catch (err) {
+    toast(err.message || 'Equipment issue could not be saved.');
+  }
 }
 async function deleteEquipmentIssue(id) {
   const ok = await openConfirmModal({ title: 'Delete equipment issue', record: id, message: 'Delete this equipment issue?', risk: 'This removes the local equipment issue row.', confirmLabel: 'Delete Issue', tone: 'danger' });
   if (!ok) return;
-  state.equipmentIssues = state.equipmentIssues.filter(x=>x.id!==id);
-  saveState();
-  router('machinery');
+  const row = (state.equipmentIssues || []).find(x=>x.id===id);
+  try {
+    await archiveA10DataRecord('machinery', row?._backendId || id);
+    router('machinery');
+  } catch (err) {
+    toast(err.message || 'Equipment issue could not be deleted.');
+  }
 }
 
 /* =========================================================================
@@ -14262,6 +14589,7 @@ async function archiveBackendResearchRequest(request) {
 
 const FEEDBACK_TYPES = ['Bug / Error', 'Feature Request', 'General Feedback', 'Question'];
 const FEEDBACK_STATUSES = ['Open', 'Reviewed', 'In Progress', 'Resolved', "Won't Do"];
+let pendingFeedbackFile = null;
 function feedbackStatusClass(s) {
   switch(s) {
     case 'Open': return 'badge-low';
@@ -14273,8 +14601,12 @@ function feedbackStatusClass(s) {
   }
 }
 function renderFeedback(el) {
+  if (!a10DataRecordState.feedback.loaded && !a10DataRecordState.feedback.loading) {
+    refreshA10DataRecordModule('feedback').then(() => { if (currentPage === 'feedback') router('feedback'); }).catch(() => {});
+  }
   const items = (state.feedback || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
   el.innerHTML = `
+    ${renderA10DataRecordBanner('feedback')}
     <div class="card">
       <div class="card-header">
         <h2>Submit Feedback</h2>
@@ -14336,7 +14668,7 @@ function renderFeedback(el) {
                   <td><span class="pill">${escapeHtml(f.type||'')}</span></td>
                   <td><strong>${escapeHtml(f.title||'')}</strong></td>
                   <td>${f.attachment
-                    ? `<a href="${f.attachment.dataUrl}" download="${escapeHtml(f.attachment.name)}" style="color:var(--orange);font-size:12px;text-decoration:none">&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}</a>`
+                    ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" style="color:var(--orange);font-size:12px;text-decoration:none">&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}</a>`
                     : '<span style="font-size:12px;color:var(--brown-light)">Ã¢â‚¬â€</span>'
                   }</td>
                   <td>
@@ -14360,18 +14692,15 @@ function feedbackFileSelected(e) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
-  const reader = new FileReader();
-  reader.onload = () => {
-    const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
-    document.getElementById('fb_file_data').value = JSON.stringify(data);
-    const info = document.getElementById('fb_file_info');
-    info.innerHTML = `&#128206; ${escapeHtml(f.name)} (${Math.round(f.size/1024)} KB)`;
-    info.classList.add('has');
-    document.getElementById('fb_file_clear').style.display = 'inline-flex';
-  };
-  reader.readAsDataURL(f);
+  pendingFeedbackFile = f;
+  document.getElementById('fb_file_data').value = JSON.stringify({ name: f.name, type: f.type, size: f.size });
+  const info = document.getElementById('fb_file_info');
+  info.innerHTML = `&#128206; ${escapeHtml(f.name)} (${Math.round(f.size/1024)} KB)`;
+  info.classList.add('has');
+  document.getElementById('fb_file_clear').style.display = 'inline-flex';
 }
 function clearFeedbackFile() {
+  pendingFeedbackFile = null;
   document.getElementById('fb_file_data').value = '';
   document.getElementById('fb_file_input').value = '';
   const info = document.getElementById('fb_file_info');
@@ -14384,7 +14713,7 @@ function resetFeedbackForm() {
   document.getElementById('fb_desc').value = '';
   clearFeedbackFile();
 }
-function submitFeedback() {
+async function submitFeedback() {
   let attachment = null;
   const fileDataStr = document.getElementById('fb_file_data').value;
   if (fileDataStr) { try { attachment = JSON.parse(fileDataStr); } catch(e){} }
@@ -14400,19 +14729,38 @@ function submitFeedback() {
     status: 'Open',
     submittedAt: new Date().toISOString()
   };
-  state.feedback = state.feedback || [];
-  state.feedback.push(data);
-  try { saveState(); }
-  catch(err) { state.feedback.pop(); toast('Storage full Ã¢â‚¬â€ try a smaller file.'); return; }
-  router('feedback');
-  toast('Thanks! Feedback submitted.');
+  try {
+    let saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), data);
+    if (pendingFeedbackFile) {
+      const uploaded = await uploadA10FileReference('feedback', saved.id, 'feedback_attachment', pendingFeedbackFile);
+      saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), {
+        ...data,
+        attachment: { name: pendingFeedbackFile.name, type: pendingFeedbackFile.type, size: pendingFeedbackFile.size, fileId: uploaded.id },
+        fileIds: [uploaded.id]
+      }, { recordId: saved.id });
+      pendingFeedbackFile = null;
+    }
+    router('feedback');
+    toast('Thanks! Feedback submitted.');
+  } catch (err) {
+    toast(err.message || 'Feedback could not be saved to the backend.');
+  }
 }
-function updateFeedbackStatus(id, status) {
+function feedbackKindForType(type) {
+  if (type === 'Bug / Error') return 'bug';
+  if (type === 'Feature Request') return 'feature';
+  return 'general';
+}
+async function updateFeedbackStatus(id, status) {
   const f = (state.feedback || []).find(x => x.id === id);
   if (!f) return;
-  f.status = status;
-  saveState();
-  toast('Status updated.');
+  try {
+    await saveA10DataRecord('feedback', feedbackKindForType(f.type), { ...f, status }, { recordId: f._backendId || id });
+    toast('Status updated.');
+  } catch (err) {
+    toast(err.message || 'Feedback status could not be saved.');
+    router('feedback');
+  }
 }
 async function deleteFeedback(id) {
   const ok = await openConfirmModal({
@@ -14424,9 +14772,13 @@ async function deleteFeedback(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.feedback = (state.feedback || []).filter(f => f.id !== id);
-  saveState();
-  router('feedback');
+  const feedback = (state.feedback || []).find(f => f.id === id);
+  try {
+    await archiveA10DataRecord('feedback', feedback?._backendId || id);
+    router('feedback');
+  } catch (err) {
+    toast(err.message || 'Feedback could not be deleted from the backend.');
+  }
 }
 function viewFeedback(id) {
   const f = (state.feedback || []).find(x => x.id === id);
@@ -14451,8 +14803,8 @@ function viewFeedback(id) {
       <div style="margin-top:14px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:6px">Attachment</div>
         ${f.attachment.type && f.attachment.type.startsWith('image/')
-          ? `<a href="${f.attachment.dataUrl}" target="_blank" style="display:inline-block"><img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" /></a><div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px"><a href="${f.attachment.dataUrl}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#11015; Download</a></div>`
-          : `<a href="${f.attachment.dataUrl}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</a>`
+          ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" target="_blank" style="display:inline-block">${f.attachment.dataUrl ? `<img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" />` : '&#128206; '+escapeHtml(f.attachment.name)}</a><div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px"><a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#11015; Download</a></div>`
+          : `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</a>`
         }
       </div>
     ` : ''}
