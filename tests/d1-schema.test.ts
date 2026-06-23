@@ -15,6 +15,7 @@ const migrationPaths = [
   "migrations/0008_phase_2b_sprint_9_shipping_stocking.sql",
   "migrations/0009_phase_2b_sprint_10_pick_pack.sql",
   "migrations/0010_phase_2b_sprint_11_research_workflow.sql",
+  "migrations/0011_phase_2b_data_architecture_missing_modules.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 
@@ -74,13 +75,17 @@ describe("Phase 2A D1 baseline schema migration", () => {
 
       expect(tableNames).toEqual([
         "audit_events",
+        "content_library_entries",
         "customer_user_access",
         "customers",
+        "feedback_items",
         "file_metadata",
+        "food_safety_records",
         "inventory_items",
         "inventory_lots",
         "inventory_movements",
         "inventory_reservations",
+        "machinery_records",
         "master_items",
         "move_entries",
         "pick_pack_order_lines",
@@ -108,6 +113,9 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "sessions",
         "shipping_details",
         "shipping_logs",
+        "supplier_product_lines",
+        "suppliers",
+        "team_chat_entries",
         "user_roles",
         "users",
       ]);
@@ -459,6 +467,57 @@ describe("Phase 2A D1 baseline schema migration", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "idx_rd_requests_customer_id" }),
           expect.objectContaining({ name: "idx_rd_requests_status" }),
+        ]),
+      );
+
+      const sprintA8Tables = [
+        "suppliers",
+        "content_library_entries",
+        "team_chat_entries",
+        "food_safety_records",
+        "machinery_records",
+        "feedback_items",
+      ];
+
+      for (const table of sprintA8Tables) {
+        const columns = d1Execute(persistDir, [
+          "--command",
+          `PRAGMA table_info('${table}');`,
+        ]).flatMap((result) => result.results ?? []);
+
+        expect(columns).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "module", notnull: 1 }),
+            expect.objectContaining({ name: "kind", notnull: 1 }),
+            expect.objectContaining({ name: "title", notnull: 1 }),
+            expect.objectContaining({ name: "status", notnull: 1 }),
+            expect.objectContaining({ name: "payload_json", notnull: 1 }),
+            expect.objectContaining({ name: "file_ids_json", notnull: 1 }),
+          ]),
+        );
+      }
+
+      const supplierLineColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('supplier_product_lines');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(supplierLineColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "supplier_id", notnull: 1 }),
+          expect.objectContaining({ name: "product_name", notnull: 1 }),
+        ]),
+      );
+
+      const feedbackIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('feedback_items');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(feedbackIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_feedback_items_kind_status" }),
+          expect.objectContaining({ name: "idx_feedback_items_status" }),
         ]),
       );
     } finally {

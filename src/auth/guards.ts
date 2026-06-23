@@ -1,10 +1,26 @@
-﻿import type { Context } from "hono";
+import type { Context } from "hono";
+import { ApiError } from "../api/errors";
 import { AuthError, type AuthContext, type AuthStore, type RoleName } from "./service";
 import { requireBearerAuth } from "./routes";
 import type { AppBindings } from "../app";
 
 export function isAuthRequired(c: Context<AppBindings>) {
   return String(c.env?.AUTH_REQUIRED ?? "false") === "true";
+}
+
+const demoAuthEnvironments = new Set(["staging", "demo", "review", "test"]);
+
+export function assertSafeAuthConfig(env: Partial<{ ENVIRONMENT: string; AUTH_REQUIRED: string }> | undefined) {
+  if (String(env?.AUTH_REQUIRED ?? "false") === "true") return;
+
+  const environment = normalizeEnvironment(env?.ENVIRONMENT);
+  if (demoAuthEnvironments.has(environment)) return;
+
+  throw new ApiError(
+    "INVALID_AUTH_CONFIG",
+    "AUTH_REQUIRED=false is restricted to staging, demo, review, or test environments",
+    500,
+  );
 }
 
 export async function getAuthContext(c: Context<AppBindings>, store: AuthStore) {
@@ -43,4 +59,8 @@ export function hasCustomerAccess(context: AuthContext, customerId: string) {
 export function requireCustomerAccess(context: AuthContext, customerId: string) {
   if (hasCustomerAccess(context, customerId)) return;
   throw new AuthError("FORBIDDEN", "Customer access is limited to linked records");
+}
+
+function normalizeEnvironment(value: string | undefined) {
+  return (value ?? "test").trim().toLowerCase();
 }

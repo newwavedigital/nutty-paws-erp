@@ -170,7 +170,11 @@ export class D1FileStore implements FileStore {
       return this.lookupCustomer("SELECT customer_id FROM products WHERE id = ?", ownerId);
     }
 
-    return this.lookupCustomer("SELECT customer_id FROM inventory_items WHERE id = ?", ownerId);
+    if (ownerType === "inventory_item") {
+      return this.lookupCustomer("SELECT customer_id FROM inventory_items WHERE id = ?", ownerId);
+    }
+
+    return null;
   }
 
   private async lookupCustomer(query: string, id: string) {

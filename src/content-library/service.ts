@@ -1,0 +1,2 @@
+export type { DataRecord as ContentLibraryRecord, DataRecordInput as ContentLibraryInput, DataRecordStore as ContentLibraryStore } from "../records/service";
+export { archiveDataRecord as archiveContentLibraryRecord, createDataRecord as createContentLibraryRecord, listDataRecords as listContentLibraryRecords, readDataRecord as readContentLibraryRecord, updateDataRecord as updateContentLibraryRecord } from "../records/service";

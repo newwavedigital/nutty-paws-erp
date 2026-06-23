@@ -1,6 +1,19 @@
 import { ApiError } from "../api/errors";
 
-export const FILE_OWNER_TYPES = ["purchase_order", "purchase_order_line", "rd_request", "customer", "product", "inventory_item"] as const;
+export const FILE_OWNER_TYPES = [
+  "purchase_order",
+  "purchase_order_line",
+  "rd_request",
+  "customer",
+  "product",
+  "inventory_item",
+  "supplier",
+  "content_library",
+  "team_chat",
+  "food_safety",
+  "machinery",
+  "feedback",
+] as const;
 export const FILE_CATEGORIES = [
   "po_file",
   "coa",
@@ -10,6 +23,12 @@ export const FILE_CATEGORIES = [
   "product_image",
   "nutrition_facts",
   "inventory_coa",
+  "supplier_document",
+  "content_library_file",
+  "chat_attachment",
+  "food_safety_document",
+  "machinery_document",
+  "feedback_attachment",
 ] as const;
 
 export type FileOwnerType = (typeof FILE_OWNER_TYPES)[number];

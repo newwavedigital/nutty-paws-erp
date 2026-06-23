@@ -102,7 +102,7 @@ describe("file service", () => {
     const store = createStore();
 
     await expect(createFileMetadata(store, {
-      ownerType: "supplier" as never,
+      ownerType: "unknown_owner" as never,
       ownerId: "supplier-1",
       fileCategory: "po_file",
       storageKey: "files/supplier/supplier-1/po_file/upload.pdf",

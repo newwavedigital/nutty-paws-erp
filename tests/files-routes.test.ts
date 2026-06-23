@@ -90,7 +90,7 @@ function createStore(records: FileMetadataRecord[] = []) {
 }
 
 function createRouteApp(store: FileStore, bucket: R2Bucket) {
-  const app = createApp((route) => registerFileRoutes(route, () => store), { AUTH_REQUIRED: "false" });
+  const app = createApp((route) => registerFileRoutes(route, () => store), { ENVIRONMENT: "staging", AUTH_REQUIRED: "false" });
   return (request: Request) => app.fetch(request, { FILES: bucket } as Env);
 }
 
@@ -114,6 +114,7 @@ describe("file routes", () => {
       ownerType: "purchase_order",
       ownerId: "po-1",
       fileCategory: "po_file",
+      uploadedByUserId: "user-1",
       fileName: "upload.pdf",
       contentType: "application/pdf",
       sizeBytes: 10,

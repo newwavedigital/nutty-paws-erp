@@ -14,6 +14,13 @@ import { registerProductionRoutes } from "./production/routes";
 import { registerPurchaseOrderRoutes } from "./purchase-orders/routes";
 import { registerPickPackRoutes } from "./pick-pack/routes";
 import { registerUserRoutes } from "./users/routes";
+import { registerSupplierRoutes } from "./suppliers/routes";
+import { registerContentLibraryRoutes } from "./content-library/routes";
+import { registerTeamChatRoutes } from "./team-chat/routes";
+import { registerFoodSafetyRoutes } from "./food-safety/routes";
+import { registerMachineryRoutes } from "./machinery/routes";
+import { registerFeedbackRoutes } from "./feedback/routes";
+import { assertSafeAuthConfig } from "./auth/guards";
 import type { AuthContext } from "./auth/service";
 
 export type AppBindings = { Bindings: Env; Variables: { requestId?: string; auth?: AuthContext } };
@@ -33,6 +40,8 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
       const mutableContext = c as unknown as { env?: AppTestEnv };
       mutableContext.env = { ...(mutableContext.env ?? {}), ...testEnv };
     }
+
+    assertSafeAuthConfig(c.env);
 
     await next();
   });
@@ -59,6 +68,12 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
   registerPickPackRoutes(app);
   registerProcurementRoutes(app);
   registerProductionRoutes(app);
+  registerSupplierRoutes(app);
+  registerContentLibraryRoutes(app);
+  registerTeamChatRoutes(app);
+  registerFoodSafetyRoutes(app);
+  registerMachineryRoutes(app);
+  registerFeedbackRoutes(app);
 
   app.notFound((c) => {
     return fail(c, new ApiError("NOT_FOUND", "Route not found", 404));
