@@ -40,7 +40,7 @@ function createAuthStore() {
     async updateUser(userId, input) {
       const existing = users.get(userId);
       if (!existing) return null;
-      const updated = { ...existing, ...input };
+      const updated = { ...existing, ...Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) };
       users.set(userId, updated);
       return updated;
     },
@@ -140,7 +140,7 @@ describe("user admin routes", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 
-  it("updates roles/customer link and deactivates users instead of deleting them", async () => {
+  it("updates roles/customer link, hides deactivated users, and releases their email", async () => {
     const data = createAuthStore();
     await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin" });
     await seedUser(data, { id: "sales-1", email: "sales@example.com", role: "Sales" });
@@ -161,6 +161,19 @@ describe("user admin routes", () => {
     });
     expect(deactivate.status).toBe(200);
     expect(data.users.get("sales-1")?.isActive).toBe(false);
+    expect(data.users.get("sales-1")?.email).toBe("deactivated+sales-1@nuthouse.local");
+
+    const list = await app.request("/api/users", { headers: { authorization: `Bearer ${token}` } });
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({ ok: true, data: [{ email: "admin@example.com" }] });
+
+    const recreate = await app.request("/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: "sales@example.com", displayName: "Replacement Sales", password: "secret123", roles: ["Sales"] }),
+    });
+    expect(recreate.status).toBe(200);
+    await expect(recreate.json()).resolves.toMatchObject({ data: { email: "sales@example.com", isActive: true } });
   });
 });
 

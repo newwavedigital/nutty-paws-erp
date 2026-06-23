@@ -20,7 +20,7 @@ export type UserAdminStore = AuthStore & {
   listUsers(): Promise<AuthUserRecord[]>;
   updateUser(
     userId: string,
-    input: Partial<Pick<AuthUserRecord, "displayName" | "userType" | "passwordHash" | "isActive">>,
+    input: Partial<Pick<AuthUserRecord, "email" | "displayName" | "userType" | "passwordHash" | "isActive">>,
   ): Promise<AuthUserRecord | null>;
 };
 
@@ -82,7 +82,13 @@ export function registerUserRoutes(app: Hono<AppBindings>, createStore: StoreFac
     const store = createStore(c.env?.DB);
     const auth = await requireAuth(c, store);
     requireAnyRole(auth, ["Admin"]);
-    const updated = await store.updateUser(c.req.param("userId"), { isActive: false });
+    const userId = c.req.param("userId");
+    const existing = await store.getUserById(userId);
+    if (!existing) throw new ApiError("USER_NOT_FOUND", "User not found", 404);
+    const updated = await store.updateUser(userId, {
+      email: deactivatedEmailFor(userId),
+      isActive: false,
+    });
     if (!updated) throw new ApiError("USER_NOT_FOUND", "User not found", 404);
     return ok(c, { deactivated: true, user: serializeUser(updated, await rolesFor(store, updated.id), await store.listCustomerAccess(updated.id)) });
   });
@@ -90,7 +96,15 @@ export function registerUserRoutes(app: Hono<AppBindings>, createStore: StoreFac
 
 async function serializeUsers(store: UserAdminStore) {
   const users = await store.listUsers();
-  return Promise.all(users.map(async (user) => serializeUser(user, await rolesFor(store, user.id), await store.listCustomerAccess(user.id))));
+  return Promise.all(
+    users
+      .filter((user) => user.isActive)
+      .map(async (user) => serializeUser(user, await rolesFor(store, user.id), await store.listCustomerAccess(user.id))),
+  );
+}
+
+function deactivatedEmailFor(userId: string) {
+  return `deactivated+${userId.replace(/[^a-zA-Z0-9_-]/g, "_")}@nuthouse.local`;
 }
 
 async function rolesFor(store: UserAdminStore, userId: string) {

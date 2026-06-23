@@ -64,7 +64,7 @@ export class D1AuthStore implements AuthStore {
 
   async updateUser(
     userId: string,
-    input: Partial<Pick<AuthUserRecord, "displayName" | "userType" | "passwordHash" | "isActive">>,
+    input: Partial<Pick<AuthUserRecord, "email" | "displayName" | "userType" | "passwordHash" | "isActive">>,
   ): Promise<AuthUserRecord | null> {
     const existing = await this.getUserById(userId);
     if (!existing) return null;
@@ -75,10 +75,10 @@ export class D1AuthStore implements AuthStore {
     await this.db
       .prepare(
         `UPDATE users
-         SET display_name = ?, user_type = ?, password_hash = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+         SET email = ?, display_name = ?, user_type = ?, password_hash = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       )
-      .bind(updated.displayName, updated.userType, updated.passwordHash, updated.isActive ? 1 : 0, userId)
+      .bind(updated.email, updated.displayName, updated.userType, updated.passwordHash, updated.isActive ? 1 : 0, userId)
       .run();
     return updated;
   }

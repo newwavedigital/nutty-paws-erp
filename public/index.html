@@ -9880,6 +9880,10 @@ function backendUserToLocalUser(user) {
 }
 
 function upsertLocalUserFromBackend(user) {
+  if (user.isActive === false) {
+    state.users = (state.users || []).filter(u => u._backendUserId !== user.id && u.id !== user.id);
+    return;
+  }
   const mapped = backendUserToLocalUser(user);
   state.users = state.users || [];
   const existing = state.users.find(u => u._backendUserId === user.id || u.id === user.id || (u.email && u.email.toLowerCase() === (user.email || '').toLowerCase()));
@@ -9948,8 +9952,8 @@ function renderUsers(el) {
           <th>Name</th><th>Email</th><th>Role</th><th>Linked Customer</th><th>Added</th><th></th>
         </tr></thead>
         <tbody>
-          ${(state.users||[]).length === 0 ? `<tr><td colspan="6" class="empty">No users yet.</td></tr>` :
-            state.users.map(u => {
+          ${((state.users||[]).filter(u => u.isActive !== false)).length === 0 ? `<tr><td colspan="6" class="empty">No users yet.</td></tr>` :
+            (state.users||[]).filter(u => u.isActive !== false).map(u => {
               const linked = u.role === 'Customer' ? getCustomer(u.customerId) : null;
               return `
               <tr>
@@ -10544,7 +10548,7 @@ async function deleteUser(id) {
   if (backendAuthState.token && existing?._backendUserId) {
     try {
       await apiRequest(`/api/users/${encodeURIComponent(existing._backendUserId)}`, { method: 'DELETE' });
-      existing.isActive = false;
+      state.users = (state.users || []).filter(u => u.id !== id && u._backendUserId !== existing._backendUserId);
       saveState();
       router('users');
       toast('User deactivated in backend.');
