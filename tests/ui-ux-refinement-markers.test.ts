@@ -139,4 +139,22 @@ describe("UI/UX refinement markers", () => {
       }
     }
   });
+
+  test("does not ship mojibake punctuation artifacts in mirrored frontend files", () => {
+    const forbiddenArtifacts = [
+      "Ã",
+      "Â",
+      "â‚¬",
+      "â€",
+      "â€¦",
+      "â€”",
+      "�",
+    ];
+
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      for (const artifact of forbiddenArtifacts) {
+        expect(html, `${entrypoint} contains mojibake artifact ${artifact}`).not.toContain(artifact);
+      }
+    }
+  });
 });
