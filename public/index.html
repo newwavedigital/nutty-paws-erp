@@ -1701,6 +1701,7 @@
     <a data-page="machinery" role="button" tabindex="0"><span class="icon">&#9881;</span> Machinery</a>
     <a data-page="content-library" role="button" tabindex="0"><span class="icon">&#9698;</span> Content Library</a>
     <a data-page="slack" role="button" tabindex="0"><span class="icon">&#9993;</span> Team Chat</a>
+    <a data-page="assignments" role="button" tabindex="0"><span class="icon">&#9744;</span> Assignments</a>
     <div class="nav-section-label">Support</div>
     <a data-page="feedback" role="button" tabindex="0"><span class="icon">&#9755;</span> Feedback</a>
     <a data-page="users" role="button" tabindex="0"><span class="icon">&#9786;</span> Account Management</a>
@@ -4864,7 +4865,8 @@ const PAGE_TITLES = {
   'pick-pack': 'Pick & Pack',
   'quality-assurance': 'Quality Assurance',
   'machinery': 'Machinery',
-  'rd': 'Research & Development'
+  'rd': 'Research & Development',
+  'assignments': 'Assignments'
 };
 
 const SHAREPOINT_INVENTORY_URL = 'https://bnutty2.sharepoint.com/:x:/s/Bnutty/IQD6NhKAgj2HR6N9vJGV9POQARgkf7S9r8zLdjYh4WMkb6g?e=ZJ4swm';
@@ -4971,6 +4973,7 @@ function router(page) {
     case 'quality-assurance': renderQualityAssurance(c); break;
     case 'machinery': renderMachinery(c); break;
     case 'rd': renderRD(c); break;
+    case 'assignments': renderAssignments(c); break;
     default: c.innerHTML = '<p>Not found</p>';
   }
   // mobile: auto-close sidebar after nav
@@ -5218,6 +5221,17 @@ function renderDashboard(el) {
       </div>
     </div>
   `;
+}
+
+function renderAssignments(el) {
+  el.innerHTML = renderOpsPanel({
+    title: 'Assignments',
+    kicker: 'Records',
+    body: renderEmptyState(
+      'Assignments will be implemented in a future scope.',
+      'This placeholder keeps the requested navigation structure visible without adding the full task assignment workflow yet.'
+    )
+  });
 }
 
 /* =========================================================================

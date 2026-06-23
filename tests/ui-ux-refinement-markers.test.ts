@@ -55,6 +55,7 @@ describe("UI/UX refinement markers", () => {
       "Machinery",
       "Content Library",
       "Team Chat",
+      "Assignments",
       "Support",
       "Feedback",
       "Account Management",
@@ -70,7 +71,6 @@ describe("UI/UX refinement markers", () => {
         expect(index, marker).toBeGreaterThan(lastIndex);
         lastIndex = index;
       }
-      expect(navHtml).not.toContain("Assignments");
     }
   });
 

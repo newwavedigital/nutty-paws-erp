@@ -41,12 +41,13 @@ describe("Worker staging frontend assets", () => {
       "Machinery",
       "Content Library",
       "Team Chat",
+      "Assignments",
       "Feedback",
       "Account Management",
     ]) {
       expect(publicIndex).toContain(marker);
     }
-    expect(publicIndex).not.toContain("Assignments");
+    expect(publicIndex).toContain("Assignments will be implemented in a future scope.");
     expect(publicIndex).toContain("Backend connected");
   });
 });
