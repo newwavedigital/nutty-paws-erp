@@ -115,9 +115,9 @@ describe("UI/UX refinement markers", () => {
       expect(html).not.toContain("Reset Demo");
       expect(html).not.toContain("Reset Data");
     }
-    expect(packageJson.version).toBe("0.5.0-alpha.0");
-    expect(packageLockJson.version).toBe("0.5.0-alpha.0");
-    expect(packageLockJson.packages[""].version).toBe("0.5.0-alpha.0");
+    expect(packageJson.version).toBe("1.0.0");
+    expect(packageLockJson.version).toBe("1.0.0");
+    expect(packageLockJson.packages[""].version).toBe("1.0.0");
   });
 
   test("adds keyboard and role contracts to sidebar navigation", () => {

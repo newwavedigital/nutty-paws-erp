@@ -24,7 +24,14 @@ import { assertSafeAuthConfig } from "./auth/guards";
 import type { AuthContext } from "./auth/service";
 
 export type AppBindings = { Bindings: Env; Variables: { requestId?: string; auth?: AuthContext } };
-export type AppTestEnv = Partial<{ AUTH_REQUIRED: "true" | "false"; ENVIRONMENT: string }>;
+export type AppTestEnv = Partial<{ AUTH_REQUIRED: "true" | "false"; ENVIRONMENT: string; APP_VERSION: string }>;
+
+const defaultAppVersion = "0.0.0-test";
+
+function resolveAppVersion(env?: AppTestEnv) {
+  const version = env?.APP_VERSION?.trim();
+  return version && version.length > 0 ? version : defaultAppVersion;
+}
 
 export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv: AppTestEnv = {}) {
   const app = new Hono<AppBindings>();
@@ -50,6 +57,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
     return ok(c, {
       service: "nut-house-portal-api",
       environment: c.env?.ENVIRONMENT ?? "test",
+      version: resolveAppVersion(c.env as AppTestEnv | undefined),
     });
   });
 

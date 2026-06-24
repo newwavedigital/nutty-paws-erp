@@ -1,6 +1,6 @@
-﻿{
+{
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "nut-house-portal",
+  "name": "nut-house-portal-staging",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-09",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,7 +10,9 @@
   },
   "vars": {
     "ENVIRONMENT": "staging",
-    "AUTH_REQUIRED": "true"
+    "AUTH_REQUIRED": "true",
+    // Static prerelease because Wrangler config does not inject a short SHA here.
+    "APP_VERSION": "1.0.0-staging.1"
   },
   "assets": {
     "directory": "./public",
@@ -21,16 +23,38 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "nut-house-portal-db",
-      "database_id": "2fe7ce2c-5699-4594-8a63-a111e118f443",
+      "database_name": "nut-house-portal-staging-db",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "FILES",
-      "bucket_name": "nut-house-files"
+      "bucket_name": "nut-house-staging-files"
     }
-  ]
+  ],
+  "env": {
+    "production": {
+      "name": "nut-house-portal",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "AUTH_REQUIRED": "true",
+        "APP_VERSION": "1.0.0"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "nut-house-portal-db",
+          "database_id": "2fe7ce2c-5699-4594-8a63-a111e118f443",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "nut-house-files"
+        }
+      ]
+    }
+  }
 }
-

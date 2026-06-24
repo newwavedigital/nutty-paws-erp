@@ -3,9 +3,55 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const repoRoot = resolve(__dirname, "..");
-const wrangler = JSON.parse(readFileSync(resolve(repoRoot, "wrangler.jsonc"), "utf8").replace(/^\uFEFF/, ""));
+const wrangler = JSON.parse(stripJsonComments(readFileSync(resolve(repoRoot, "wrangler.jsonc"), "utf8")));
 const rootIndex = readFileSync(resolve(repoRoot, "index.html"), "utf8");
 const publicIndex = readFileSync(resolve(repoRoot, "public", "index.html"), "utf8");
+
+function stripJsonComments(input: string) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const current = input[index];
+    const next = input[index + 1];
+
+    if (inString) {
+      output += current;
+      if (escaped) {
+        escaped = false;
+      } else if (current === "\\") {
+        escaped = true;
+      } else if (current === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (current === "\"") {
+      inString = true;
+      output += current;
+      continue;
+    }
+
+    if (current === "/" && next === "/") {
+      while (index < input.length && input[index] !== "\n") index += 1;
+      output += "\n";
+      continue;
+    }
+
+    if (current === "/" && next === "*") {
+      index += 2;
+      while (index < input.length && !(input[index] === "*" && input[index + 1] === "/")) index += 1;
+      index += 1;
+      continue;
+    }
+
+    output += current;
+  }
+
+  return output;
+}
 
 describe("Worker staging frontend assets", () => {
   test("serves the prototype through Workers static assets while API routes run through the Worker", () => {

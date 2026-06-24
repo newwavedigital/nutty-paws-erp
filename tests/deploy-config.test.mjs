@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseJsonc, validateDeployConfig } from "../scripts/validate-deploy-config.mjs";
+
+const wranglerConfig = parseJsonc(readFileSync(resolve(__dirname, "..", "wrangler.jsonc"), "utf8"));
 
 describe("deploy config guard", () => {
   it("allows the current staging demo config to keep auth disabled", () => {
@@ -46,6 +50,25 @@ describe("deploy config guard", () => {
     ]);
   });
 
+  it("allows an explicit production env with auth enabled", () => {
+    const errors = validateDeployConfig({
+      vars: {
+        ENVIRONMENT: "staging",
+        AUTH_REQUIRED: "true",
+      },
+      env: {
+        production: {
+          vars: {
+            ENVIRONMENT: "production",
+            AUTH_REQUIRED: "true",
+          },
+        },
+      },
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it("parses jsonc comments and BOMs without changing string values", () => {
     const parsed = parseJsonc(`\uFEFF{
       // staging review stays auth-off
@@ -56,5 +79,67 @@ describe("deploy config guard", () => {
     }`);
 
     expect(parsed.vars.NOTE).toBe("https://example.com/path//still-string");
+  });
+
+  it("pins the staging default config and explicit production env split", () => {
+    expect(wranglerConfig).toMatchObject({
+      name: "nut-house-portal-staging",
+      main: "src/index.ts",
+      compatibility_date: "2026-06-09",
+      compatibility_flags: ["nodejs_compat"],
+      observability: {
+        enabled: true,
+        head_sampling_rate: 1,
+      },
+      vars: {
+        ENVIRONMENT: "staging",
+        AUTH_REQUIRED: "true",
+        APP_VERSION: "1.0.0-staging.1",
+      },
+      assets: {
+        directory: "./public",
+        binding: "ASSETS",
+        not_found_handling: "single-page-application",
+        run_worker_first: ["/api/*"],
+      },
+      d1_databases: [
+        {
+          binding: "DB",
+          database_name: "nut-house-portal-staging-db",
+          migrations_dir: "migrations",
+        },
+      ],
+      r2_buckets: [
+        {
+          binding: "FILES",
+          bucket_name: "nut-house-staging-files",
+        },
+      ],
+      env: {
+        production: {
+          name: "nut-house-portal",
+          vars: {
+            ENVIRONMENT: "production",
+            AUTH_REQUIRED: "true",
+            APP_VERSION: "1.0.0",
+          },
+          d1_databases: [
+            {
+              binding: "DB",
+              database_name: "nut-house-portal-db",
+              database_id: "2fe7ce2c-5699-4594-8a63-a111e118f443",
+              migrations_dir: "migrations",
+            },
+          ],
+          r2_buckets: [
+            {
+              binding: "FILES",
+              bucket_name: "nut-house-files",
+            },
+          ],
+        },
+      },
+    });
+    expect(wranglerConfig.routes).toBeUndefined();
   });
 });

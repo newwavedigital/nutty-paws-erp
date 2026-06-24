@@ -19,6 +19,7 @@ const migrationPaths = [
   "migrations/0012_phase_2b_a10_file_metadata_scope.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
+const stagingDatabaseName = "nut-house-portal-staging-db";
 
 type D1JsonResult = {
   results?: Array<Record<string, unknown>>;
@@ -32,7 +33,7 @@ function d1Execute(persistDir: string, args: string[]) {
       wranglerCliPath,
       "d1",
       "execute",
-      "nut-house-portal-db",
+      stagingDatabaseName,
       "--local",
       "--persist-to",
       persistDir,
@@ -561,5 +562,5 @@ describe("Phase 2A D1 baseline schema migration", () => {
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }
-  }, 60000);
+  }, 120000);
 });

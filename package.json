@@ -1,6 +1,6 @@
 {
     "name": "nut-house-portal",
-    "version": "0.5.0-alpha.0",
+    "version": "1.0.0",
     "description": "Nut House ERP Phase 2A Cloudflare Worker backend foundation",
     "main": "src/index.ts",
     "scripts": {

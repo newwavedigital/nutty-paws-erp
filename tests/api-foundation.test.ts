@@ -6,7 +6,7 @@ import { parseJsonObject, requireFields } from "../src/api/validation";
 
 describe("API foundation", () => {
   it("wraps health responses in the shared success envelope", async () => {
-    const app = createApp();
+    const app = createApp(undefined, { ENVIRONMENT: "staging", APP_VERSION: "1.0.0-staging.1" });
 
     const response = await app.request("/api/health", {
       headers: { "x-request-id": "req-health-1" },
@@ -17,7 +17,8 @@ describe("API foundation", () => {
       ok: true,
       data: {
         service: "nut-house-portal-api",
-        environment: "test",
+        environment: "staging",
+        version: "1.0.0-staging.1",
       },
       meta: {
         requestId: "req-health-1",
