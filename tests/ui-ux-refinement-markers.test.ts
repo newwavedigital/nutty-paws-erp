@@ -98,6 +98,15 @@ describe("UI/UX refinement markers", () => {
     }
   });
 
+  test("keeps sidebar spacing compact enough for the full navigation set", () => {
+    for (const [entrypoint, html] of htmlEntrypoints) {
+      expect(html, entrypoint).toContain(".sidebar-header {\n    padding: 12px 18px;");
+      expect(html, entrypoint).toContain(".sidebar nav { flex: 1; padding: 6px 0; overflow-y: auto; }");
+      expect(html, entrypoint).toContain("padding: 7px 18px 3px;");
+      expect(html, entrypoint).toContain("padding: 5px 18px;");
+    }
+  });
+
   test("labels the app as pre-release and does not expose demo reset controls", () => {
     for (const html of [rootHtml, publicHtml]) {
       expect(html).toContain("Phase 2B Alpha");
