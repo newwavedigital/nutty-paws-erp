@@ -24,6 +24,7 @@
     {
       "binding": "DB",
       "database_name": "nut-house-portal-staging-db",
+      "database_id": "57fd07a6-97d1-42c8-9f7f-e62b6e1f78b1",
       "migrations_dir": "migrations"
     }
   ],
