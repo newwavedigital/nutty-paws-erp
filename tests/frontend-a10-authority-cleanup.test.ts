@@ -1,30 +1,32 @@
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
+import { publicApp } from "./frontend-assets";
 
 const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
 
 describe("Sprint A10 frontend authority cleanup", () => {
-  test("keeps the mirrored frontend files byte-for-byte aligned", () => {
-    expect(createHash("sha256").update(publicHtml).digest("hex")).toBe(
-      createHash("sha256").update(rootHtml).digest("hex"),
-    );
+  test("keeps source and deployed frontend shells aligned to the split assets", () => {
+    expect(rootHtml).toContain('href="public/styles.css"');
+    expect(rootHtml).toContain('src="public/app.js"');
+    expect(publicHtml).toContain('href="styles.css"');
+    expect(publicHtml).toContain('src="app.js"');
+    expect(publicApp).toContain("function createEmptyAppState");
   });
 
   test("boots from an empty backend-ready state instead of browser-seeded sample data", () => {
-    expect(rootHtml).toContain("function createEmptyAppState");
-    expect(rootHtml).toContain("const fresh = createEmptyAppState()");
-    expect(rootHtml).not.toContain("const fresh = JSON.parse(JSON.stringify(SAMPLE_DATA))");
-    expect(rootHtml).not.toContain("SAMPLE_DATA.ingredients");
-    expect(rootHtml).not.toContain("SAMPLE_DATA[k]");
+    expect(publicApp).toContain("function createEmptyAppState");
+    expect(publicApp).toContain("const fresh = createEmptyAppState()");
+    expect(publicApp).not.toContain("const fresh = JSON.parse(JSON.stringify(SAMPLE_DATA))");
+    expect(publicApp).not.toContain("SAMPLE_DATA.ingredients");
+    expect(publicApp).not.toContain("SAMPLE_DATA[k]");
   });
 
   test("uses backend snapshots instead of preserving local-only rows during backend refresh", () => {
-    expect(rootHtml).toContain("function mapBackendSnapshot");
-    expect(rootHtml).not.toContain("function mergeByBackendId");
-    expect(rootHtml).not.toContain("...localRows.filter(row => !row._backendId");
+    expect(publicApp).toContain("function mapBackendSnapshot");
+    expect(publicApp).not.toContain("function mergeByBackendId");
+    expect(publicApp).not.toContain("...localRows.filter(row => !row._backendId");
   });
 
   test("defines data-record API helpers for the six A8 modules", () => {
@@ -35,7 +37,7 @@ describe("Sprint A10 frontend authority cleanup", () => {
       "async function archiveA10DataRecord",
       "hydrateA10DataRecordCaches",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(publicApp).toContain(marker);
     }
 
     for (const path of [
@@ -46,7 +48,7 @@ describe("Sprint A10 frontend authority cleanup", () => {
       "/api/machinery",
       "/api/feedback",
     ]) {
-      expect(rootHtml).toContain(path);
+      expect(publicApp).toContain(path);
     }
   });
 
@@ -65,7 +67,7 @@ describe("Sprint A10 frontend authority cleanup", () => {
       "saveA10DataRecord('machinery'",
       "archiveA10DataRecord('machinery'",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(publicApp).toContain(marker);
     }
   });
 });

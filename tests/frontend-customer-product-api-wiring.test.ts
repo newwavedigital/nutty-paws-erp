@@ -1,43 +1,44 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { frontendText } from "./frontend-assets";
 
 const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
 
 describe("frontend customer/product API wiring", () => {
   test("defines backend customer/product data state and loaders", () => {
-    expect(rootHtml).toContain("const backendCustomerState");
-    expect(rootHtml).toContain("const backendProductState");
-    expect(rootHtml).toContain("const backendMasterItemState");
-    expect(rootHtml).toContain("async function loadBackendCustomers");
-    expect(rootHtml).toContain("async function loadBackendCustomerProfile");
-    expect(rootHtml).toContain("async function loadBackendProducts");
-    expect(rootHtml).toContain("async function loadBackendMasterItems");
+    expect(frontendText).toContain("const backendCustomerState");
+    expect(frontendText).toContain("const backendProductState");
+    expect(frontendText).toContain("const backendMasterItemState");
+    expect(frontendText).toContain("async function loadBackendCustomers");
+    expect(frontendText).toContain("async function loadBackendCustomerProfile");
+    expect(frontendText).toContain("async function loadBackendProducts");
+    expect(frontendText).toContain("async function loadBackendMasterItems");
   });
 
   test("maps and merges backend customers, products, and master items into local state", () => {
-    expect(rootHtml).toContain("function backendCustomerToLocalCustomer");
-    expect(rootHtml).toContain("function backendProductToLocalProduct");
-    expect(rootHtml).toContain("function backendMasterItemToLocalMasterItem");
-    expect(rootHtml).toContain("function mergeBackendCustomers");
-    expect(rootHtml).toContain("function mergeBackendProducts");
-    expect(rootHtml).toContain("function mergeBackendMasterItems");
-    expect(rootHtml).toContain("_backendSource");
+    expect(frontendText).toContain("function backendCustomerToLocalCustomer");
+    expect(frontendText).toContain("function backendProductToLocalProduct");
+    expect(frontendText).toContain("function backendMasterItemToLocalMasterItem");
+    expect(frontendText).toContain("function mergeBackendCustomers");
+    expect(frontendText).toContain("function mergeBackendProducts");
+    expect(frontendText).toContain("function mergeBackendMasterItems");
+    expect(frontendText).toContain("_backendSource");
   });
 
   test("uses customer, product, and master-item API endpoints", () => {
-    expect(rootHtml).toContain("/api/customers");
-    expect(rootHtml).toContain("/api/customers/me");
-    expect(rootHtml).toContain("/api/products");
-    expect(rootHtml).toContain("/api/master-items");
+    expect(frontendText).toContain("/api/customers");
+    expect(frontendText).toContain("/api/customers/me");
+    expect(frontendText).toContain("/api/products");
+    expect(frontendText).toContain("/api/master-items");
   });
 
   test("keeps backend/local fallback messaging for customer/product data views", () => {
-    expect(rootHtml).toContain("Customer data is reading from protected backend records when available.");
-    expect(rootHtml).toContain("Product data is reading from protected backend records when available.");
-    expect(rootHtml).toContain("Master List data is reading from protected backend records when available.");
-    expect(rootHtml).toContain("Local customer/product demo data remains visible while backend data is unavailable.");
+    expect(frontendText).toContain("Customer data is reading from protected backend records when available.");
+    expect(frontendText).toContain("Product data is reading from protected backend records when available.");
+    expect(frontendText).toContain("Master List data is reading from protected backend records when available.");
+    expect(frontendText).toContain("Local customer/product demo data remains visible while backend data is unavailable.");
   });
 
   test("keeps public entrypoint mirrored for customer/product data markers", () => {
@@ -50,7 +51,7 @@ describe("frontend customer/product API wiring", () => {
       "/api/products",
       "/api/master-items",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

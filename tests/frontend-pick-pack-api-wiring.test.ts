@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -25,13 +26,13 @@ const requiredMarkers = [
 describe("Sprint 10 frontend pick pack wiring", () => {
   test("defines backend Pick & Pack state, banner, loaders, and action wrappers", () => {
     for (const marker of requiredMarkers) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
   test("keeps public entrypoint mirrored for Sprint 10 pick pack markers", () => {
     for (const marker of requiredMarkers) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

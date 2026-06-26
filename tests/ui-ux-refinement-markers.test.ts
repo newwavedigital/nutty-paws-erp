@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { frontendText, publicApp, publicStyles } from "./frontend-assets";
 
 const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -29,7 +30,7 @@ describe("UI/UX refinement markers", () => {
       "function setButtonLoading",
       "function renderInlineFieldError",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -82,11 +83,11 @@ describe("UI/UX refinement markers", () => {
       "btn-workflow",
       "btn-danger",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
-  test("keeps public entrypoint mirrored for UI/UX refinement markers", () => {
+  test("keeps split frontend assets wired for UI/UX refinement markers", () => {
     for (const marker of [
       "function renderDataStateBanner",
       "function openConfirmModal",
@@ -94,17 +95,15 @@ describe("UI/UX refinement markers", () => {
       "erp-confirm-modal",
       "data-confirm-action",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
   test("keeps sidebar spacing compact enough for the full navigation set", () => {
-    for (const [entrypoint, html] of htmlEntrypoints) {
-      expect(html, entrypoint).toContain(".sidebar-header {\n    padding: 12px 18px;");
-      expect(html, entrypoint).toContain(".sidebar nav { flex: 1; padding: 6px 0; overflow-y: auto; }");
-      expect(html, entrypoint).toContain("padding: 7px 18px 3px;");
-      expect(html, entrypoint).toContain("padding: 5px 18px;");
-    }
+    expect(publicStyles).toContain(".sidebar-header {\n    padding: 12px 18px;");
+    expect(publicStyles).toContain(".sidebar nav { flex: 1; padding: 6px 0; overflow-y: auto; }");
+    expect(publicStyles).toContain("padding: 7px 18px 3px;");
+    expect(publicStyles).toContain("padding: 5px 18px;");
   });
 
   test("labels the app as pre-release and does not expose demo reset controls", () => {
@@ -124,38 +123,36 @@ describe("UI/UX refinement markers", () => {
     for (const [entrypoint, html] of htmlEntrypoints) {
       expect(html, entrypoint).toContain('role="button"');
       expect(html, entrypoint).toContain('tabindex="0"');
-      expect(html, entrypoint).toContain("handleSidebarNavKeydown");
-      expect(html, entrypoint).toContain("activateSidebarNavLink");
     }
+    expect(publicApp).toContain("handleSidebarNavKeydown");
+    expect(publicApp).toContain("activateSidebarNavLink");
   });
 
   test("defines visible focus styles for primary interactive controls", () => {
-    for (const [entrypoint, html] of htmlEntrypoints) {
-      expect(html, entrypoint).toContain(":focus-visible");
-      for (const selector of [
-        ".sidebar nav a:focus-visible",
-        ".hamburger:focus-visible",
-        ".modal-close:focus-visible",
-        ".topbar-account:focus-visible",
-        ".tab:focus-visible",
-        ".btn:focus-visible",
-        "input:focus-visible",
-        "select:focus-visible",
-        "textarea:focus-visible",
-      ]) {
-        expect(html, `${entrypoint} missing ${selector}`).toContain(selector);
-      }
+    expect(publicStyles).toContain(":focus-visible");
+    for (const selector of [
+      ".sidebar nav a:focus-visible",
+      ".hamburger:focus-visible",
+      ".modal-close:focus-visible",
+      ".topbar-account:focus-visible",
+      ".tab:focus-visible",
+      ".btn:focus-visible",
+      "input:focus-visible",
+      "select:focus-visible",
+      "textarea:focus-visible",
+    ]) {
+      expect(publicStyles, `missing ${selector}`).toContain(selector);
     }
   });
 
   test("keeps hamburger expanded state synchronized for responsive sidebar states", () => {
     for (const [entrypoint, html] of htmlEntrypoints) {
       expect(html, entrypoint).toContain('id="hamburger" aria-label="Toggle menu" aria-expanded="true"');
-      expect(html, entrypoint).toContain("function setHamburgerExpanded");
-      expect(html, entrypoint).toContain("function syncHamburgerExpandedState");
-      expect(html, entrypoint).toContain("visualViewport");
-      expect(html, entrypoint).toContain("setHamburgerExpanded(");
     }
+    expect(publicApp).toContain("function setHamburgerExpanded");
+    expect(publicApp).toContain("function syncHamburgerExpandedState");
+    expect(publicApp).toContain("visualViewport");
+    expect(publicApp).toContain("setHamburgerExpanded(");
   });
 
   test("adds modal dialog semantics and focus-management helpers", () => {
@@ -172,7 +169,7 @@ describe("UI/UX refinement markers", () => {
         "fieldState: captureModalFieldState",
         "restoreModalFieldState",
       ]) {
-        expect(html, `${entrypoint} missing ${marker}`).toContain(marker);
+        expect(frontendText, `${entrypoint} missing ${marker}`).toContain(marker);
       }
     }
   });
@@ -188,7 +185,7 @@ describe("UI/UX refinement markers", () => {
       "�",
     ];
 
-    for (const [entrypoint, html] of htmlEntrypoints) {
+    for (const [entrypoint, html] of [["frontend", frontendText]] as const) {
       for (const artifact of forbiddenArtifacts) {
         expect(html, `${entrypoint} contains mojibake artifact ${artifact}`).not.toContain(artifact);
       }

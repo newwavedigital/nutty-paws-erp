@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -17,7 +18,7 @@ describe("Sprint 6 frontend procurement wiring", () => {
       "async function receiveBackendProcurementOrder",
       "function mergeBackendProcurementOrders",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -29,7 +30,7 @@ describe("Sprint 6 frontend procurement wiring", () => {
       "/api/procurement/orders/${encodeURIComponent(id)}/receive",
       "data-backend-status=\"procurement\"",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -42,7 +43,7 @@ describe("Sprint 6 frontend procurement wiring", () => {
       "/api/procurement/need-to-order",
       "data-backend-status=\"procurement\"",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

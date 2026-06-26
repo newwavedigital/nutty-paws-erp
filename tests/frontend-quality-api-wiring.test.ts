@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -18,7 +19,7 @@ describe("Sprint 8 frontend quality wiring", () => {
       "async function attachBackendPostShipmentCoa",
       "function renderBackendQualityBanner",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -31,7 +32,7 @@ describe("Sprint 8 frontend quality wiring", () => {
       "/api/files",
       "data-backend-status=\"quality\"",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -48,7 +49,7 @@ describe("Sprint 8 frontend quality wiring", () => {
       "/api/quality/queue",
       "data-backend-status=\"quality\"",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

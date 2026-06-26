@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -18,7 +19,7 @@ describe("Sprint 7 frontend production wiring", () => {
       "function mergeBackendProductionRuns",
       "function renderBackendProductionBanner",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -31,7 +32,7 @@ describe("Sprint 7 frontend production wiring", () => {
       "/api/production/runs/${encodeURIComponent(productionRunId)}/reopen",
       "data-backend-status=\"production\"",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -45,7 +46,7 @@ describe("Sprint 7 frontend production wiring", () => {
       "/api/production/schedule",
       "data-backend-status=\"production\"",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

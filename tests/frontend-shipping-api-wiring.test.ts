@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -19,7 +20,7 @@ describe("Sprint 9 frontend shipping wiring", () => {
       "confirmMissingCarrierBol",
       "pendingShipmentDocumentFiles",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -36,7 +37,7 @@ describe("Sprint 9 frontend shipping wiring", () => {
       "data-backend-status=\"shipping\"",
       "backendStatus === 'shipping'",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -55,7 +56,7 @@ describe("Sprint 9 frontend shipping wiring", () => {
       "data-backend-status=\"shipping\"",
       "confirmMissingCarrierBol",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

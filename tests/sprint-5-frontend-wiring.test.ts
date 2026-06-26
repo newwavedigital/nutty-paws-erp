@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { frontendText } from "./frontend-assets";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -17,7 +18,7 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "function mergeBackendReceivingEntries",
       "function mergeBackendMoveEntries",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -31,7 +32,7 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "async function uploadBackendProductMedia",
       "async function uploadBackendInventoryCoa",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -46,7 +47,7 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "inventory_coa",
       "inventory_item",
     ]) {
-      expect(rootHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 
@@ -60,7 +61,7 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "async function uploadBackendInventoryCoa",
       "/api/inventory/signals",
     ]) {
-      expect(publicHtml).toContain(marker);
+      expect(frontendText).toContain(marker);
     }
   });
 });

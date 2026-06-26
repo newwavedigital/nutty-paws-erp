@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { publicApp, publicStyles } from "./frontend-assets";
 
 const repoRoot = resolve(__dirname, "..");
 const wrangler = JSON.parse(stripJsonComments(readFileSync(resolve(repoRoot, "wrangler.jsonc"), "utf8")));
@@ -63,8 +64,18 @@ describe("Worker staging frontend assets", () => {
     });
   });
 
-  test("keeps the deployed static prototype in sync with the source prototype", () => {
-    expect(publicIndex).toBe(rootIndex);
+  test("serves a split frontend shell with static CSS and JavaScript assets", () => {
+    expect(rootIndex).toContain('href="public/styles.css"');
+    expect(rootIndex).toContain('src="public/app.js"');
+    expect(publicIndex).toContain('href="styles.css"');
+    expect(publicIndex).toContain('src="app.js"');
+    expect(rootIndex).not.toContain("<style>");
+    expect(publicIndex).not.toContain("<style>");
+    expect(rootIndex).not.toContain("<script>");
+    expect(publicIndex).not.toContain("<script>");
+    expect(publicStyles).toContain(".sidebar");
+    expect(publicApp).toContain("function router");
+
     for (const marker of [
       "Production",
       "Warehousing",
@@ -91,9 +102,19 @@ describe("Worker staging frontend assets", () => {
       "Feedback",
       "Account Management",
     ]) {
-      expect(publicIndex).toContain(marker);
+      expect(publicIndex + publicApp).toContain(marker);
     }
-    expect(publicIndex).toContain("Assignments will be implemented in a future scope.");
-    expect(publicIndex).toContain("Backend connected");
+    expect(publicApp).toContain("Assignments will be implemented in a future scope.");
+    expect(publicApp).toContain("Backend connected");
+  });
+
+  test("defines customer RBAC navigation and restricted-route fallback markers", () => {
+    expect(publicApp).toContain("const CUSTOMER_ALLOWED_PAGES");
+    expect(publicApp).toContain("const EMPLOYEE_NAV_PAGES");
+    expect(publicApp).toContain("function isCustomerSession");
+    expect(publicApp).toContain("function isPageAllowedForCurrentUser");
+    expect(publicApp).toContain("function updateSidebarNavigationForRole");
+    expect(publicApp).toContain("function renderRestrictedPage");
+    expect(publicApp).toContain("This area is for employee and admin workflows.");
   });
 });
