@@ -28,7 +28,7 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("supply_chain_status");
   });
 
-  test("includes optional auth and Account Management backend wiring while preserving local fallback", () => {
+  test("includes auth and Account Management backend wiring without local-only user creation", () => {
     expect(html).toContain("const AUTH_STORAGE_KEY");
     expect(html).toContain("function authHeaders");
     expect(html).toContain("Authorization");
@@ -41,8 +41,8 @@ describe("frontend purchase-order API wiring", () => {
     expect(html).toContain("function canManageBackendUsers");
     expect(html).toContain("Customer backend session active; admin user list is hidden.");
     expect(html).toContain("data-auth-panel");
-    expect(html).toContain("Create the first admin or log in to manage backend users");
-    expect(html).toContain("Backend Account Management is unavailable, so browser-preview users remain visible.");
+    expect(html).toContain("Create the first admin or log in as backend Admin before adding users");
+    expect(html).toContain("Backend user save failed. The account was not created");
   });
 
   test("includes Sprint 2 customer portal and PO file API wiring", () => {

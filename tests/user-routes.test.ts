@@ -104,6 +104,32 @@ describe("user admin routes", () => {
     });
   });
 
+  it("allows a newly created backend user to log in with the submitted password", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin" });
+    const app = createRouteApp(data.authStore, data.userStore);
+    const token = await login(app, "admin@example.com");
+
+    const create = await app.request("/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: "warehouse@example.com", displayName: "Warehouse User", password: "newpass123", roles: ["Warehousing"] }),
+    });
+    expect(create.status).toBe(200);
+
+    const createdLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "warehouse@example.com", password: "newpass123" }),
+    });
+
+    expect(createdLogin.status).toBe(200);
+    await expect(createdLogin.json()).resolves.toMatchObject({
+      ok: true,
+      data: { user: { email: "warehouse@example.com" }, roles: ["Warehousing"] },
+    });
+  });
+
   it("requires Customer users to be linked to a customer", async () => {
     const data = createAuthStore();
     await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin" });

@@ -44,4 +44,13 @@ describe("Sprint A9 account menu and auth-on staging markers", () => {
       expect(html).toContain('<span style="color:var(--danger);font-size:12px">Not linked</span>');
     }
   });
+
+  test("keeps Account Management from creating login-looking local-only users", () => {
+    for (const html of [rootHtml, publicHtml]) {
+      expect(html).toContain("Log in as backend Admin before adding users. Browser-preview users cannot log in.");
+      expect(html).toContain('disabled title="Log in as backend Admin before adding users"');
+      expect(html).toContain("Backend user save failed. The account was not created; log in as backend Admin and try again.");
+      expect(html).toContain("return;\n    }\n  }\n\n  if (isNew) {");
+    }
+  });
 });

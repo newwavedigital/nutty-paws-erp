@@ -9749,7 +9749,7 @@ function backendAuthPanelHtml() {
     ? 'Backend Account Management is connected.'
     : backendUserState.status === 'error'
       ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so browser-preview users remain visible.')
-      : 'Create the first admin or log in to manage backend users. Browser-preview users remain visible until the backend list loads.';
+      : 'Create the first admin or log in as backend Admin before adding users. Browser-preview users cannot log in.';
   return `
     <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
@@ -9957,7 +9957,7 @@ function renderUsers(el) {
         <h2>Account Management</h2>
         <div>
           <button class="btn btn-secondary btn-sm" onclick="exportCsv('users.csv', state.users)">Export CSV</button>
-          <button class="btn" onclick="editUser()">+ Add User</button>
+          <button class="btn" onclick="editUser()" ${canManageBackendUsers() ? '' : 'disabled title="Log in as backend Admin before adding users"'}>+ Add User</button>
         </div>
       </div>
       <div class="help-text" style="margin-bottom:8px">Add team members and assign permissions. Roles now match the Phase 2A backend model; server-side enforcement is active when AUTH_REQUIRED=true.</div>
@@ -10088,9 +10088,17 @@ async function saveUser(id, isNew) {
       return;
     } catch (err) {
       backendUserState.status = 'error';
-      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
+      backendUserState.lastError = 'Backend user save failed. The account was not created; log in as backend Admin and try again.';
       toast(backendUserState.lastError);
+      return;
     }
+  }
+
+  if (isNew) {
+    backendUserState.status = backendAuthState.token ? 'error' : 'idle';
+    backendUserState.lastError = 'Log in as backend Admin before adding users. Browser-preview users cannot log in.';
+    toast(backendUserState.lastError);
+    return;
   }
 
   state.users = state.users || [];
