@@ -7,6 +7,8 @@ const repoRoot = resolve(__dirname, "..");
 const wrangler = JSON.parse(stripJsonComments(readFileSync(resolve(repoRoot, "wrangler.jsonc"), "utf8")));
 const rootIndex = readFileSync(resolve(repoRoot, "index.html"), "utf8");
 const publicIndex = readFileSync(resolve(repoRoot, "public", "index.html"), "utf8");
+const publicFaviconIco = readFileSync(resolve(repoRoot, "public", "favicon.ico"));
+const publicFaviconSvg = readFileSync(resolve(repoRoot, "public", "favicon.svg"), "utf8");
 
 function stripJsonComments(input: string) {
   let output = "";
@@ -106,6 +108,15 @@ describe("Worker staging frontend assets", () => {
     }
     expect(publicApp).toContain("Assignments will be implemented in a future scope.");
     expect(publicApp).toContain("Backend connected");
+  });
+
+  test("serves Nut House favicon assets for browser and preview fallback paths", () => {
+    expect(rootIndex).toContain('href="public/favicon.ico"');
+    expect(rootIndex).toContain('href="public/favicon.svg"');
+    expect(publicIndex).toContain('href="favicon.ico"');
+    expect(publicIndex).toContain('href="favicon.svg"');
+    expect(publicFaviconIco.subarray(0, 4)).toEqual(Buffer.from([0, 0, 1, 0]));
+    expect(publicFaviconSvg).toContain(">NH<");
   });
 
   test("defines customer RBAC navigation and restricted-route fallback markers", () => {
