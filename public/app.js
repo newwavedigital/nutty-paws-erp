@@ -769,6 +769,26 @@ function markBackendUnavailable(error) {
   backendApiState.lastError = error?.message || 'Backend unavailable';
 }
 
+function failBackendRequiredWrite(error, stateRef = null, fallbackMessage = 'Backend save failed. Nothing was saved locally.') {
+  const message = error?.message || fallbackMessage;
+  if (stateRef) {
+    stateRef.status = error ? 'error' : 'auth';
+    stateRef.lastError = message;
+  }
+  toast(message);
+  return false;
+}
+
+function requireBackendWriteSession(stateRef = null, message = 'Sign in before saving. Nothing was saved locally.') {
+  if (backendAuthState.token && backendAuthState.user) return true;
+  return failBackendRequiredWrite(null, stateRef, message);
+}
+
+function requireEmployeeBackendWrite(stateRef = null, message = 'Sign in as an employee or admin before saving. Nothing was saved locally.') {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') return true;
+  return failBackendRequiredWrite(null, stateRef, message);
+}
+
 function renderBackendStatusBanner(context = 'purchase-orders') {
   const connected = backendApiState.status === 'connected';
   const loading = backendApiState.loadingPurchaseOrders;
@@ -1583,11 +1603,12 @@ function getQualitySkipReasonValue(poId) {
 
 async function persistQualityRelease(po) {
   const notes = getQualityNotesValue(po.id);
-  if (qualityBackendIsConnected() && qualityPurchaseOrderBackendId(po)) {
-    await releaseBackendQualityPo(po, notes);
-  } else {
-    releaseLocalQualityPo(po, notes);
+  if (!qualityBackendIsConnected() || !qualityPurchaseOrderBackendId(po)) {
+    failBackendRequiredWrite(null, backendQualityState, 'QA releases require backend confirmation. Nothing was saved locally.');
+    return false;
   }
+  await releaseBackendQualityPo(po, notes);
+  return true;
 }
 
 async function persistQualitySkip(poId) {
@@ -1599,25 +1620,23 @@ async function persistQualitySkip(poId) {
     toast('Skip reason is required.');
     return;
   }
-  if (qualityBackendIsConnected() && qualityPurchaseOrderBackendId(po)) {
-    await skipBackendQualityPo(po, reason, notes);
-  } else {
-    skipLocalQualityRelease(po, reason, notes);
+  if (!qualityBackendIsConnected() || !qualityPurchaseOrderBackendId(po)) {
+    failBackendRequiredWrite(null, backendQualityState, 'QA skips require backend confirmation. Nothing was saved locally.');
+    return false;
   }
+  await skipBackendQualityPo(po, reason, notes);
+  return true;
 }
 
 async function persistQualityPostShipmentCoa(poId, file) {
   if (!file) return;
   const po = state.purchaseOrders.find(x => x.id === poId);
-  if (qualityBackendIsConnected() && po?._backendId) {
-    await attachBackendPostShipmentCoa(po._backendId, file);
-  } else {
-    if (!po) return;
-    po.postShipmentCoa = await readQualityFile(file, { category: 'post_shipment_coa' });
-    po.postShipmentCoaFileId = po.postShipmentCoa?.id || po.postShipmentCoaFileId || '';
-    saveState();
-    renderQualityAssurance(document.getElementById('content'));
+  if (!qualityBackendIsConnected() || !po?._backendId) {
+    failBackendRequiredWrite(null, backendQualityState, 'Post-shipment COA uploads require backend confirmation. Nothing was saved locally.');
+    return false;
   }
+  await attachBackendPostShipmentCoa(po._backendId, file);
+  return true;
 }
 
 function readQualityFile(file, { category = 'coa' } = {}) {
@@ -3870,7 +3889,9 @@ async function savePO(isNew, oldId) {
     poFile, _pendingUploadFile: pendingPoFile, scOverrides: {}
   };
 
-  if (isNew && backendApiState.status !== 'local') {
+  if (!requireBackendWriteSession(backendApiState)) return;
+
+  if (isNew) {
     try {
       await createBackendPurchaseOrder(localPo);
       pendingPoFile = null;
@@ -3880,40 +3901,27 @@ async function savePO(isNew, oldId) {
       return;
     } catch (error) {
       markBackendUnavailable(error);
-      toast('Backend unavailable ? saved PO locally instead.');
+      failBackendRequiredWrite(error, backendApiState);
+      return;
     }
   }
 
   if (!isNew) {
     const existing = state.purchaseOrders.find(p => p.id === oldId);
-    if (existing?._backendId && backendApiState.status !== 'local') {
-      try {
-        await updateBackendPurchaseOrder({ ...existing, ...localPo, _backendId: existing._backendId });
-        pendingPoFile = null;
-        toast(`${id} updated through backend.`);
-        closeModal();
-        router(currentPage);
-        return;
-      } catch (error) {
-        markBackendUnavailable(error);
-        toast('Backend update unavailable ? saved editable fields locally.');
-      }
+    if (!existing?._backendId) return failBackendRequiredWrite(null, backendApiState, 'This purchase order is not backend-backed. Nothing was saved locally.');
+    try {
+      await updateBackendPurchaseOrder({ ...existing, ...localPo, _backendId: existing._backendId });
+      pendingPoFile = null;
+      toast(`${id} updated through backend.`);
+      closeModal();
+      router(currentPage);
+      return;
+    } catch (error) {
+      markBackendUnavailable(error);
+      failBackendRequiredWrite(error, backendApiState);
+      return;
     }
   }
-
-  if (isNew) {
-    delete localPo._pendingUploadFile;
-    state.purchaseOrders.push(localPo);
-    toast(`${id} submitted to Supply Chain.`);
-  } else {
-    delete localPo._pendingUploadFile;
-    const po = state.purchaseOrders.find(p => p.id === oldId);
-    Object.assign(po, { id, brand, customerId, poDate, requestedDate, notes, lines, poFile });
-    toast(`${id} updated.`);
-  }
-  try { saveState(); } catch(e) { toast('Storage full ? try removing the PO file or using smaller files.'); return; }
-  closeModal();
-  router(currentPage);
 }
 
 async function deletePO(id) {
@@ -4241,20 +4249,18 @@ function setLineStatus(poId, ingId, status) {
 async function setDepositStatus(poId, status) {
   const po = state.purchaseOrders.find(p => p.id === poId);
   if (!po) return;
-  if (po._backendId && backendApiState.status !== 'local') {
-    try {
-      await updateBackendDepositStatus(po, status);
-      toast(`Deposit status synced to backend.`);
-      renderSupplyChain(document.getElementById('content'));
-      return;
-    } catch (error) {
-      markBackendUnavailable(error);
-      toast('Backend unavailable ? deposit status saved locally.');
-    }
+  if (!requireBackendWriteSession(backendApiState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendApiState, 'This purchase order is not backend-backed. Nothing was saved locally.');
+  try {
+    await updateBackendDepositStatus(po, status);
+    toast(`Deposit status synced to backend.`);
+    renderSupplyChain(document.getElementById('content'));
+    return;
+  } catch (error) {
+    markBackendUnavailable(error);
+    failBackendRequiredWrite(error, backendApiState);
+    return;
   }
-  po.depositStatus = status;
-  saveState();
-  renderSupplyChain(document.getElementById('content'));
 }
 
 function renderSupplyChain(el) {
@@ -4791,23 +4797,20 @@ async function quickMoveToOrdered(supplierId) {
     notes: 'Quick move from Need To Order',
     items
   };
-  state.procurementOrders = state.procurementOrders || [];
-  state.procurementOrders.push(newOrder);
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
-    try {
-      const saved = await saveBackendProcurementOrder(newOrder.id, true, newOrder);
-      backendProcurementState.status = 'connected';
-      backendProcurementState.loaded = false;
-      mergeBackendProcurementOrders([saved]);
-    } catch (error) {
-      backendProcurementState.status = 'error';
-      backendProcurementState.lastError = 'Procurement backend save failed, so this supplier PO stayed local/demo only.';
-    }
+  if (!requireEmployeeBackendWrite(backendProcurementState)) return;
+  try {
+    const saved = await saveBackendProcurementOrder(newOrder.id, true, newOrder);
+    backendProcurementState.status = 'connected';
+    backendProcurementState.loaded = false;
+    backendProcurementState.lastError = '';
+    mergeBackendProcurementOrders([saved]);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProcurementState);
+    return;
   }
-  saveState();
   procTab = 'in';
   router('procurement');
-  toast(`${newOrder.id} created. Add the QuickBooks PO# in the Ordered tab.`);
+  toast(`${newOrder.id} created in backend. Add the QuickBooks PO# in the Ordered tab.`);
 }
 
 function renderProcInOrder(el) {
@@ -5027,28 +5030,21 @@ async function saveProc(id, isNew) {
     notes: document.getElementById('prc_notes').value,
     items
   };
-  if (isNew) {
-    state.procurementOrders = state.procurementOrders || [];
-    state.procurementOrders.push(data);
-  } else {
-    Object.assign(state.procurementOrders.find(p=>p.id===id), data);
+  if (!requireEmployeeBackendWrite(backendProcurementState)) return;
+  try {
+    const saved = await saveBackendProcurementOrder(id, isNew, data);
+    backendProcurementState.status = 'connected';
+    backendProcurementState.loaded = false;
+    backendProcurementState.lastError = '';
+    mergeBackendProcurementOrders([saved]);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProcurementState);
+    return;
   }
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
-    try {
-      const saved = await saveBackendProcurementOrder(id, isNew, data);
-      backendProcurementState.status = 'connected';
-      backendProcurementState.loaded = false;
-      mergeBackendProcurementOrders([saved]);
-    } catch (error) {
-      backendProcurementState.status = 'error';
-      backendProcurementState.lastError = 'Procurement backend save failed, so this supplier PO stayed local/demo only.';
-    }
-  }
-  saveState();
   closeModal();
   procTab = 'in';
   router('procurement');
-  toast('Procurement PO saved.');
+  toast('Procurement PO saved to backend.');
 }
 async function deleteProc(id) {
   const ok = await openConfirmModal({
@@ -5077,41 +5073,30 @@ async function receiveProc(id) {
     tone: 'workflow'
   });
   if (!ok) return;
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && p._backendId) {
-    try {
-      const receiptLines = (p.items || [])
-        .filter(it => it._backendLineId && (it.qty || 0) > (it.receivedQty || 0))
-        .map(it => ({
-          procurementOrderLineId: it._backendLineId,
-          receivedQuantity: +(it.qty - (it.receivedQty || 0)).toFixed(2),
-          lotNumber: null,
-          location: null
-        }));
-      if (!receiptLines.length) { toast('Nothing remains to receive for this supplier PO.'); return; }
-      await receiveBackendProcurementOrder(p._backendId, receiptLines);
-      backendProcurementState.status = 'connected';
-      backendProcurementState.loaded = false;
-      saveState();
-      procTab = 'completed';
-      router('procurement');
-      toast(`${p.id} marked as arrived. Backend inventory updated.`);
-      return;
-    } catch (error) {
-      backendProcurementState.status = 'error';
-      backendProcurementState.lastError = 'Procurement backend receipt failed, so inventory was not changed in backend.';
-      toast('Backend receipt failed. Local demo fallback remains available.');
-    }
+  if (!requireEmployeeBackendWrite(backendProcurementState)) return;
+  if (!p._backendId) return failBackendRequiredWrite(null, backendProcurementState, 'This procurement PO is not backend-backed. Nothing was saved locally.');
+  try {
+    const receiptLines = (p.items || [])
+      .filter(it => it._backendLineId && (it.qty || 0) > (it.receivedQty || 0))
+      .map(it => ({
+        procurementOrderLineId: it._backendLineId,
+        receivedQuantity: +(it.qty - (it.receivedQty || 0)).toFixed(2),
+        lotNumber: null,
+        location: null
+      }));
+    if (!receiptLines.length) { toast('Nothing remains to receive for this supplier PO.'); return; }
+    await receiveBackendProcurementOrder(p._backendId, receiptLines);
+    backendProcurementState.status = 'connected';
+    backendProcurementState.loaded = false;
+    backendProcurementState.lastError = '';
+    procTab = 'completed';
+    router('procurement');
+    toast(`${p.id} marked as arrived. Backend inventory updated.`);
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProcurementState);
+    return;
   }
-  p.items.forEach(it => {
-    const ing = state.ingredients.find(i=>i.id===it.ingredientId);
-    if (ing) ing.stock = (ing.stock || 0) + it.qty;
-  });
-  p.status = 'Received';
-  p.receivedDate = new Date().toISOString().slice(0,10);
-  saveState();
-  procTab = 'completed';
-  router('procurement');
-  toast(`${p.id} marked as arrived. Inventory updated.`);
 }
 
 /* =========================================================================
@@ -5499,15 +5484,15 @@ async function confirmSchedule(poId, dStr) {
   const room = document.getElementById('room_'+poId)?.value || ROOMS[0];
   const endDate = document.getElementById('end_'+poId)?.value || dStr;
   if (endDate < dStr) { toast('End date must be on or after the start date.'); return; }
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendId) {
-    try {
-      await scheduleBackendProductionRun(po, dStr, endDate, room);
-      backendProductionState.status = 'connected';
-    } catch (error) {
-      backendProductionState.status = 'error';
-      backendProductionState.lastError = 'Production backend schedule failed, so this schedule stayed local/demo only.';
-      toast(error.message || backendProductionState.lastError);
-    }
+  if (!requireEmployeeBackendWrite(backendProductionState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendProductionState, 'This production order is not backend-backed. Nothing was saved locally.');
+  try {
+    await scheduleBackendProductionRun(po, dStr, endDate, room);
+    backendProductionState.status = 'connected';
+    backendProductionState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductionState);
+    return;
   }
   po.productionDate = dStr;
   po.productionEndDate = endDate;
@@ -5552,15 +5537,15 @@ async function doSchedule(id) {
   const r = document.getElementById('sched_room').value;
   if (e < d) { toast('End date must be on or after the start date.'); return; }
   const po = state.purchaseOrders.find(p => p.id === id);
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po?._backendId) {
-    try {
-      await scheduleBackendProductionRun(po, d, e, r);
-      backendProductionState.status = 'connected';
-    } catch (error) {
-      backendProductionState.status = 'error';
-      backendProductionState.lastError = 'Production backend schedule failed, so this schedule stayed local/demo only.';
-      toast(error.message || backendProductionState.lastError);
-    }
+  if (!requireEmployeeBackendWrite(backendProductionState)) return;
+  if (!po?._backendId) return failBackendRequiredWrite(null, backendProductionState, 'This production order is not backend-backed. Nothing was saved locally.');
+  try {
+    await scheduleBackendProductionRun(po, d, e, r);
+    backendProductionState.status = 'connected';
+    backendProductionState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductionState);
+    return;
   }
   po.productionDate = d;
   po.productionEndDate = e;
@@ -5626,15 +5611,15 @@ async function saveEventEdit(id) {
   const end = document.getElementById('ev_end').value || start;
   if (end < start) { toast('End date must be on or after the start date.'); return; }
   const room = document.getElementById('ev_room').value;
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po?._backendId) {
-    try {
-      await scheduleBackendProductionRun(po, start, end, room);
-      backendProductionState.status = 'connected';
-    } catch (error) {
-      backendProductionState.status = 'error';
-      backendProductionState.lastError = 'Production backend schedule update failed, so this schedule stayed local/demo only.';
-      toast(error.message || backendProductionState.lastError);
-    }
+  if (!requireEmployeeBackendWrite(backendProductionState)) return;
+  if (!po?._backendId) return failBackendRequiredWrite(null, backendProductionState, 'This production order is not backend-backed. Nothing was saved locally.');
+  try {
+    await scheduleBackendProductionRun(po, start, end, room);
+    backendProductionState.status = 'connected';
+    backendProductionState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductionState);
+    return;
   }
   po.productionDate = start;
   po.productionEndDate = end;
@@ -5881,28 +5866,40 @@ async function finalizeMarkComplete(id) {
   if (!po) return;
   // collect units + cases + lot per line
   let anyMissingLot = false;
-  po.lines.forEach((l, i) => {
+  const draftLines = po.lines.map((l, i) => {
     const qty = parseFloat(document.getElementById('comp_qty_'+i).value);
     const cases = parseFloat(document.getElementById('comp_cases_'+i).value);
     const lot = (document.getElementById('comp_lot_'+i).value || '').trim();
-    l.actualQty = isNaN(qty) ? l.qty : qty;
-    l.casesProduced = isNaN(cases) ? 0 : cases;
-    l.lotNumber = lot;
+    const actualQty = isNaN(qty) ? l.qty : qty;
+    const casesProduced = isNaN(cases) ? 0 : cases;
     if (!lot) anyMissingLot = true;
+    return {
+      ...l,
+      actualQty,
+      casesProduced,
+      lotNumber: lot
+    };
   });
   // collect material usage + lots + compute theoretical and waste
+  const completionNotes = (document.getElementById('comp_notes')?.value || '').trim();
+  const draftPO = {
+    ...po,
+    lines: draftLines,
+    completionNotes,
+    shipping: po.shipping || { bol: '', proNumber: '', carrier: '', pallets: 0, weight: 0, length: 0, width: 0, height: 0, freightClass: '', notes: '' }
+  };
   const materialsUsed = [];
   let totalTheo = 0, totalActual = 0, anyMaterialMissing = false;
   function theoForMaterial(ingId, lineIndex) {
     // Packaging passes a lineIndex (per SKU); ingredients sum across all lines.
     if (lineIndex !== undefined && lineIndex !== null) {
-      const l = po.lines[lineIndex];
+      const l = draftPO.lines[lineIndex];
       if (!l) return 0;
       const entry = (state.boms[l.productId] || []).find(b => b.ingredientId === ingId);
       return entry ? entry.qty * (typeof l.actualQty === 'number' ? l.actualQty : l.qty) : 0;
     }
     let t = 0;
-    po.lines.forEach(l => {
+    draftPO.lines.forEach(l => {
       const bom = state.boms[l.productId] || [];
       const entry = bom.find(b => b.ingredientId === ingId);
       if (entry) t += entry.qty * (typeof l.actualQty === 'number' ? l.actualQty : l.qty);
@@ -5927,18 +5924,14 @@ async function finalizeMarkComplete(id) {
   if (anyMissingLot) { toast('Every SKU needs a Lot #.'); return; }
   if (anyMaterialMissing) { toast('Enter Actual Used and a Lot # for every ingredient and packaging item.'); return; }
 
-  // record material usage + waste on the PO
-  po.materialsUsed = materialsUsed;
-  po.wasteLossPct = totalTheo > 0 ? +(((totalActual - totalTheo) / totalTheo) * 100).toFixed(2) : 0;
+  draftPO.materialsUsed = materialsUsed;
+  draftPO.wasteLossPct = totalTheo > 0 ? +(((totalActual - totalTheo) / totalTheo) * 100).toFixed(2) : 0;
 
-  // sync material lot #s back to inventory items
-  materialsUsed.forEach(m => {
-    const ing = getIngredient(m.ingredientId);
-    if (ing && m.lot) ing.lotNumber = m.lot;
-  });
+  if (!requireEmployeeBackendWrite(backendProductionState)) return;
+  if (!po._backendProductionRunId) return failBackendRequiredWrite(null, backendProductionState, 'This production run is not backend-backed. Nothing was saved locally.');
 
   // Final downstream check
-  const downstream = downstreamShortageOnFinalize(po);
+  const downstream = downstreamShortageOnFinalize(draftPO);
   if (downstream.length > 0) {
     const summary = downstream.map(d => `* ${d.ingredient.name}: short ${d.short.toFixed(2)} ${d.ingredient.unit||''} (${d.affected.map(p=>p.id).join(', ')})`).join('\n');
     const ok = await openConfirmModal({
@@ -5951,22 +5944,27 @@ async function finalizeMarkComplete(id) {
     });
     if (!ok) return;
   }
-  const completionNotes = (document.getElementById('comp_notes')?.value || '').trim();
-  if (completionNotes) po.completionNotes = completionNotes;
-
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendProductionRunId) {
-    try {
-      await finalizeBackendProductionRun(po);
-      backendProductionState.status = 'connected';
-    } catch (error) {
-      backendProductionState.status = 'error';
-      backendProductionState.lastError = 'Production backend finalize failed, so this completion stayed local/demo only.';
-      toast(error.message || backendProductionState.lastError);
-    }
+  try {
+    await finalizeBackendProductionRun(draftPO);
+    backendProductionState.status = 'connected';
+    backendProductionState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductionState);
+    return;
   }
 
   const alreadyDeducted = po.status === 'shipping' || po.status === 'completed';
+  // sync material lot #s back to inventory items only after backend completion succeeds
+  materialsUsed.forEach(m => {
+    const ing = getIngredient(m.ingredientId);
+    if (ing && m.lot) ing.lotNumber = m.lot;
+  });
   if (!alreadyDeducted) {
+    po.lines = draftLines.map(line => ({ ...line }));
+    po.materialsUsed = materialsUsed.map(material => ({ ...material }));
+    po.wasteLossPct = draftPO.wasteLossPct;
+    po.completionNotes = completionNotes;
+    po.shipping = draftPO.shipping;
     consumeInventory(po);
     // Auto-add to Finished Goods inventory ONLY for our own brands (Bnutty, Poochie Butter).
     // Nut House Co-Packing and Dilly's are made for other customers, so they don't stock to FG.
@@ -6337,16 +6335,15 @@ function removeShippingPallet(id, idx) {
   saveState();
   router('shipping');
 }
-// Read the visible form fields into the PO's shipping object (without clobbering documents)
-function captureShippingForm(po) {
+function readShippingForm(po) {
   const id = po.id;
-  const s = po.shipping = po.shipping || {};
+  const shipping = { ...(po.shipping || {}) };
   const g = (sel) => document.getElementById(sel);
-  if (g('sh_bol_'+id)) s.bol = g('sh_bol_'+id).value;
-  if (g('sh_pro_'+id)) s.proNumber = g('sh_pro_'+id).value;
-  if (g('sh_carrier_'+id)) s.carrier = g('sh_carrier_'+id).value;
-  if (g('sh_class_'+id)) s.freightClass = g('sh_class_'+id).value;
-  if (g('sh_notes_'+id)) s.notes = g('sh_notes_'+id).value;
+  if (g('sh_bol_'+id)) shipping.bol = g('sh_bol_'+id).value;
+  if (g('sh_pro_'+id)) shipping.proNumber = g('sh_pro_'+id).value;
+  if (g('sh_carrier_'+id)) shipping.carrier = g('sh_carrier_'+id).value;
+  if (g('sh_class_'+id)) shipping.freightClass = g('sh_class_'+id).value;
+  if (g('sh_notes_'+id)) shipping.notes = g('sh_notes_'+id).value;
   const cont = document.getElementById('sh_pallets_'+id);
   if (cont) {
     const pallets = [];
@@ -6359,8 +6356,13 @@ function captureShippingForm(po) {
         weight: parseFloat(inputs[3].value)||0
       });
     });
-    if (pallets.length) s.palletList = pallets;
+    if (pallets.length) shipping.palletList = pallets;
   }
+  return shipping;
+}
+// Read the visible form fields into the PO's shipping object (without clobbering documents)
+function captureShippingForm(po) {
+  po.shipping = readShippingForm(po);
 }
 function shipDocsSelected(e, id) {
   const f = e.target.files[0];
@@ -6434,55 +6436,45 @@ async function confirmStocked(id) {
     tone: 'workflow'
   });
   if (!ok) return;
-  po.shipping = po.shipping || {};
-  if (document.getElementById('sh_notes_'+id)) {
-    po.shipping.notes = document.getElementById('sh_notes_'+id).value;
+  const shipping = readShippingForm(po);
+  if (!requireEmployeeBackendWrite(backendShippingState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendShippingState, 'This shipment is not backend-backed. Nothing was saved locally.');
+  try {
+    await markBackendStocked({ ...po, shipping });
+    po.shipping = shipping;
+    backendShippingState.status = 'connected';
+    backendShippingState.lastError = '';
+    router('shipping');
+    toast(`${id} stocked to warehouse in backend.`);
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendShippingState);
+    router('shipping');
+    return;
   }
-  if (shippingBackendIsConnected() && po._backendId) {
-    try {
-      await markBackendStocked(po);
-      backendShippingState.status = 'connected';
-      router('shipping');
-      toast(`${id} stocked to warehouse in backend.`);
-      return;
-    } catch (error) {
-      backendShippingState.status = 'error';
-      backendShippingState.lastError = 'Shipping backend stocking failed, so the local demo fallback remains visible.';
-      toast(error.message || backendShippingState.lastError);
-      router('shipping');
-      return;
-    }
-  }
-  po.shipping.stockedToWarehouse = true;
-  po.shipping.stockedAt = new Date().toISOString();
-  po.status = 'completed';
-  saveState();
-  router('shipping');
-  toast(`${id} stocked to warehouse.`);
 }
 async function saveShipping(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
-  captureShippingForm(po);
-  if (shippingBackendIsConnected() && po?._backendId) {
-    try {
-      await saveBackendShippingDetails(po);
-      backendShippingState.status = 'connected';
-      saveState();
-      toast(`Shipping info saved to backend for ${id}.`);
-      return;
-    } catch (error) {
-      backendShippingState.status = 'error';
-      backendShippingState.lastError = 'Shipping backend save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendShippingState.lastError);
-    }
+  const shipping = readShippingForm(po);
+  if (!requireEmployeeBackendWrite(backendShippingState)) return;
+  if (!po?._backendId) return failBackendRequiredWrite(null, backendShippingState, 'This shipment is not backend-backed. Nothing was saved locally.');
+  try {
+    await saveBackendShippingDetails({ ...po, shipping });
+    po.shipping = shipping;
+    backendShippingState.status = 'connected';
+    backendShippingState.lastError = '';
+    saveState();
+    toast(`Shipping info saved to backend for ${id}.`);
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendShippingState);
+    return;
   }
-  saveState();
-  toast(`Shipping info saved for ${id}.`);
 }
 async function completeShipment(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
-  captureShippingForm(po);
-  const s = po.shipping || {};
+  const shipping = readShippingForm(po);
+  const s = shipping || {};
   if (!s.documents) {
     toast('Upload shipment documents before marking shipped.');
     return;
@@ -6498,55 +6490,50 @@ async function completeShipment(id) {
     });
     if (!ok) return;
   }
-  if (shippingBackendIsConnected() && po._backendId) {
-    try {
-      const pendingFile = pendingShipmentDocumentFiles.get(id);
-      if (pendingFile) {
-        const uploaded = await uploadBackendShipmentDocument(shippingPurchaseOrderBackendId(po), pendingFile);
-        po.shipping.documents = mapBackendFileToPrototype(uploaded);
-        po.shipping.shipmentDocumentFileId = uploaded?.id || '';
-        pendingShipmentDocumentFiles.delete(id);
-      }
-      await saveBackendShippingDetails(po);
-      await markBackendShipped(po);
-      backendShippingState.status = 'connected';
-      router('shipping');
-      toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
-      return;
-    } catch (error) {
-      if (isBackendMissingCarrierBolWarning(error)) {
-        const ok = await openConfirmModal({
-          title: 'Ship with missing backend details',
-          record: id,
-          message: 'The backend reported a missing BOL # or Carrier. Mark this shipment complete anyway?',
-          risk: 'The backend order will be completed, but shipping records may need cleanup later.',
-          confirmLabel: 'Mark Shipped',
-          tone: 'workflow'
-        });
-        if (!ok) return;
-        try {
-          await markBackendShipped(po, { confirmMissingCarrierBol: true });
-          backendShippingState.status = 'connected';
-          router('shipping');
-          toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
-          return;
-        } catch (retryError) {
-          error = retryError;
-        }
-      }
-      backendShippingState.status = 'error';
-      backendShippingState.lastError = 'Shipping backend completion failed, so the local demo fallback remains visible.';
-      toast(error.message || backendShippingState.lastError);
-      router('shipping');
-      return;
+  if (!requireEmployeeBackendWrite(backendShippingState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendShippingState, 'This shipment is not backend-backed. Nothing was saved locally.');
+  try {
+    const pendingFile = pendingShipmentDocumentFiles.get(id);
+    if (pendingFile) {
+      const uploaded = await uploadBackendShipmentDocument(shippingPurchaseOrderBackendId(po), pendingFile);
+      shipping.documents = mapBackendFileToPrototype(uploaded);
+      shipping.shipmentDocumentFileId = uploaded?.id || '';
+      pendingShipmentDocumentFiles.delete(id);
     }
+    await saveBackendShippingDetails({ ...po, shipping });
+    await markBackendShipped({ ...po, shipping });
+    po.shipping = shipping;
+    backendShippingState.status = 'connected';
+    backendShippingState.lastError = '';
+    router('shipping');
+    toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
+    return;
+  } catch (error) {
+    if (isBackendMissingCarrierBolWarning(error)) {
+      const ok = await openConfirmModal({
+        title: 'Ship with missing backend details',
+        record: id,
+        message: 'The backend reported a missing BOL # or Carrier. Mark this shipment complete anyway?',
+        risk: 'The backend order will be completed, but shipping records may need cleanup later.',
+        confirmLabel: 'Mark Shipped',
+        tone: 'workflow'
+      });
+      if (!ok) return;
+      try {
+        await markBackendShipped(po, { confirmMissingCarrierBol: true });
+        backendShippingState.status = 'connected';
+        backendShippingState.lastError = '';
+        router('shipping');
+        toast(`${id} marked as shipped in backend. Added to Shipping Log.`);
+        return;
+      } catch (retryError) {
+        error = retryError;
+      }
+    }
+    failBackendRequiredWrite(error, backendShippingState);
+    router('shipping');
+    return;
   }
-  po.status = 'completed';
-  po.shippedAt = new Date().toISOString();
-  logShipment(po); // auto-create a Shipping Log entry
-  saveState();
-  router('shipping');
-  toast(`${id} marked as shipped. Added to Shipping Log.`);
 }
 // totals helpers for a shipping object
 function shipTotalWeight(s) { return (s?.palletList||[]).reduce((sum,pl)=>sum+(parseFloat(pl.weight)||0),0); }
@@ -7184,37 +7171,29 @@ async function saveCustomer(id, isNew) {
     };
   });
   const existing = state.customers.find(c=>c.id===id);
-  if (backendAuthState.token && existing?._backendId) {
-    try {
-      const saved = await apiRequest(`/api/customers/${encodeURIComponent(existing._backendId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          name: data.name,
-          contactName: data.contact || data.salesContact?.name || null,
-          contactEmail: data.email || data.salesContact?.email || null,
-          phone: data.phone || null
-        })
-      });
-      mergeBackendCustomers([saved]);
-      backendCustomerState.status = 'connected';
-      backendCustomerState.lastError = '';
-      closeModal();
-      router('customers');
-      toast('Customer saved to backend.');
-      return;
-    } catch (error) {
-      backendCustomerState.status = 'error';
-      backendCustomerState.lastError = 'Customer backend update failed; local demo customer remains editable.';
-      toast(backendCustomerState.lastError);
-    }
+  if (!requireEmployeeBackendWrite(backendCustomerState)) return;
+  if (!existing?._backendId) return failBackendRequiredWrite(null, backendCustomerState, 'This customer is not backend-backed. Nothing was saved locally.');
+  try {
+    const saved = await apiRequest(`/api/customers/${encodeURIComponent(existing._backendId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: data.name,
+        contactName: data.contact || data.salesContact?.name || null,
+        contactEmail: data.email || data.salesContact?.email || null,
+        phone: data.phone || null
+      })
+    });
+    mergeBackendCustomers([saved]);
+    backendCustomerState.status = 'connected';
+    backendCustomerState.lastError = '';
+    closeModal();
+    router('customers');
+    toast('Customer saved to backend.');
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendCustomerState);
+    return;
   }
-  if (isNew) state.customers.push(data);
-  else Object.assign(existing, data);
-  try { saveState(); }
-  catch(err) { toast('Storage full - try smaller files.'); return; }
-  closeModal();
-  router('customers');
-  toast('Customer saved.');
 }
 async function deleteCustomer(id) {
   const used = state.products.find(p => p.customerId === id);
@@ -7545,23 +7524,22 @@ async function saveProduct(id, isNew) {
   }
   const existing = state.products.find(p=>p.id===id);
   let backendProduct = null;
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
-    try {
-      backendProduct = await saveBackendProduct(id, isNew, { ...data, _backendId: existing?._backendId }, cleanFormula);
-      if (pendingProductMediaFiles.product) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image');
-      if (pendingProductMediaFiles.nfp) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts');
-      pendingProductMediaFiles.product = null;
-      pendingProductMediaFiles.nfp = null;
-      backendProductState.status = 'connected';
-      backendProductState.loaded = false;
-      data.id = backendProduct.id;
-      data._backendId = backendProduct.id;
-      id = backendProduct.id;
-    } catch (error) {
-      backendProductState.status = 'error';
-      backendProductState.lastError = 'Product backend save failed, so this edit stayed local/demo only.';
-      toast(error.message || 'Product backend save failed. Saved locally only.');
-    }
+  if (!requireEmployeeBackendWrite(backendProductState)) return;
+  try {
+    backendProduct = await saveBackendProduct(id, isNew, { ...data, _backendId: existing?._backendId }, cleanFormula);
+    if (pendingProductMediaFiles.product) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image');
+    if (pendingProductMediaFiles.nfp) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts');
+    pendingProductMediaFiles.product = null;
+    pendingProductMediaFiles.nfp = null;
+    backendProductState.status = 'connected';
+    backendProductState.loaded = false;
+    backendProductState.lastError = '';
+    data.id = backendProduct.id;
+    data._backendId = backendProduct.id;
+    id = backendProduct.id;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductState);
+    return;
   }
   if (isNew) state.products.push(data);
   else Object.assign(existing, data);
@@ -8286,7 +8264,7 @@ async function loadBackendUsers() {
     saveState();
   } catch (err) {
     backendUserState.status = 'error';
-    backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
+    backendUserState.lastError = 'Account Management could not reach the backend user API. User records were not refreshed.';
   } finally {
     backendUserState.loadingUsers = false;
   }
@@ -8406,54 +8384,36 @@ async function saveUser(id, isNew) {
     addedAt: document.getElementById('usr_added').value
   };
 
-  if (backendAuthState.token) {
-    try {
-      const existing = (state.users || []).find(u => u.id === id);
-      const password = document.getElementById('usr_password')?.value || '';
-      let saved;
-      if (isNew) {
-        if (password.length < 8) { toast('Temporary password must be at least 8 characters for backend users.'); return; }
-        saved = await apiRequest('/api/users', {
-          method: 'POST',
-          body: JSON.stringify({ email: data.email, displayName: data.name, password, roles: [role], customerId: data.customerId || undefined })
-        });
-      } else {
-        const backendId = existing?._backendUserId || id;
-        saved = await apiRequest(`/api/users/${encodeURIComponent(backendId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ displayName: data.name, roles: [role], customerId: data.customerId || undefined, isActive: true })
-        });
-      }
-      upsertLocalUserFromBackend(saved);
-      backendUserState.status = 'connected';
-      backendUserState.lastError = '';
-      saveState();
-      closeModal();
-      router('users');
-      toast('User saved to backend.');
-      return;
-    } catch (err) {
-      backendUserState.status = 'error';
-      backendUserState.lastError = 'Backend user save failed. The account was not created; log in as backend Admin and try again.';
-      toast(backendUserState.lastError);
-      return;
+  if (!requireBackendWriteSession(backendUserState, 'Log in as backend Admin before saving users. Nothing was saved locally.')) return;
+  try {
+    const existing = (state.users || []).find(u => u.id === id);
+    const password = document.getElementById('usr_password')?.value || '';
+    let saved;
+    if (isNew) {
+      if (password.length < 8) { toast('Temporary password must be at least 8 characters for backend users.'); return; }
+      saved = await apiRequest('/api/users', {
+        method: 'POST',
+        body: JSON.stringify({ email: data.email, displayName: data.name, password, roles: [role], customerId: data.customerId || undefined })
+      });
+    } else {
+      const backendId = existing?._backendUserId || id;
+      saved = await apiRequest(`/api/users/${encodeURIComponent(backendId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ displayName: data.name, roles: [role], customerId: data.customerId || undefined, isActive: true })
+      });
     }
-  }
-
-  if (isNew) {
-    backendUserState.status = backendAuthState.token ? 'error' : 'idle';
-    backendUserState.lastError = 'Log in as backend Admin before adding users. Browser-preview users cannot log in.';
-    toast(backendUserState.lastError);
+    upsertLocalUserFromBackend(saved);
+    backendUserState.status = 'connected';
+    backendUserState.lastError = '';
+    saveState();
+    closeModal();
+    router('users');
+    toast('User saved to backend.');
+    return;
+  } catch (err) {
+    failBackendRequiredWrite(err, backendUserState, 'Backend user save failed. The account was not created; log in as backend Admin and try again.');
     return;
   }
-
-  state.users = state.users || [];
-  if (isNew) state.users.push(data);
-  else Object.assign(state.users.find(u=>u.id===id), data);
-  saveState();
-  closeModal();
-  router('users');
-  toast('User saved locally.');
 }
 
 /* ----- Customer Portal preview ----- */
@@ -8913,23 +8873,19 @@ async function deleteUser(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  if (backendAuthState.token && existing?._backendUserId) {
-    try {
-      await apiRequest(`/api/users/${encodeURIComponent(existing._backendUserId)}`, { method: 'DELETE' });
-      state.users = (state.users || []).filter(u => u.id !== id && u._backendUserId !== existing._backendUserId);
-      saveState();
-      router('users');
-      toast('User deactivated in backend.');
-      return;
-    } catch (err) {
-      backendUserState.status = 'error';
-      backendUserState.lastError = 'Account Management could not reach the backend user API; keeping browser-preview users active.';
-      toast(backendUserState.lastError);
-    }
+  if (!requireBackendWriteSession(backendUserState, 'Log in as backend Admin before removing users. Nothing was saved locally.')) return;
+  if (!existing?._backendUserId) return failBackendRequiredWrite(null, backendUserState, 'This user is not backend-backed. Nothing was saved locally.');
+  try {
+    await apiRequest(`/api/users/${encodeURIComponent(existing._backendUserId)}`, { method: 'DELETE' });
+    state.users = (state.users || []).filter(u => u.id !== id && u._backendUserId !== existing._backendUserId);
+    saveState();
+    router('users');
+    toast('User deactivated in backend.');
+    return;
+  } catch (err) {
+    failBackendRequiredWrite(err, backendUserState, 'Backend user delete failed. Nothing was saved locally.');
+    return;
   }
-  state.users = state.users.filter(u => u.id !== id);
-  saveState();
-  router('users');
 }
 
 /* =========================================================================
@@ -9223,19 +9179,18 @@ async function saveMasterItem(id, isNew) {
   const dup = state.masterItems.find(x => x.id !== id && (x.name||'').toLowerCase() === name.toLowerCase());
   if (dup) { toast('A master item with that name already exists.'); return; }
   const existing = state.masterItems.find(x => x.id === id);
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
-    try {
-      const saved = await saveBackendMasterItem(id, isNew, { ...data, _backendId: existing?._backendId });
-      data.id = saved.id;
-      data._backendId = saved.id;
-      id = saved.id;
-      backendMasterItemState.status = 'connected';
-      backendMasterItemState.loaded = false;
-    } catch (error) {
-      backendMasterItemState.status = 'error';
-      backendMasterItemState.lastError = 'Master List backend save failed, so this edit stayed local/demo only.';
-      toast(error.message || 'Master List backend save failed. Saved locally only.');
-    }
+  if (!requireEmployeeBackendWrite(backendMasterItemState)) return;
+  try {
+    const saved = await saveBackendMasterItem(id, isNew, { ...data, _backendId: existing?._backendId });
+    data.id = saved.id;
+    data._backendId = saved.id;
+    id = saved.id;
+    backendMasterItemState.status = 'connected';
+    backendMasterItemState.loaded = false;
+    backendMasterItemState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendMasterItemState);
+    return;
   }
   if (isNew) state.masterItems.push(data);
   else Object.assign(state.masterItems.find(x => x.id === id), data);
@@ -9435,19 +9390,19 @@ async function saveReceiving(id, isNew) {
     carrier: (document.getElementById('rcv_carrier').value || '').trim(),
     supplierId: document.getElementById('rcv_vendor').value || ''
   };
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && isNew) {
-    try {
-      const saved = await saveBackendReceivingEntry(data);
-      data.id = saved.id;
-      data._backendId = saved.id;
-      data.receivingId = saved.receivingId;
-      backendInventoryState.status = 'connected';
-      backendInventoryState.loaded = false;
-    } catch (error) {
-      backendInventoryState.status = 'error';
-      backendInventoryState.lastError = 'Receiving Log backend save failed, so this receipt stayed local/demo only.';
-      toast(error.message || 'Receiving backend save failed. Saved locally only.');
-    }
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  if (!isNew) return failBackendRequiredWrite(null, backendInventoryState, 'Receiving Log edits are not backend-backed yet. Nothing was saved locally.');
+  try {
+    const saved = await saveBackendReceivingEntry(data);
+    data.id = saved.id;
+    data._backendId = saved.id;
+    data.receivingId = saved.receivingId;
+    backendInventoryState.status = 'connected';
+    backendInventoryState.loaded = false;
+    backendInventoryState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+    return;
   }
   state.receivingLog = state.receivingLog || [];
   if (isNew) state.receivingLog.push(data);
@@ -9699,24 +9654,24 @@ async function saveMove(id, isNew) {
     fromLocation,
     toLocation
   };
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && isNew) {
-    try {
-      const saved = await saveBackendMoveEntry(data);
-      data.id = saved.id;
-      data._backendId = saved.id;
-      data.moveId = saved.moveId;
-      data.masterItemId = saved.masterItemId;
-      data.itemName = saved.itemName;
-      data.lot = saved.lotNumber || data.lot;
-      data.qtyMoved = saved.quantityMoved;
-      data.uom = saved.unitOfMeasure;
-      backendInventoryState.status = 'connected';
-      backendInventoryState.loaded = false;
-    } catch (error) {
-      backendInventoryState.status = 'error';
-      backendInventoryState.lastError = 'Move Log backend save failed, so this move stayed local/demo only.';
-      toast(error.message || 'Move backend save failed. Saved locally only.');
-    }
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  if (!isNew) return failBackendRequiredWrite(null, backendInventoryState, 'Move Log edits are not backend-backed yet. Nothing was saved locally.');
+  try {
+    const saved = await saveBackendMoveEntry(data);
+    data.id = saved.id;
+    data._backendId = saved.id;
+    data.moveId = saved.moveId;
+    data.masterItemId = saved.masterItemId;
+    data.itemName = saved.itemName;
+    data.lot = saved.lotNumber || data.lot;
+    data.qtyMoved = saved.quantityMoved;
+    data.uom = saved.unitOfMeasure;
+    backendInventoryState.status = 'connected';
+    backendInventoryState.loaded = false;
+    backendInventoryState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+    return;
   }
   state.moveLog = state.moveLog || [];
   if (isNew) state.moveLog.push(data);
@@ -10076,21 +10031,20 @@ async function saveIngredient(id, isNew) {
   if (cat === 'Ingredient' && coaData) { try { coa = JSON.parse(coaData); } catch(e){} }
   data.coa = coa;
   const existing = state.ingredients.find(i=>i.id===id);
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer') {
-    try {
-      const saved = await saveBackendInventoryItem(id, isNew, { ...data, _backendId: existing?._backendId });
-      data.id = saved.id;
-      data._backendId = saved.id;
-      data.masterItemId = saved.masterItemId;
-      if (pendingInventoryCoaFile) await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile);
-      pendingInventoryCoaFile = null;
-      backendInventoryState.status = 'connected';
-      backendInventoryState.loaded = false;
-    } catch (error) {
-      backendInventoryState.status = 'error';
-      backendInventoryState.lastError = 'Inventory backend save failed, so this item stayed local/demo only.';
-      toast(error.message || 'Inventory backend save failed. Saved locally only.');
-    }
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  try {
+    const saved = await saveBackendInventoryItem(id, isNew, { ...data, _backendId: existing?._backendId });
+    data.id = saved.id;
+    data._backendId = saved.id;
+    data.masterItemId = saved.masterItemId;
+    if (pendingInventoryCoaFile) await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile);
+    pendingInventoryCoaFile = null;
+    backendInventoryState.status = 'connected';
+    backendInventoryState.loaded = false;
+    backendInventoryState.lastError = '';
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+    return;
   }
   if (isNew) state.ingredients.push(data);
   else Object.assign(state.ingredients.find(i=>i.id===id), data);
@@ -11949,8 +11903,8 @@ async function qualityCoaFileSelected(e, poId) {
       po.coa = mapBackendFileToPrototype((files || []).find(item => item.fileCategory === 'coa') || files?.[0] || null);
       backendQualityState.loaded = false;
     } else {
-      po.coa = await readQualityFile(file, { category: 'coa' });
-      saveState();
+      failBackendRequiredWrite(null, backendQualityState, 'QA COA uploads require backend confirmation. Nothing was saved locally.');
+      return;
     }
     toast('COA uploaded. Ready to release.');
     renderQualityAssurance(document.getElementById('content'));
@@ -11966,7 +11920,8 @@ async function qualityPostShipmentCoaSelected(e, poId) {
   if (!file) return;
   if (file.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
   try {
-    await persistQualityPostShipmentCoa(poId, file);
+    const saved = await persistQualityPostShipmentCoa(poId, file);
+    if (!saved) return;
     toast('Post-shipment COA attached.');
     renderQualityAssurance(document.getElementById('content'));
   } catch (error) {
@@ -11989,13 +11944,14 @@ async function qualityReleasePo(poId) {
   if (!po) return;
   if (!po.coa) { toast('Upload a COA first.'); return; }
   try {
-    await persistQualityRelease(po);
+    const saved = await persistQualityRelease(po);
+    if (!saved) return;
     const target = qualityReleaseTargetStatus(po).replace(/_/g, ' ');
     toast(`${poId} released to ${target}.`);
     router('quality-assurance');
   } catch (error) {
     backendQualityState.status = 'error';
-    backendQualityState.lastError = 'Quality release failed, so the local QA record stayed in place.';
+    backendQualityState.lastError = 'Quality release failed. The change was not applied.';
     toast(error.message || backendQualityState.lastError);
   }
 }
@@ -12032,17 +11988,14 @@ async function qualitySubmitSkip(poId) {
     return;
   }
   try {
-    if (qualityBackendIsConnected() && qualityPurchaseOrderBackendId(po)) {
-      await skipBackendQualityPo(po, reason, notes);
-      toast(`${po.id} skipped QA with a required reason.`);
-    } else {
-      skipLocalQualityRelease(po, reason, notes);
-    }
+    const saved = await persistQualitySkip(poId);
+    if (!saved) return;
+    toast(`${po.id} skipped QA with a required reason.`);
     closeModal();
     router('quality-assurance');
   } catch (error) {
     backendQualityState.status = 'error';
-    backendQualityState.lastError = 'Quality skip failed, so the local QA record stayed in place.';
+    backendQualityState.lastError = 'Quality skip failed. The change was not applied.';
     toast(error.message || backendQualityState.lastError);
   }
 }
@@ -12603,34 +12556,25 @@ async function savePickPackPO(id, isNew) {
     notes: document.getElementById('pp_notes').value,
     status: 'open'
   };
-  state.pickPackOrders = state.pickPackOrders || [];
-  if (isNew) state.pickPackOrders.push(data);
-  else Object.assign(state.pickPackOrders.find(p => p.id === id), data);
-  try { saveState(); }
-  catch(err) { toast('Storage full - try a smaller file.'); return; }
-  closeModal();
-  if (pickPackBackendIsConnected()) {
-    try {
-      const savedOrder = state.pickPackOrders.find(p => p.id === id) || data;
-      const backendOrderId = savedOrder._backendId || '';
-      if (backendOrderId) await updateBackendPickPackOrder(savedOrder);
-      else await createBackendPickPackOrder(savedOrder);
-      backendPickPackState.status = 'connected';
-      backendPickPackState.lastError = '';
-      pickPackTab = 'pos';
-      router('pick-pack');
-      toast(isNew ? `${id} created in backend.` : `${id} saved in backend.`);
-      return;
-    } catch (error) {
-      backendPickPackState.status = 'error';
-      backendPickPackState.lastError = 'Pick & Pack backend save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendPickPackState.lastError);
-      router('pick-pack');
-      return;
-    }
+  if (!requireEmployeeBackendWrite(backendPickPackState)) return;
+  try {
+    const existing = state.pickPackOrders.find(p => p.id === id);
+    const savedOrder = { ...existing, ...data };
+    const backendOrderId = savedOrder._backendId || '';
+    if (backendOrderId) await updateBackendPickPackOrder(savedOrder);
+    else await createBackendPickPackOrder(savedOrder);
+    backendPickPackState.status = 'connected';
+    backendPickPackState.lastError = '';
+    pickPackTab = 'pos';
+    closeModal();
+    router('pick-pack');
+    toast(isNew ? `${id} created in backend.` : `${id} saved in backend.`);
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendPickPackState);
+    router('pick-pack');
+    return;
   }
-  router('pick-pack');
-  toast(isNew ? `${id} created.` : `${id} saved.`);
 }
 
 function pickPackStockCheck(p) {
@@ -12682,37 +12626,12 @@ async function markPickPackPicked(id) {
           error = retryError;
         }
       }
-      backendPickPackState.status = 'error';
-      backendPickPackState.lastError = 'Pick & Pack backend picking failed, so the local demo fallback remains visible.';
-      toast(error.message || backendPickPackState.lastError);
+      failBackendRequiredWrite(error, backendPickPackState);
       router('pick-pack');
       return;
     }
   }
-  const check = pickPackStockCheck(p);
-  if (!check.ok) {
-    const ok = await openConfirmModal({
-      title: 'Pick with short stock',
-      record: id,
-      message: 'This order is short on finished-goods stock. Mark it picked anyway?',
-      risk: check.short.map(s => `${s.item}: short ${s.shortBy}`).join('\n'),
-      confirmLabel: 'Mark Picked',
-      tone: 'workflow'
-    });
-    if (!ok) return;
-  }
-  // deduct from finished goods
-  p.lines.forEach(l => {
-    const ing = state.ingredients.find(x => x.id === l.ingredientId);
-    if (ing) ing.stock = Math.max(0, ing.stock - l.qty);
-  });
-  p.status = 'picked';
-  p.pickedAt = new Date().toISOString();
-  p.shippingMode = p.shippingMode || 'pallet';
-  saveState();
-  pickPackTab = 'shipping';
-  router('pick-pack');
-  toast(`${id} picked. Inventory deducted, moved to Shipping.`);
+  failBackendRequiredWrite(null, backendPickPackState, 'Pick & Pack picking requires backend confirmation. Nothing was saved locally.');
 }
 
 async function savePickPackShippingForm(id) {
@@ -12733,25 +12652,25 @@ async function savePickPackShippingForm(id) {
     p.height = parseFloat(document.getElementById('pp_h_'+id).value) || 0;
   }
   p.notes = document.getElementById('pp_sh_notes_'+id).value;
-  saveState();
-  if (pickPackBackendIsConnected() && p._backendId) {
-    try {
-      await saveBackendPickPackShippingDetails(p);
-      backendPickPackState.status = 'connected';
-      backendPickPackState.lastError = '';
-      toast('Shipping info saved to backend.');
-      return;
-    } catch (error) {
-      backendPickPackState.status = 'error';
-      backendPickPackState.lastError = 'Pick & Pack backend shipping save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendPickPackState.lastError);
-      return;
-    }
+  if (!requireEmployeeBackendWrite(backendPickPackState)) return false;
+  if (!p._backendId) {
+    failBackendRequiredWrite(null, backendPickPackState, 'This Pick & Pack order is not backend-backed. Nothing was saved locally.');
+    return false;
   }
-  toast('Shipping info saved.');
+  try {
+    await saveBackendPickPackShippingDetails(p);
+    backendPickPackState.status = 'connected';
+    backendPickPackState.lastError = '';
+    toast('Shipping info saved to backend.');
+    return true;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendPickPackState);
+    return false;
+  }
 }
 async function markPickPackShipped(id) {
-  await savePickPackShippingForm(id);
+  const saved = await savePickPackShippingForm(id);
+  if (!saved) return;
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
   if (p.shippingMode === 'parcel' && !p.trackingNumber) {
@@ -12787,19 +12706,12 @@ async function markPickPackShipped(id) {
       toast(`${id} marked shipped in backend.`);
       return;
     } catch (error) {
-      backendPickPackState.status = 'error';
-      backendPickPackState.lastError = 'Pick & Pack backend shipping completion failed, so the local demo fallback remains visible.';
-      toast(error.message || backendPickPackState.lastError);
+      failBackendRequiredWrite(error, backendPickPackState);
       router('pick-pack');
       return;
     }
   }
-  p.status = 'shipped';
-  p.shippedAt = new Date().toISOString();
-  saveState();
-  pickPackTab = 'shipped';
-  router('pick-pack');
-  toast(`${id} marked shipped.`);
+  failBackendRequiredWrite(null, backendPickPackState, 'Pick & Pack shipping requires backend confirmation. Nothing was saved locally.');
 }
 
 async function deletePickPackPO(id) {
@@ -13538,41 +13450,24 @@ async function saveRdRequest(id, isNew) {
     archivedAt: current.archivedAt || null
   };
 
-  state.rdRequests = state.rdRequests || [];
-  if (isNew) {
-    state.rdRequests.push(data);
-    toast('R&D request submitted.');
-  } else {
-    const r = state.rdRequests.find(x => x.id === id);
-    if (r) {
-      Object.assign(r, data);
-      toast('R&D request updated.');
-    }
+  if (!requireEmployeeBackendWrite(backendResearchState)) return;
+  try {
+    if (isNew) await createBackendResearchRequest(data);
+    else await updateBackendResearchRequest(data);
+    backendResearchState.status = 'connected';
+    backendResearchState.lastError = '';
+    backendResearchState.loaded = false;
+    closeModal();
+    rdTab = 'Queue';
+    router('rd');
+    toast(isNew ? 'R&D request submitted to backend.' : 'R&D request updated in backend.');
+    return;
+  } catch (error) {
+    failBackendRequiredWrite(error, backendResearchState);
+    rdTab = 'Queue';
+    router('rd');
+    return;
   }
-  try { saveState(); } catch(e) { toast('Storage full - try removing files or older entries.'); return; }
-  closeModal();
-  if (researchBackendIsConnected()) {
-    try {
-      if (isNew) await createBackendResearchRequest(data);
-      else await updateBackendResearchRequest(data);
-      backendResearchState.status = 'connected';
-      backendResearchState.lastError = '';
-      backendResearchState.loaded = false;
-      rdTab = 'Queue';
-      router('rd');
-      toast(isNew ? 'R&D request submitted to backend.' : 'R&D request updated in backend.');
-      return;
-    } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
-      rdTab = 'Queue';
-      router('rd');
-      return;
-    }
-  }
-  rdTab = 'Queue';
-  router('rd');
 }
 
 async function addRdNote(id) {
@@ -13591,17 +13486,12 @@ async function addRdNote(id) {
       toast('R&D note saved to backend.');
       return;
     } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend note save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
+      failBackendRequiredWrite(error, backendResearchState);
       router('rd');
       return;
     }
   }
-  r.notes = r.notes || [];
-  r.notes.push({ id: uid('rdn'), text, ts: new Date().toISOString() });
-  saveState();
-  router('rd');
+  failBackendRequiredWrite(null, backendResearchState, 'R&D notes require backend confirmation. Nothing was saved locally.');
 }
 
 async function addRdComment(id) {
@@ -13620,17 +13510,12 @@ async function addRdComment(id) {
       toast('R&D comment saved to backend.');
       return;
     } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend comment save failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
+      failBackendRequiredWrite(error, backendResearchState);
       router('rd');
       return;
     }
   }
-  r.comments = r.comments || [];
-  r.comments.push({ id: uid('rdc'), text, ts: new Date().toISOString() });
-  saveState();
-  router('rd');
+  failBackendRequiredWrite(null, backendResearchState, 'R&D comments require backend confirmation. Nothing was saved locally.');
 }
 
 async function completeRdRequest(id) {
@@ -13656,21 +13541,13 @@ async function completeRdRequest(id) {
       toast(`${r.rdId} marked complete in backend.`);
       return;
     } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend completion failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
+      failBackendRequiredWrite(error, backendResearchState);
       rdTab = 'Completed';
       router('rd');
       return;
     }
   }
-  r.status = 'completed';
-  r.completedAt = new Date().toISOString();
-  r.archivedAt = null;
-  saveState();
-  rdTab = 'Completed';
-  router('rd');
-  toast(`${r.rdId} marked complete.`);
+  failBackendRequiredWrite(null, backendResearchState, 'R&D status changes require backend confirmation. Nothing was saved locally.');
 }
 
 async function reopenRdRequest(id) {
@@ -13696,21 +13573,13 @@ async function reopenRdRequest(id) {
       toast(`${r.rdId} reopened in backend.`);
       return;
     } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend reopen failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
+      failBackendRequiredWrite(error, backendResearchState);
       rdTab = 'Queue';
       router('rd');
       return;
     }
   }
-  r.status = 'queue';
-  r.completedAt = null;
-  r.archivedAt = null;
-  saveState();
-  rdTab = 'Queue';
-  router('rd');
-  toast(`${r.rdId} reopened.`);
+  failBackendRequiredWrite(null, backendResearchState, 'R&D status changes require backend confirmation. Nothing was saved locally.');
 }
 
 async function archiveRdRequest(id) {
@@ -13735,18 +13604,12 @@ async function archiveRdRequest(id) {
       toast(`${r.rdId} archived in backend.`);
       return;
     } catch (error) {
-      backendResearchState.status = 'error';
-      backendResearchState.lastError = 'Research backend archive failed, so the local demo fallback remains visible.';
-      toast(error.message || backendResearchState.lastError);
+      failBackendRequiredWrite(error, backendResearchState);
       router('rd');
       return;
     }
   }
-  r.status = 'archived';
-  r.archivedAt = new Date().toISOString();
-  saveState();
-  router('rd');
-  toast(`${r.rdId} archived.`);
+  failBackendRequiredWrite(null, backendResearchState, 'R&D status changes require backend confirmation. Nothing was saved locally.');
 }
 
 /* =========================================================================
