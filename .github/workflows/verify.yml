@@ -7,6 +7,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
+      - "vitest.config.ts"
       - "wrangler.jsonc"
       - "src/**"
       - "tests/**"
@@ -21,6 +22,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
+      - "vitest.config.ts"
       - "wrangler.jsonc"
       - "src/**"
       - "tests/**"
@@ -53,3 +55,4 @@ jobs:
 
       - run: npm ci
       - run: npm run verify
+      - run: npm run coverage

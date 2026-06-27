@@ -7,6 +7,7 @@
         "dev": "wrangler dev",
         "test": "vitest run",
         "test:watch": "vitest",
+        "coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit",
         "check:deploy-config": "node scripts/validate-deploy-config.mjs wrangler.jsonc",
         "sample:accounts": "node scripts/sample-accounts.mjs",
@@ -32,6 +33,7 @@
     "devDependencies": {
         "@cloudflare/workers-types": "^4.20260609.1",
         "@types/node": "^25.9.2",
+        "@vitest/coverage-v8": "^4.1.8",
         "typescript": "^6.0.3",
         "vitest": "^4.1.8",
         "wrangler": "^4.98.0"
