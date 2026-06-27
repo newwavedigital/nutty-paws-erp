@@ -1,0 +1,21 @@
+  :root {
+    --brown: #5C3A21;
+    --brown-dark: #3E2613;
+    --brown-light: #8B5E3C;
+    --orange: #E07B2A;
+    --orange-light: #F4A261;
+    --beige: #F5E9D3;
+    --beige-light: #FAF3E3;
+    --white: #FFFFFF;
+    --black: #1A1A1A;
+    --grey: #C9BFAE;
+    --grey-light: #E9E2D2;
+    --danger: #B23A3A;
+    --success: #4A7C44;
+
+    /* Production room colors */
+    --room-squeeze: #E07B2A;   /* orange */
+    --room-bnutty: #5C3A21;    /* brown */
+    --room-main: #8B5E3C;      /* light brown */
+    --room-doghouse: #1A1A1A;  /* black */
+  }

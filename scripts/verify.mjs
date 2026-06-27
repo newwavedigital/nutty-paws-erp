@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 
 const GATES = [
+  { name: "npm run frontend:check", cmd: "npm", args: ["run", "frontend:check"] },
   { name: "npm test", cmd: "npm", args: ["test"] },
   { name: "npm run typecheck", cmd: "npm", args: ["run", "typecheck"] },
   { name: "npm run check:deploy-config", cmd: "npm", args: ["run", "check:deploy-config"] },

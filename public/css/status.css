@@ -1,0 +1,23 @@
+  /* ---------- Status badges ---------- */
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-pending { background: #fff3cd; color: #8a6500; }
+  .badge-supply { background: #fde4cc; color: #a0470c; }
+  .badge-prod { background: #d8e6d2; color: #2c5524; }
+  .badge-shipping { background: #d3dffb; color: #1e3a8a; }
+  .badge-complete { background: var(--grey-light); color: var(--brown); }
+  .badge-low { background: #fcd7d3; color: #802020; }
+
+
+  /* ---------- Severity badges ---------- */
+  .sev-low { background: #d8e6d2; color: #2c5524; }
+  .sev-med { background: #fff3cd; color: #8a6500; }
+  .sev-high { background: #fcd7d3; color: #802020; }
+
