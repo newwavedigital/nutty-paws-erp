@@ -460,6 +460,10 @@ function authHeaders() {
   return backendAuthState.token ? { Authorization: `Bearer ${backendAuthState.token}` } : {};
 }
 
+function isBackendSignedIn() {
+  return !!backendAuthState.token && !!backendAuthState.user;
+}
+
 function primaryBackendRole() {
   return (backendAuthState.roles || [])[0] || backendAuthState.user?.roles?.[0] || '';
 }
@@ -3153,8 +3157,9 @@ const PAGE_TITLES = {
   'customer-portal': 'Customer Portal'
 };
 
-const CUSTOMER_ALLOWED_PAGES = new Set(['dashboard', 'purchase-orders', 'products', 'feedback', 'customer-portal']);
-const EMPLOYEE_NAV_PAGES = new Set([
+const ALL_NAV_PAGES = [
+  'dashboard',
+  'purchase-orders',
   'supply-chain',
   'procurement',
   'production',
@@ -3165,13 +3170,44 @@ const EMPLOYEE_NAV_PAGES = new Set([
   'content-library',
   'slack',
   'food-safety',
+  'products',
   'users',
+  'feedback',
   'pick-pack',
   'quality-assurance',
   'machinery',
   'rd',
-  'assignments'
-]);
+  'assignments',
+  'customer-portal'
+];
+const CUSTOMER_ALLOWED_PAGES = new Set(['customer-portal', 'purchase-orders', 'products', 'feedback']);
+const EMPLOYEE_NAV_PAGES = new Set(ALL_NAV_PAGES.filter(page => page !== 'customer-portal'));
+const ROLE_ALLOWED_PAGES = {
+  Admin: new Set(ALL_NAV_PAGES),
+  Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'shipping', 'feedback']),
+  'Supply Chain & Procurement': new Set(['dashboard', 'supply-chain', 'procurement', 'suppliers', 'inventory', 'rd', 'feedback']),
+  Warehousing: new Set(['dashboard', 'inventory', 'shipping', 'pick-pack', 'quality-assurance', 'production', 'feedback']),
+  Production: new Set(['dashboard', 'production', 'food-safety', 'quality-assurance', 'pick-pack', 'inventory', 'feedback']),
+  Customer: CUSTOMER_ALLOWED_PAGES
+};
+const ROLE_LANDING_PAGES = {
+  Admin: 'dashboard',
+  Sales: 'dashboard',
+  'Supply Chain & Procurement': 'supply-chain',
+  Warehousing: 'inventory',
+  Production: 'production',
+  Customer: 'customer-portal'
+};
+const PARTIAL_LOCAL_PAGE_LIMITS = {
+  'customer-portal': 'Customer Portal is a protected preview. Some customer-facing records and generated notes are partial local-only until the next approved customer portal sprint.',
+  'content-library': 'Content Library has backend file paths, but some folder/file preview records and generated notes are partial local-only.',
+  slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
+  'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
+  machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.',
+  inventory: 'Inventory has backend-backed core records, but receiving-log edits, move-log edits, and generated local notes are partial local-only.',
+  assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'
+};
+let authGateSetupRequestId = 0;
 
 const SHAREPOINT_INVENTORY_URL = 'https://bnutty2.sharepoint.com/:x:/s/Bnutty/IQD6NhKAgj2HR6N9vJGV9POQARgkf7S9r8zLdjYh4WMkb6g?e=ZJ4swm';
 const USER_ROLES = ['Admin', 'Sales', 'Supply Chain & Procurement', 'Warehousing', 'Production', 'Customer'];
@@ -3249,21 +3285,53 @@ function ensureFinishedGoodForProduct(product, brand) {
 }
 
 function isCustomerSession() {
-  return !!backendAuthState.token && backendAuthState.user?.userType === 'customer';
+  return isBackendSignedIn() && backendAuthState.user?.userType === 'customer';
+}
+
+function currentBackendRoles() {
+  const roles = Array.isArray(backendAuthState.roles) ? backendAuthState.roles : [];
+  if (roles.length) return roles;
+  return Array.isArray(backendAuthState.user?.roles) ? backendAuthState.user.roles : [];
+}
+
+function allowedPagesForCurrentUser() {
+  if (!isBackendSignedIn()) return new Set();
+  if (isCustomerSession()) return CUSTOMER_ALLOWED_PAGES;
+  const roles = currentBackendRoles();
+  if (roles.includes('Admin')) return ROLE_ALLOWED_PAGES.Admin;
+  const allowed = new Set();
+  roles.forEach(role => {
+    const pages = ROLE_ALLOWED_PAGES[role];
+    if (pages) pages.forEach(page => allowed.add(page));
+  });
+  if (!allowed.size) allowed.add('dashboard');
+  return allowed;
+}
+
+function roleLandingPageForCurrentUser() {
+  if (isCustomerSession()) return ROLE_LANDING_PAGES.Customer;
+  const roles = currentBackendRoles();
+  if (roles.includes('Admin')) return ROLE_LANDING_PAGES.Admin;
+  for (const role of roles) {
+    const landing = ROLE_LANDING_PAGES[role];
+    if (landing && allowedPagesForCurrentUser().has(landing)) return landing;
+  }
+  return allowedPagesForCurrentUser().values().next().value || 'dashboard';
 }
 
 function isPageAllowedForCurrentUser(page) {
-  if (!isCustomerSession()) return true;
-  return CUSTOMER_ALLOWED_PAGES.has(page || 'dashboard');
+  if (!isBackendSignedIn()) return false;
+  return allowedPagesForCurrentUser().has(page || roleLandingPageForCurrentUser());
 }
 
 function updateSidebarNavigationForRole() {
-  const customer = isCustomerSession();
+  const signedIn = isBackendSignedIn();
+  const allowedPages = allowedPagesForCurrentUser();
   const nav = document.getElementById('nav');
   if (!nav) return;
   nav.querySelectorAll('a[data-page]').forEach(link => {
     const page = link.dataset.page;
-    link.hidden = customer && !CUSTOMER_ALLOWED_PAGES.has(page);
+    link.hidden = !signedIn || !allowedPages.has(page);
   });
   nav.querySelectorAll('.nav-section-label').forEach(label => {
     let cursor = label.nextElementSibling;
@@ -3272,22 +3340,122 @@ function updateSidebarNavigationForRole() {
       if (cursor.matches?.('a[data-page]') && !cursor.hidden) hasVisibleLink = true;
       cursor = cursor.nextElementSibling;
     }
-    label.hidden = customer && !hasVisibleLink;
+    label.hidden = !signedIn || !hasVisibleLink;
   });
 }
 
 function renderRestrictedPage(el, page) {
   const title = PAGE_TITLES[page] || 'Restricted area';
+  const landing = roleLandingPageForCurrentUser();
   el.innerHTML = renderOpsPanel({
     title: 'Restricted area',
-    kicker: 'Customer access',
+    kicker: 'Role access',
     body: `
       <div class="empty">
         <strong>${escapeHtml(title)}</strong>
-        <p>This area is for employee and admin workflows. Customer users can use the customer portal, purchase order, product, and feedback areas tied to their account.</p>
-        <button class="btn btn-sm" onclick="router('customer-portal')">Open Customer Portal</button>
+        <p>This area is for employee and admin workflows. Your current backend role can only use the approved areas shown in the sidebar.</p>
+        <button class="btn btn-sm" onclick="router('${escapeHtml(landing)}')">Open Allowed Area</button>
       </div>`
   });
+}
+
+function partialLocalBannerHtml(page) {
+  const message = PARTIAL_LOCAL_PAGE_LIMITS[page];
+  if (!message) return '';
+  return `
+    <div class="partial-local-banner" data-partial-local-banner="${escapeHtml(page)}">
+      <strong>Partial local-only</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>`;
+}
+
+function addPartialLocalBanner(el, page) {
+  const banner = partialLocalBannerHtml(page);
+  if (banner && el) el.insertAdjacentHTML('afterbegin', banner);
+}
+
+function ensureAuthGateElement() {
+  let gate = document.getElementById('authGate');
+  if (gate) return gate;
+  gate = document.createElement('section');
+  gate.id = 'authGate';
+  gate.className = 'auth-gate';
+  gate.setAttribute('aria-live', 'polite');
+  document.body.insertBefore(gate, document.body.firstChild);
+  return gate;
+}
+
+function renderLoginGate({ message = 'Sign in to open the ERP.', setupAvailable = false, checkingSetup = false } = {}) {
+  const gate = ensureAuthGateElement();
+  gate.hidden = false;
+  const existingEmail = document.getElementById('auth_gate_email')?.value || '';
+  const existingPassword = document.getElementById('auth_gate_password')?.value || '';
+  gate.innerHTML = `
+    <div class="auth-gate-panel">
+      <div class="auth-gate-brand">
+        <div class="auth-gate-logo" aria-hidden="true">NH</div>
+        <h1>Nut House ERP</h1>
+      </div>
+      <p class="auth-gate-message">${escapeHtml(message)}</p>
+      <form class="auth-gate-form" onsubmit="event.preventDefault();submitBackendLogin(event.currentTarget)">
+        <div class="form-row"><label for="auth_gate_email">Email</label><input type="email" id="auth_gate_email" autocomplete="username" value="${escapeHtml(existingEmail)}" required /></div>
+        <div class="form-row"><label for="auth_gate_password">Password</label><input type="password" id="auth_gate_password" autocomplete="current-password" value="${escapeHtml(existingPassword)}" required /></div>
+        <button type="submit" class="btn auth-gate-submit">Sign in</button>
+      </form>
+      <div class="auth-gate-actions">
+        ${checkingSetup ? '<span class="help-text">Checking first admin setup…</span>' : ''}
+        ${setupAvailable ? '<button class="btn btn-secondary btn-sm" type="button" onclick="openBackendSetup()">First Admin Setup</button>' : ''}
+      </div>
+    </div>`;
+}
+
+function showAuthGate(message = 'Sign in to open the ERP.') {
+  document.body.classList.add('auth-gated');
+  const requestId = ++authGateSetupRequestId;
+  renderLoginGate({ message, checkingSetup: true });
+  updateTopbarAccount();
+  updateSidebarNavigationForRole();
+  checkBackendSetupStatus()
+    .then(status => {
+      if (requestId !== authGateSetupRequestId || isBackendSignedIn()) return;
+      renderLoginGate({ message, setupAvailable: !!status.needsSetup });
+    })
+    .catch(() => {
+      if (requestId !== authGateSetupRequestId || isBackendSignedIn()) return;
+      renderLoginGate({ message: `${message} Setup status is unavailable right now.`, setupAvailable: false });
+    });
+}
+
+function showAppShell() {
+  authGateSetupRequestId++;
+  document.body.classList.remove('auth-gated');
+  const gate = document.getElementById('authGate');
+  if (gate) gate.hidden = true;
+}
+
+function enterAuthenticatedApp(page = roleLandingPageForCurrentUser()) {
+  showAppShell();
+  updateTopbarAccount();
+  updateSidebarNavigationForRole();
+  router(page);
+}
+
+async function bootstrapAuthGate() {
+  updateTopbarAccount();
+  updateSidebarNavigationForRole();
+  if (!backendAuthState.token) {
+    clearBackendAuth();
+    showAuthGate('Sign in to open the ERP.');
+    return;
+  }
+  try {
+    const data = await apiRequest('/api/auth/me');
+    setBackendAuth({ token: backendAuthState.token, ...data });
+    enterAuthenticatedApp(roleLandingPageForCurrentUser());
+  } catch (err) {
+    clearBackendAuth();
+    showAuthGate('Session expired or was rejected. Please sign in again.');
+  }
 }
 
 function renderCustomerPortalPage(el) {
@@ -3306,6 +3474,11 @@ function renderCustomerPortalPage(el) {
 
 function router(page) {
   const requestedPage = page || 'dashboard';
+  if (!isBackendSignedIn()) {
+    currentPage = '';
+    showAuthGate('Sign in to open the ERP.');
+    return;
+  }
   currentPage = isPageAllowedForCurrentUser(requestedPage) ? requestedPage : 'restricted';
   closeTopbarAccountMenu();
   updateTopbarAccount();
@@ -3340,6 +3513,7 @@ function router(page) {
     case 'customer-portal': renderCustomerPortalPage(c); break;
     default: c.innerHTML = '<p>Not found</p>';
   }
+  addPartialLocalBanner(c, currentPage === 'restricted' ? requestedPage : currentPage);
   // mobile: auto-close sidebar after nav
   if (window.innerWidth <= 720) {
     document.getElementById('sidebar').classList.remove('open');
@@ -3386,7 +3560,7 @@ document.querySelectorAll('.sidebar nav a').forEach(a => {
   a.addEventListener('click', () => activateSidebarNavLink(a));
   a.addEventListener('keydown', handleSidebarNavKeydown);
 });
-document.getElementById('brandHeader').addEventListener('click', () => router('dashboard'));
+document.getElementById('brandHeader').addEventListener('click', () => router(roleLandingPageForCurrentUser()));
 document.addEventListener('click', (event) => {
   if (!event.target.closest || !event.target.closest('#topbarAccount')) closeTopbarAccountMenu();
 });
@@ -8083,7 +8257,6 @@ function backendAuthPanelHtml() {
           <div style="font-size:12px;color:var(--brown);margin-top:4px">${userLabel}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="openBackendSetup()">First Admin Setup</button>
           ${customerPortalAccess ? `<button class="btn btn-secondary btn-sm" onclick="viewSignedInCustomerPortal()">Open Customer Portal</button>` : ''}
           ${signedIn ? `<button class="btn btn-secondary btn-sm" onclick="refreshBackendAuth()">Refresh Session</button><button class="btn btn-secondary btn-sm" onclick="logoutBackendAuth()">Logout</button>` : `<button class="btn btn-sm" onclick="openBackendLogin()">Login</button>`}
         </div>
@@ -8098,13 +8271,13 @@ async function refreshBackendAuth() {
     setBackendAuth({ token: backendAuthState.token, ...data });
     await loadBackendUsers();
     toast('Backend session refreshed.');
-    if (currentPage === 'users') router('users');
+    enterAuthenticatedApp(isPageAllowedForCurrentUser(currentPage) ? currentPage : roleLandingPageForCurrentUser());
   } catch (err) {
     clearBackendAuth();
     backendUserState.status = 'error';
-    backendUserState.lastError = 'Backend auth session expired or unavailable; browser-preview users remain active.';
-    toast('Backend session unavailable. Browser-preview data remains visible.');
-    if (currentPage === 'users') router('users');
+    backendUserState.lastError = 'Backend auth session expired or unavailable.';
+    showAuthGate('Session expired or was rejected. Please sign in again.');
+    toast('Backend session unavailable. Please sign in again.');
   }
 }
 
@@ -8152,7 +8325,7 @@ async function submitBackendSetup() {
     setBackendAuth(data);
     closeModal();
     await loadBackendUsers();
-    router('users');
+    enterAuthenticatedApp(roleLandingPageForCurrentUser());
     toast('Backend Admin created and signed in.');
   } catch (err) {
     toast(err.message || 'Backend setup failed.');
@@ -8162,7 +8335,7 @@ async function submitBackendSetup() {
 function openBackendLogin() {
   openModal('Backend Login', `
     <div class="help-text" style="margin-bottom:12px">Use an approved staging sample account. Signing in loads protected backend records and role-based access.</div>
-    <form onsubmit="event.preventDefault();submitBackendLogin()">
+    <form onsubmit="event.preventDefault();submitBackendLogin(event.currentTarget)">
       <div class="form-grid">
         <div class="form-row"><label>Email</label><input type="email" id="auth_login_email" required /></div>
         <div class="form-row"><label>Password</label><input type="password" id="auth_login_password" required /></div>
@@ -8175,19 +8348,21 @@ function openBackendLogin() {
   `);
 }
 
-async function submitBackendLogin() {
+async function submitBackendLogin(form) {
   try {
+    const emailInput = form?.querySelector?.('input[type="email"]') || document.getElementById('auth_login_email') || document.getElementById('auth_gate_email');
+    const passwordInput = form?.querySelector?.('input[type="password"]') || document.getElementById('auth_login_password') || document.getElementById('auth_gate_password');
     const data = await apiRequest('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        email: document.getElementById('auth_login_email').value,
-        password: document.getElementById('auth_login_password').value
+        email: emailInput?.value || '',
+        password: passwordInput?.value || ''
       })
     });
     setBackendAuth(data);
     closeModal();
     await loadBackendUsers();
-    router('users');
+    enterAuthenticatedApp(roleLandingPageForCurrentUser());
     toast('Signed in to backend account API.');
   } catch (err) {
     toast(err.message || 'Login failed.');
@@ -8199,7 +8374,7 @@ async function logoutBackendAuth() {
     if (backendAuthState.token) await apiRequest('/api/auth/logout', { method: 'POST' });
   } catch (err) {}
   clearBackendAuth();
-  router('users');
+  showAuthGate('Signed out. Sign in to open the ERP.');
   toast('Logged out. Sign in again to load protected backend records.');
 }
 
@@ -13616,4 +13791,4 @@ async function archiveRdRequest(id) {
    INIT
    ========================================================================= */
 window.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-router('dashboard');
+bootstrapAuthGate();

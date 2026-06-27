@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/verify.yml"
+      - ".github/workflows/deploy.yml"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -19,6 +20,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/verify.yml"
+      - ".github/workflows/deploy.yml"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
