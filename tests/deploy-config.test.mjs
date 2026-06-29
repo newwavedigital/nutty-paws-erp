@@ -69,6 +69,37 @@ describe("deploy config guard", () => {
     expect(errors).toEqual([]);
   });
 
+  it("requires only non-secret submitted-PO SendGrid config when enabled", () => {
+    const errors = validateDeployConfig({
+      vars: {
+        ENVIRONMENT: "staging",
+        AUTH_REQUIRED: "true",
+        SENDGRID_SUBMITTED_PO_ENABLED: "true",
+        SUBMITTED_PO_NOTIFICATION_TO: "supply@example.com",
+        SUBMITTED_PO_NOTIFICATION_FROM: "erp@example.com",
+        SUBMITTED_PO_NOTIFICATION_CC: "owner@example.com, ops@example.com",
+      },
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects enabled submitted-PO SendGrid config without from or to values", () => {
+    const errors = validateDeployConfig({
+      vars: {
+        ENVIRONMENT: "staging",
+        AUTH_REQUIRED: "true",
+        SENDGRID_SUBMITTED_PO_ENABLED: "true",
+        SUBMITTED_PO_NOTIFICATION_TO: "   ",
+      },
+    });
+
+    expect(errors).toEqual([
+      'top-level enables submitted-PO SendGrid but SUBMITTED_PO_NOTIFICATION_TO is missing',
+      'top-level enables submitted-PO SendGrid but SUBMITTED_PO_NOTIFICATION_FROM is missing',
+    ]);
+  });
+
   it("parses jsonc comments and BOMs without changing string values", () => {
     const parsed = parseJsonc(`\uFEFF{
       // staging review stays auth-off
@@ -141,5 +172,13 @@ describe("deploy config guard", () => {
       },
     });
     expect(wranglerConfig.routes).toBeUndefined();
+    expect(wranglerConfig.vars?.SENDGRID_SUBMITTED_PO_ENABLED).toBe("false");
+    expect(wranglerConfig.vars?.SUBMITTED_PO_NOTIFICATION_TO).toBe("generalmalit07@gmail.com");
+    expect(wranglerConfig.vars?.SUBMITTED_PO_NOTIFICATION_FROM).toBe("no-reply@nuthouseportal.com");
+    expect(wranglerConfig.vars?.SENDGRID_API_KEY).toBeUndefined();
+    expect(wranglerConfig.env?.production?.vars?.SENDGRID_SUBMITTED_PO_ENABLED).toBeUndefined();
+    expect(wranglerConfig.env?.production?.vars?.SUBMITTED_PO_NOTIFICATION_TO).toBeUndefined();
+    expect(wranglerConfig.env?.production?.vars?.SUBMITTED_PO_NOTIFICATION_FROM).toBeUndefined();
+    expect(wranglerConfig.env?.production?.vars?.SENDGRID_API_KEY).toBeUndefined();
   });
 });

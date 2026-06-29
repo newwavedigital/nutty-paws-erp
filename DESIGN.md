@@ -92,7 +92,7 @@ Use the existing Nut House palette as the foundation, but balance it with cleane
 - Use brown/orange for brand and navigation, not every surface.
 - Use status colors only when they carry operational meaning.
 - Low stock and over-allocation must be visually distinct.
-- Backend-connected status should be calm and low-noise.
+- Backend warnings should be calm and low-noise.
 - Local/demo fallback status should be visible but not alarming unless the action cannot save.
 
 ## Typography
@@ -306,12 +306,7 @@ Field rules:
 
 ## Data-State Messaging
 
-Every backend-backed screen needs a small state banner.
-
-Backend connected:
-
-- Calm success/info treatment.
-- Copy: "Backend connected. This screen is reading protected backend records when available."
+Backend-connected success banners are no longer needed in the normal app flow.
 
 Local/demo fallback:
 
@@ -620,7 +615,6 @@ Prefer:
 - "Reorder At"
 - "Source item from Master List"
 - "Showing local demo data"
-- "Backend connected"
 
 Avoid:
 

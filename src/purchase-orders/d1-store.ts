@@ -1,6 +1,9 @@
 import type {
   DepositStatus,
+  POChangeRequestStatus,
+  POChangeRequestType,
   ProductBomItemRecord,
+  PurchaseOrderChangeRequestRecord,
   PurchaseOrderLineRecord,
   PurchaseOrderRecord,
   PurchaseOrderStatus,
@@ -34,6 +37,18 @@ type ProductBomItemRow = {
   product_id: string;
   master_item_id: string;
   quantity_per_unit: number;
+};
+
+type POChangeRequestRow = {
+  id: string;
+  purchase_order_id: string;
+  customer_id: string;
+  request_type: POChangeRequestType;
+  message: string;
+  status: POChangeRequestStatus;
+  requested_by_user_id: string | null;
+  resolved_by_user_id: string | null;
+  resolution_note: string | null;
 };
 
 export class D1PurchaseOrderStore implements PurchaseOrderStore {
@@ -303,6 +318,99 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
     }));
   }
 
+  async createChangeRequest(input: {
+    id: string;
+    purchaseOrderId: string;
+    customerId: string;
+    requestType: POChangeRequestType;
+    message: string;
+    requestedByUserId?: string;
+  }): Promise<PurchaseOrderChangeRequestRecord> {
+    await this.db
+      .prepare(
+        `
+          INSERT INTO purchase_order_change_requests (
+            id,
+            purchase_order_id,
+            customer_id,
+            request_type,
+            message,
+            status,
+            requested_by_user_id
+          )
+          VALUES (?, ?, ?, ?, ?, 'open', ?)
+        `,
+      )
+      .bind(
+        input.id,
+        input.purchaseOrderId,
+        input.customerId,
+        input.requestType,
+        input.message,
+        input.requestedByUserId ?? null,
+      )
+      .run();
+    const record = await this.getChangeRequest(input.id);
+    if (!record) throw new Error("Failed to create PO change request");
+    return record;
+  }
+
+  async listChangeRequests(purchaseOrderId: string): Promise<PurchaseOrderChangeRequestRecord[]> {
+    const rows = await this.db
+      .prepare(
+        `
+          SELECT id, purchase_order_id, customer_id, request_type, message, status,
+                 requested_by_user_id, resolved_by_user_id, resolution_note
+          FROM purchase_order_change_requests
+          WHERE purchase_order_id = ?
+          ORDER BY created_at DESC
+        `,
+      )
+      .bind(purchaseOrderId)
+      .all<POChangeRequestRow>();
+    return (rows.results ?? []).map(mapChangeRequestRow);
+  }
+
+  async getChangeRequest(id: string): Promise<PurchaseOrderChangeRequestRecord | null> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT id, purchase_order_id, customer_id, request_type, message, status,
+                 requested_by_user_id, resolved_by_user_id, resolution_note
+          FROM purchase_order_change_requests
+          WHERE id = ?
+        `,
+      )
+      .bind(id)
+      .first<POChangeRequestRow>();
+    return row ? mapChangeRequestRow(row) : null;
+  }
+
+  async resolveChangeRequest(
+    id: string,
+    input: {
+      status: Exclude<POChangeRequestStatus, "open">;
+      resolvedByUserId?: string;
+      resolutionNote?: string | null;
+    },
+  ): Promise<PurchaseOrderChangeRequestRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE purchase_order_change_requests
+          SET status = ?,
+              resolved_by_user_id = ?,
+              resolution_note = ?,
+              resolved_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+      )
+      .bind(input.status, input.resolvedByUserId ?? null, input.resolutionNote ?? null, id)
+      .run();
+    return this.getChangeRequest(id);
+  }
+
   private async hydratePO(row: PORow): Promise<PurchaseOrderRecord> {
     const lines = await this.db
       .prepare(
@@ -338,4 +446,18 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
       })),
     };
   }
+}
+
+function mapChangeRequestRow(row: POChangeRequestRow): PurchaseOrderChangeRequestRecord {
+  return {
+    id: row.id,
+    purchaseOrderId: row.purchase_order_id,
+    customerId: row.customer_id,
+    requestType: row.request_type,
+    message: row.message,
+    status: row.status,
+    requestedByUserId: row.requested_by_user_id,
+    resolvedByUserId: row.resolved_by_user_id,
+    resolutionNote: row.resolution_note,
+  };
 }

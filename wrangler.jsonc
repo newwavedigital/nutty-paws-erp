@@ -12,7 +12,10 @@
     "ENVIRONMENT": "staging",
     "AUTH_REQUIRED": "true",
     // Static prerelease because Wrangler config does not inject a short SHA here.
-    "APP_VERSION": "1.0.0-staging.1"
+    "APP_VERSION": "1.0.0-staging.1",
+    "SENDGRID_SUBMITTED_PO_ENABLED": "false",
+    "SUBMITTED_PO_NOTIFICATION_TO": "generalmalit07@gmail.com",
+    "SUBMITTED_PO_NOTIFICATION_FROM": "no-reply@nuthouseportal.com"
   },
   "assets": {
     "directory": "./public",

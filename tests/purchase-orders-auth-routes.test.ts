@@ -6,7 +6,12 @@ import { registerFileRoutes } from "../src/files/routes";
 import type { FileMetadataRecord, FileStore } from "../src/files/service";
 import { registerPurchaseOrderRoutes } from "../src/purchase-orders/routes";
 import type { InventoryStore } from "../src/inventory/service";
-import type { PurchaseOrderRecord, PurchaseOrderStore } from "../src/purchase-orders/service";
+import type { CatalogStore, ProductRecord } from "../src/catalog/service";
+import type {
+  PurchaseOrderChangeRequestRecord,
+  PurchaseOrderRecord,
+  PurchaseOrderStore,
+} from "../src/purchase-orders/service";
 
 function makePO(overrides: Partial<PurchaseOrderRecord> = {}): PurchaseOrderRecord {
   return {
@@ -27,6 +32,7 @@ function createPOStore() {
     ["po-1", makePO()],
     ["po-2", makePO({ id: "po-2", poNumber: "PO-2002", customerId: "customer-2" })],
   ]);
+  const changeRequests = new Map<string, PurchaseOrderChangeRequestRecord>();
   const calls: string[] = [];
   const store: PurchaseOrderStore & { calls: string[] } = {
     calls,
@@ -42,6 +48,65 @@ function createPOStore() {
     async createAuditEvent(input) { calls.push(`audit:${input.actorUserId}:${input.action}`); },
     async findInventoryItemByMasterItemId() { return { id: "inv-1" }; },
     async listProductBomItems() { return []; },
+    async createChangeRequest(input) {
+      const record = { ...input, status: "open" as const, resolvedByUserId: null, resolutionNote: null };
+      changeRequests.set(record.id, record);
+      calls.push(`changeRequest:${input.requestType}:${input.requestedByUserId}`);
+      return record;
+    },
+    async listChangeRequests(purchaseOrderId) {
+      return [...changeRequests.values()].filter((request) => request.purchaseOrderId === purchaseOrderId);
+    },
+    async getChangeRequest(id) {
+      return changeRequests.get(id) ?? null;
+    },
+    async resolveChangeRequest(id, input) {
+      const existing = changeRequests.get(id);
+      if (!existing) return null;
+      const updated = {
+        ...existing,
+        status: input.status,
+        resolvedByUserId: input.resolvedByUserId ?? null,
+        resolutionNote: input.resolutionNote ?? null,
+      };
+      changeRequests.set(id, updated);
+      return updated;
+    },
+  };
+  return store;
+}
+
+function makeProduct(overrides: Partial<ProductRecord> = {}): ProductRecord {
+  return {
+    id: "product-1",
+    customerId: "customer-1",
+    sku: "CASHEW-12",
+    name: "Custom Packed Cashews",
+    description: null,
+    status: "active",
+    productionRoom: null,
+    size: null,
+    sizeUnit: null,
+    caseQuantity: null,
+    caseSticker: null,
+    unitPriceCents: null,
+    kosher: false,
+    allergen: false,
+    allergenDetails: null,
+    dailyProductionRate: null,
+    notes: null,
+    bomItems: [],
+    ...overrides,
+  };
+}
+
+function createCatalogStore(products: ProductRecord[] = [makeProduct()]) {
+  const productMap = new Map(products.map((product) => [product.id, product]));
+  const store: CatalogStore = {
+    async listProducts() { return [...productMap.values()]; },
+    async getProduct(id) { return productMap.get(id) ?? null; },
+    async listMasterItems() { return []; },
+    async getMasterItem() { return null; },
   };
   return store;
 }
@@ -87,10 +152,14 @@ async function seedUser(data: ReturnType<typeof createAuthStore>, input: { id: s
   if (input.customerId) data.customerAccess.set(input.id, [{ customerId: input.customerId, accessLevel: "manager" }]);
 }
 
-function createRouteApp(authStore: AuthStore, poStore: PurchaseOrderStore = createPOStore()) {
+function createRouteApp(
+  authStore: AuthStore,
+  poStore: PurchaseOrderStore = createPOStore(),
+  catalogStore: CatalogStore = createCatalogStore(),
+) {
   return createApp((app) => {
     registerAuthRoutes(app, () => authStore);
-    registerPurchaseOrderRoutes(app, () => poStore, () => createInventoryStore(), () => authStore);
+    registerPurchaseOrderRoutes(app, () => poStore, () => createInventoryStore(), () => authStore, undefined, () => catalogStore);
   }, { AUTH_REQUIRED: "true" });
 }
 
@@ -150,10 +219,16 @@ function createFileStore(poStore: PurchaseOrderStore) {
   return { store, files };
 }
 
-function createPOAndFileRouteApp(authStore: AuthStore, poStore: PurchaseOrderStore, fileStore: FileStore, bucket: R2Bucket) {
+function createPOAndFileRouteApp(
+  authStore: AuthStore,
+  poStore: PurchaseOrderStore,
+  fileStore: FileStore,
+  bucket: R2Bucket,
+  catalogStore: CatalogStore = createCatalogStore(),
+) {
   const app = createApp((route) => {
     registerAuthRoutes(route, () => authStore);
-    registerPurchaseOrderRoutes(route, () => poStore, () => createInventoryStore(), () => authStore);
+    registerPurchaseOrderRoutes(route, () => poStore, () => createInventoryStore(), () => authStore, undefined, () => catalogStore);
     registerFileRoutes(route, () => fileStore, () => authStore);
   }, { AUTH_REQUIRED: "true" });
 
@@ -201,7 +276,7 @@ describe("protected purchase order routes", () => {
     expect(forbiddenRead.status).toBe(403);
   });
 
-  it("allows Customer users to create only for their linked customer and ignores spoofed actor ids", async () => {
+  it("allows Customer users to create catalog-product POs only for their linked customer and ignores spoofed actor ids", async () => {
     const data = createAuthStore();
     await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
     const poStore = createPOStore();
@@ -211,10 +286,12 @@ describe("protected purchase order routes", () => {
     const create = await app.request("/api/purchase-orders", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ poNumber: "PO-CUST", customerId: "customer-1", actorUserId: "spoofed", lines: [{ description: "Cashews", quantity: 1, unitOfMeasure: "lb" }] }),
+      body: JSON.stringify({ poNumber: "PO-CUST", customerId: "customer-1", actorUserId: "spoofed", lines: [{ productId: "product-1", description: "Spoofed", quantity: 1, unitOfMeasure: "case" }] }),
     });
     expect(create.status).toBe(200);
     expect(poStore.calls).toContainEqual(expect.stringContaining("customer-user"));
+    const createdBody = await create.json() as { data: PurchaseOrderRecord };
+    expect(createdBody.data.lines[0]).toMatchObject({ productId: "product-1", description: "Custom Packed Cashews" });
 
     const forbiddenCreate = await app.request("/api/purchase-orders", {
       method: "POST",
@@ -222,6 +299,186 @@ describe("protected purchase order routes", () => {
       body: JSON.stringify({ poNumber: "PO-BAD", customerId: "customer-2", lines: [{ description: "Cashews", quantity: 1, unitOfMeasure: "lb" }] }),
     });
     expect(forbiddenCreate.status).toBe(403);
+  });
+
+  it("allows Customer PO lines with custom product text when a linked product is not in the catalog yet", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    const poStore = createPOStore();
+    const app = createRouteApp(data.store, poStore);
+    const token = await login(app, "customer@example.com");
+
+    const freeText = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-FREE", customerId: "customer-1", lines: [{ description: "New trial SKU", quantity: 1, unitOfMeasure: "case" }] }),
+    });
+    expect(freeText.status).toBe(200);
+    await expect(freeText.json()).resolves.toMatchObject({
+      data: { lines: [{ description: "New trial SKU", productId: null, masterItemId: null, unitOfMeasure: "case" }] },
+    });
+    expect(poStore.calls).toContainEqual(expect.stringContaining("customer-user"));
+  });
+
+  it("rejects Customer PO lines with neither a linked product nor custom product text", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    const app = createRouteApp(data.store);
+    const token = await login(app, "customer@example.com");
+
+    const blankText = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-BLANK", customerId: "customer-1", lines: [{ description: "", quantity: 1, unitOfMeasure: "each" }] }),
+    });
+    expect(blankText.status).toBe(400);
+    await expect(blankText.json()).resolves.toMatchObject({
+      error: { code: "CUSTOMER_PO_PRODUCT_DESCRIPTION_REQUIRED" },
+    });
+  });
+
+  it("rejects inactive Customer PO catalog products", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    const app = createRouteApp(data.store);
+    const token = await login(app, "customer@example.com");
+
+    const inactiveProduct = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-INACTIVE", customerId: "customer-1", lines: [{ productId: "inactive-product", description: "Inactive", quantity: 1, unitOfMeasure: "case" }] }),
+    });
+    expect(inactiveProduct.status).toBe(400);
+  });
+
+  it("rejects Customer PO lines for another customer product", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    const catalogStore = createCatalogStore([
+      makeProduct({ id: "other-product", customerId: "customer-2", name: "Other Customer Product" }),
+    ]);
+    const app = createRouteApp(data.store, createPOStore(), catalogStore);
+    const token = await login(app, "customer@example.com");
+
+    const response = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-CROSS", customerId: "customer-1", lines: [{ productId: "other-product", quantity: 1, unitOfMeasure: "case" }] }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+  });
+
+  it("keeps Sales PO creation flexible while Customer PO creation accepts protected products or custom text", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "sales-user", email: "sales@example.com", role: "Sales" });
+    const app = createRouteApp(data.store);
+    const token = await login(app, "sales@example.com");
+
+    const response = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-SALES-FREE", customerId: "customer-1", lines: [{ description: "Special request", quantity: 1, unitOfMeasure: "case" }] }),
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("returns a friendly duplicate PO number error", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "sales-user", email: "sales@example.com", role: "Sales" });
+    const app = createRouteApp(data.store);
+    const token = await login(app, "sales@example.com");
+
+    const response = await app.request("/api/purchase-orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ poNumber: "PO-1001", customerId: "customer-1", lines: [{ description: "Special request", quantity: 1, unitOfMeasure: "case" }] }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "PO_NUMBER_ALREADY_EXISTS",
+        message: "A purchase order with this Customer PO # already exists",
+      },
+      meta: { requestId: null },
+    });
+  });
+
+  it("lets linked Customers submit and view their own PO change requests", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    await seedUser(data, { id: "other-customer-user", email: "other@example.com", role: "Customer", customerId: "customer-2" });
+    const poStore = createPOStore();
+    const app = createRouteApp(data.store, poStore);
+    const token = await login(app, "customer@example.com");
+    const otherToken = await login(app, "other@example.com");
+
+    const create = await app.request("/api/purchase-orders/po-1/change-requests", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ requestType: "change", message: "Please update the requested ship date." }),
+    });
+    expect(create.status).toBe(200);
+    const createBody = await create.json() as { data: PurchaseOrderChangeRequestRecord };
+    expect(createBody.data).toMatchObject({
+      purchaseOrderId: "po-1",
+      customerId: "customer-1",
+      requestType: "change",
+      message: "Please update the requested ship date.",
+      status: "open",
+      requestedByUserId: "customer-user",
+    });
+
+    const list = await app.request("/api/purchase-orders/po-1/change-requests", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({ data: [{ id: createBody.data.id }] });
+
+    const blocked = await app.request("/api/purchase-orders/po-1/change-requests", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${otherToken}` },
+      body: JSON.stringify({ requestType: "cancel", message: "Cancel this." }),
+    });
+    expect(blocked.status).toBe(403);
+  });
+
+  it("lets Sales resolve Customer PO change requests", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "customer-user", email: "customer@example.com", role: "Customer", customerId: "customer-1" });
+    await seedUser(data, { id: "sales-user", email: "sales@example.com", role: "Sales" });
+    const poStore = createPOStore();
+    const app = createRouteApp(data.store, poStore);
+    const customerToken = await login(app, "customer@example.com");
+    const salesToken = await login(app, "sales@example.com");
+    const create = await app.request("/api/purchase-orders/po-1/change-requests", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ requestType: "cancel", message: "Duplicate PO." }),
+    });
+    const createBody = await create.json() as { data: PurchaseOrderChangeRequestRecord };
+
+    const resolve = await app.request(`/api/purchase-order-change-requests/${createBody.data.id}/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${salesToken}` },
+      body: JSON.stringify({ status: "resolved", resolutionNote: "Handled by Sales." }),
+    });
+
+    expect(resolve.status).toBe(200);
+    await expect(resolve.json()).resolves.toMatchObject({
+      data: {
+        id: createBody.data.id,
+        status: "resolved",
+        resolvedByUserId: "sales-user",
+        resolutionNote: "Handled by Sales.",
+      },
+    });
   });
 
   it("blocks Customer approval but allows Supply Chain approval", async () => {
@@ -259,7 +516,7 @@ describe("protected purchase order routes", () => {
         poNumber: "PO-CUSTOMER-FILE",
         customerId: "customer-1",
         actorUserId: "spoofed-user",
-        lines: [{ description: "Custom packed cashews", quantity: 12, unitOfMeasure: "case" }],
+        lines: [{ productId: "product-1", description: "Custom packed cashews", quantity: 12, unitOfMeasure: "case" }],
       }),
     }));
     expect(create.status).toBe(200);

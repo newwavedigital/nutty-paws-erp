@@ -3,13 +3,20 @@ import { createApp } from "../src/app";
 import { registerAuthRoutes } from "../src/auth/routes";
 import { hashPassword, type AuthSessionRecord, type AuthStore, type AuthUserRecord } from "../src/auth/service";
 
+type AuthRouteTestStore = AuthStore & {
+  updateUser(
+    userId: string,
+    input: Partial<Pick<AuthUserRecord, "passwordHash">>,
+  ): Promise<AuthUserRecord | null>;
+};
+
 function createAuthStore() {
   const users = new Map<string, AuthUserRecord>();
   const sessions = new Map<string, AuthSessionRecord>();
   const roles = new Map<string, string[]>();
   const customerAccess = new Map<string, Array<{ customerId: string; accessLevel: "viewer" | "manager" }>>();
 
-  const store: AuthStore = {
+  const store: AuthRouteTestStore = {
     async getUserByEmail(email) { return [...users.values()].find((user) => user.email === email.toLowerCase()) ?? null; },
     async getUserById(id) { return users.get(id) ?? null; },
     async createUser(user) { users.set(user.id, user); },
@@ -23,6 +30,13 @@ function createAuthStore() {
     async revokeSession(sessionId) {
       const session = sessions.get(sessionId);
       if (session) sessions.set(sessionId, { ...session, revokedAt: new Date().toISOString() });
+    },
+    async updateUser(userId, input) {
+      const existing = users.get(userId);
+      if (!existing) return null;
+      const updated = { ...existing, ...Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) };
+      users.set(userId, updated);
+      return updated;
     },
   };
 
@@ -93,6 +107,77 @@ describe("auth routes", () => {
 
     const afterLogout = await app.request("/api/auth/me", { headers: { authorization: `Bearer ${body.data.token}` } });
     expect(afterLogout.status).toBe(401);
+  });
+
+  it("lets a signed-in user change their own password", async () => {
+    const { store, users, roles } = createAuthStore();
+    users.set("user-1", {
+      id: "user-1",
+      email: "admin@example.com",
+      displayName: "Admin User",
+      userType: "employee",
+      passwordHash: await hashPassword("secret123"),
+      isActive: true,
+    });
+    roles.set("user-1", ["Admin"]);
+    const app = createRouteApp(store);
+
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@example.com", password: "secret123" }),
+    });
+    const body = await login.json() as { data: { token: string } };
+
+    const change = await app.request("/api/auth/change-password", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${body.data.token}` },
+      body: JSON.stringify({ currentPassword: "secret123", newPassword: "newpass123" }),
+    });
+    expect(change.status).toBe(200);
+    await expect(change.json()).resolves.toMatchObject({ ok: true, data: { changed: true } });
+
+    const newLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@example.com", password: "newpass123" }),
+    });
+    expect(newLogin.status).toBe(200);
+  });
+
+  it("rejects password changes with the wrong current password or weak new password", async () => {
+    const { store, users, roles } = createAuthStore();
+    users.set("user-1", {
+      id: "user-1",
+      email: "admin@example.com",
+      displayName: "Admin User",
+      userType: "employee",
+      passwordHash: await hashPassword("secret123"),
+      isActive: true,
+    });
+    roles.set("user-1", ["Admin"]);
+    const app = createRouteApp(store);
+
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@example.com", password: "secret123" }),
+    });
+    const body = await login.json() as { data: { token: string } };
+
+    const wrongCurrent = await app.request("/api/auth/change-password", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${body.data.token}` },
+      body: JSON.stringify({ currentPassword: "wrongpass", newPassword: "newpass123" }),
+    });
+    expect(wrongCurrent.status).toBe(401);
+
+    const weakNew = await app.request("/api/auth/change-password", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${body.data.token}` },
+      body: JSON.stringify({ currentPassword: "secret123", newPassword: "short" }),
+    });
+    expect(weakNew.status).toBe(400);
   });
 
   it("rejects invalid login attempts", async () => {

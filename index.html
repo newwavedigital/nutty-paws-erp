@@ -8,7 +8,7 @@
 <link rel="icon" href="public/favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="public/styles.css" />
 </head>
-<body>
+<body class="auth-pending">
 
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-header" id="brandHeader" style="cursor:pointer" title="Go to Dashboard">
@@ -39,6 +39,8 @@
     <a data-page="content-library" role="button" tabindex="0"><span class="icon">&#9698;</span> Content Library</a>
     <a data-page="slack" role="button" tabindex="0"><span class="icon">&#9993;</span> Team Chat</a>
     <a data-page="assignments" role="button" tabindex="0"><span class="icon">&#9744;</span> Assignments</a>
+    <div class="nav-section-label">Customer</div>
+    <a data-page="customer-portal" role="button" tabindex="0"><span class="icon">&#9673;</span> Customer Portal</a>
     <div class="nav-section-label">Support</div>
     <a data-page="feedback" role="button" tabindex="0"><span class="icon">&#9755;</span> Feedback</a>
     <a data-page="users" role="button" tabindex="0"><span class="icon">&#9786;</span> Account Management</a>
@@ -72,6 +74,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="public/app.js"></script>
+<script type="module" src="public/app.js"></script>
 </body>
 </html>

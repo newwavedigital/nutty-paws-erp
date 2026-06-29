@@ -1,0 +1,31 @@
+  /* ---------- Dashboard ---------- */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .stat {
+    background: var(--white);
+    border: 1px solid var(--grey-light);
+    border-left: 4px solid var(--orange);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .stat .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--brown-light);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .stat .value {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--brown);
+    margin-top: 4px;
+  }
+  .stat.warn { border-left-color: var(--danger); }
+  .stat.ok { border-left-color: var(--success); }
+  .stat.brown { border-left-color: var(--brown); }
+

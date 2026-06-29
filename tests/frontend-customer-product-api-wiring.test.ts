@@ -34,11 +34,18 @@ describe("frontend customer/product API wiring", () => {
     expect(frontendText).toContain("/api/master-items");
   });
 
-  test("keeps backend/local fallback messaging for customer/product data views", () => {
-    expect(frontendText).toContain("Customer data is reading from protected backend records when available.");
-    expect(frontendText).toContain("Product data is reading from protected backend records when available.");
-    expect(frontendText).toContain("Master List data is reading from protected backend records when available.");
-    expect(frontendText).toContain("Local customer/product demo data remains visible while backend data is unavailable.");
+  test("keeps customer/product connected-state banners out of normal views", () => {
+    expect(frontendText).toContain("async function loadBackendCustomers");
+    expect(frontendText).toContain("async function loadBackendProducts");
+    expect(frontendText).toContain("async function loadBackendMasterItems");
+    expect(frontendText).not.toContain("Customer data is reading from protected backend records when available.");
+    expect(frontendText).not.toContain("Product data is reading from protected backend records when available.");
+    expect(frontendText).not.toContain("Master List data is reading from protected backend records when available.");
+    expect(frontendText).not.toContain("portal-status");
+    expect(frontendText).not.toContain("Checking API...");
+    expect(frontendText).not.toContain("API check OK");
+    expect(frontendText).not.toContain("API check unavailable");
+    expect(frontendText).not.toContain("Some portal actions may be unavailable. Try refreshing or contact Nut House support.");
   });
 
   test("keeps public entrypoint mirrored for customer/product data markers", () => {

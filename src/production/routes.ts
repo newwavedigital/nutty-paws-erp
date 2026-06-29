@@ -101,7 +101,7 @@ export function registerProductionRoutes(
 
 async function requireProductionAccess(c: Context<AppBindings>, createAuthStore: AuthStoreFactory) {
   const auth = await requireAuthWhenEnabled(c, createAuthStore(c.env?.DB));
-  if (auth) requireAnyRole(auth, ["Production"]);
+  if (auth) requireAnyRole(auth, ["Production", "Warehousing"]);
   return auth;
 }
 
