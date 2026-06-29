@@ -4,7 +4,8 @@
     "description": "Nut House ERP Phase 2A Cloudflare Worker backend foundation",
     "main": "src/index.ts",
     "scripts": {
-        "dev": "wrangler dev",
+        "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
+        "dev:wrangler": "wrangler dev",
         "test": "vitest run",
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
@@ -12,8 +13,10 @@
         "typecheck": "tsc --noEmit",
         "check:deploy-config": "node scripts/validate-deploy-config.mjs wrangler.jsonc",
         "sample:accounts": "node scripts/sample-accounts.mjs",
+        "sample:catalog": "node scripts/sample-demo-catalog.mjs",
         "cf:types": "wrangler types",
         "verify": "node scripts/verify.mjs",
+        "status:ops": "node scripts/status-ops.mjs",
         "deploy": "wrangler deploy"
     },
     "repository": {

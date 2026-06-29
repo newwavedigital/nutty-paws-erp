@@ -113,7 +113,7 @@ function poFormHtml(po) {
         <div class="form-row">
           <label>Brand *</label>
           <select id="po_brand" required>
-            <option value="">- Select Brand -</option>
+            <option value="" disabled ${po.brand ? '' : 'selected'}>- Select Brand -</option>
             ${BRANDS.map(b => `<option value="${escapeHtml(b)}" ${po.brand===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
           </select>
         </div>

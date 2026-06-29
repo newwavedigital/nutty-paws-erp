@@ -15,6 +15,8 @@ export type PurchaseOrderStatus =
 export type DepositStatus = "not_required" | "required" | "requested" | "received" | "waived";
 
 export type SupplyChainStatus = "pending" | "available" | "needs_ordering" | "blocked";
+export type POChangeRequestType = "change" | "cancel";
+export type POChangeRequestStatus = "open" | "resolved" | "rejected";
 
 export type PurchaseOrderLineRecord = {
   id: string;
@@ -43,6 +45,18 @@ export type PurchaseOrderRecord = {
   requestedShipDate: string | null;
   notes: string | null;
   lines: PurchaseOrderLineRecord[];
+};
+
+export type PurchaseOrderChangeRequestRecord = {
+  id: string;
+  purchaseOrderId: string;
+  customerId: string;
+  requestType: POChangeRequestType;
+  message: string;
+  status: POChangeRequestStatus;
+  requestedByUserId?: string | null;
+  resolvedByUserId?: string | null;
+  resolutionNote?: string | null;
 };
 
 export type PurchaseOrderStore = {
@@ -90,6 +104,24 @@ export type PurchaseOrderStore = {
   }): Promise<void>;
   findInventoryItemByMasterItemId(masterItemId: string): Promise<{ id: string } | null>;
   listProductBomItems(productId: string): Promise<ProductBomItemRecord[]>;
+  createChangeRequest?(input: {
+    id: string;
+    purchaseOrderId: string;
+    customerId: string;
+    requestType: POChangeRequestType;
+    message: string;
+    requestedByUserId?: string;
+  }): Promise<PurchaseOrderChangeRequestRecord>;
+  listChangeRequests?(purchaseOrderId: string): Promise<PurchaseOrderChangeRequestRecord[]>;
+  getChangeRequest?(id: string): Promise<PurchaseOrderChangeRequestRecord | null>;
+  resolveChangeRequest?(
+    id: string,
+    input: {
+      status: Exclude<POChangeRequestStatus, "open">;
+      resolvedByUserId?: string;
+      resolutionNote?: string | null;
+    },
+  ): Promise<PurchaseOrderChangeRequestRecord | null>;
 };
 
 export class POError extends ApiError {
@@ -421,6 +453,7 @@ function poStatusFor(code: string) {
     code === "LINES_NOT_AVAILABLE" ||
     code === "INVALID_STATUS_TRANSITION" ||
     code === "INVENTORY_ITEM_NOT_FOUND" ||
+    code === "PO_NUMBER_ALREADY_EXISTS" ||
     code === "PO_LOCKED_FOR_PRODUCTION"
   ) {
     return 409;

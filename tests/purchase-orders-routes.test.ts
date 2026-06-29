@@ -112,7 +112,7 @@ describe("purchase order routes", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        poNumber: "PO-1001",
+        poNumber: "PO-NEW-1001",
         customerId: "customer-1",
         requestedShipDate: "2026-07-01",
         notes: "rush",
@@ -126,7 +126,7 @@ describe("purchase order routes", () => {
     expect(body).toMatchObject({
       ok: true,
       data: {
-        poNumber: "PO-1001",
+        poNumber: "PO-NEW-1001",
         status: "draft",
         depositStatus: "not_required",
       },

@@ -7,13 +7,22 @@ import { D1AuthStore } from "./d1-store";
 import {
   AuthError,
   createFirstAdmin,
+  hashPassword,
   loginUser,
   serializeAuthContext,
+  verifyPassword,
   verifySessionToken,
   type AuthStore,
+  type AuthUserRecord,
 } from "./service";
 
 export type AuthStoreFactory = (db: D1Database) => AuthStore;
+type PasswordChangeStore = AuthStore & {
+  updateUser?(
+    userId: string,
+    input: Partial<Pick<AuthUserRecord, "passwordHash">>,
+  ): Promise<AuthUserRecord | null>;
+};
 
 export function registerAuthRoutes(
   app: Hono<AppBindings>,
@@ -45,6 +54,23 @@ export function registerAuthRoutes(
 
   app.get("/api/auth/me", async (c) => {
     return ok(c, serializeAuthContext(await requireBearerAuth(c.req.header("authorization"), createStore(c.env?.DB))));
+  });
+
+  app.post("/api/auth/change-password", async (c) => {
+    const store = createStore(c.env?.DB) as PasswordChangeStore;
+    const context = await requireBearerAuth(c.req.header("authorization"), store);
+    const body = await parseJsonObject(c);
+    const fields = requireFields(body, ["currentPassword", "newPassword"]);
+    const currentPassword = asString(fields.currentPassword, "currentPassword");
+    const newPassword = asString(fields.newPassword, "newPassword");
+
+    if (!(await verifyPassword(currentPassword, context.user.passwordHash))) {
+      throw new AuthError("UNAUTHORIZED", "Current password is incorrect");
+    }
+    if (!store.updateUser) throw new ApiError("CONFIG_ERROR", "Password updates are unavailable", 500);
+    const updated = await store.updateUser(context.user.id, { passwordHash: await hashPassword(newPassword) });
+    if (!updated) throw new AuthError("UNAUTHORIZED", "User is not active");
+    return ok(c, { changed: true });
   });
 
   app.post("/api/auth/logout", async (c) => {

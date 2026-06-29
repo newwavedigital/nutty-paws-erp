@@ -4,9 +4,6 @@
 function backendAuthPanelHtml() {
   const signedIn = !!backendAuthState.token && !!backendAuthState.user;
   const roles = signedIn ? (backendAuthState.roles || []).join(', ') : '';
-  const customerPortalAccess = signedIn && backendAuthState.user?.userType === 'customer'
-    ? (backendAuthState.customerAccess || [])[0]
-    : null;
   const userLabel = signedIn
     ? `${escapeHtml(backendAuthState.user.displayName || backendAuthState.user.email)}${roles ? ' - ' + escapeHtml(roles) : ''}`
     : 'Backend session inactive';
@@ -24,7 +21,6 @@ function backendAuthPanelHtml() {
           <div style="font-size:12px;color:var(--brown);margin-top:4px">${userLabel}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${customerPortalAccess ? `<button class="btn btn-secondary btn-sm" onclick="viewSignedInCustomerPortal()">Open Customer Portal</button>` : ''}
           ${signedIn ? `<button class="btn btn-secondary btn-sm" onclick="refreshBackendAuth()">Refresh Session</button><button class="btn btn-secondary btn-sm" onclick="logoutBackendAuth()">Logout</button>` : `<button class="btn btn-sm" onclick="openBackendLogin()">Login</button>`}
         </div>
       </div>

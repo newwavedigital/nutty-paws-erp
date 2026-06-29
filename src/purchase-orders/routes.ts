@@ -1,11 +1,13 @@
 ﻿import type { Context, Hono } from "hono";
 import { ok } from "../api/responses";
-import { ValidationError } from "../api/errors";
+import { ApiError, ValidationError } from "../api/errors";
 import { parseJsonObject, requireFields } from "../api/validation";
 import type { AppBindings } from "../app";
 import { D1AuthStore } from "../auth/d1-store";
 import { hasCustomerAccess, requireAnyRole, requireAuthWhenEnabled, requireCustomerAccess } from "../auth/guards";
 import type { AuthContext, AuthStore } from "../auth/service";
+import { D1CatalogStore } from "../catalog/d1-store";
+import type { CatalogStore } from "../catalog/service";
 import { D1InventoryStore } from "../inventory/d1-store";
 import type { InventoryStore } from "../inventory/service";
 import {
@@ -25,6 +27,9 @@ import {
   updatePurchaseOrderDepositStatus,
   updatePurchaseOrderSafeFields,
   type DepositStatus,
+  type POChangeRequestStatus,
+  type POChangeRequestType,
+  POError,
   type PurchaseOrderRecord,
   type PurchaseOrderStore,
   type SupplyChainStatus,
@@ -33,6 +38,7 @@ import {
 type POStoreFactory = (db: D1Database) => PurchaseOrderStore;
 type InventoryStoreFactory = (db: D1Database) => InventoryStore;
 type AuthStoreFactory = (db: D1Database) => AuthStore;
+type CatalogStoreFactory = (db: D1Database) => CatalogStore;
 
 const depositStatuses = new Set<DepositStatus>(["not_required", "required", "requested", "received", "waived"]);
 const supplyChainStatuses = new Set<SupplyChainStatus>(["pending", "available", "needs_ordering", "blocked"]);
@@ -43,6 +49,7 @@ export function registerPurchaseOrderRoutes(
   createInventoryStore: InventoryStoreFactory = (db) => new D1InventoryStore(db),
   createAuthStore: AuthStoreFactory = (db) => new D1AuthStore(db),
   notifySubmittedPO: NotifySubmittedPurchaseOrder = notifySubmittedPurchaseOrder,
+  createCatalogStore: CatalogStoreFactory = (db) => new D1CatalogStore(db),
 ) {
   app.get("/api/purchase-orders", async (c) => {
     const db = c.env?.DB;
@@ -53,19 +60,26 @@ export function registerPurchaseOrderRoutes(
 
   app.post("/api/purchase-orders", async (c) => {
     const db = c.env?.DB;
+    const poStore = createPOStore(db);
     const body = await parseJsonObject(c);
     const fields = requireFields(body, ["poNumber", "customerId", "lines"]);
     const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const poNumber = asString(fields.poNumber, "poNumber");
     const customerId = asString(fields.customerId, "customerId");
     if (auth) authorizePurchaseOrderCreate(auth, customerId);
+    await assertUniquePONumber(poStore, poNumber);
+    const rawLines = asLines(fields.lines);
+    const lines = auth?.user.userType === "customer"
+      ? await normalizeCustomerPOLines(auth, customerId, rawLines, createCatalogStore(db))
+      : rawLines;
 
-    const po = await createPurchaseOrder(createPOStore(db), {
-      poNumber: asString(fields.poNumber, "poNumber"),
+    const po = await createPurchaseOrder(poStore, {
+      poNumber,
       customerId,
       requestedShipDate: optionalString(body.requestedShipDate, "requestedShipDate") ?? null,
       notes: optionalString(body.notes, "notes") ?? null,
       actorUserId: actorUserId(auth, body),
-      lines: asLines(fields.lines),
+      lines,
     });
 
     return ok(c, po);
@@ -159,6 +173,70 @@ export function registerPurchaseOrderRoutes(
 
     return ok(c, po);
   });
+
+  app.get("/api/purchase-orders/:purchaseOrderId/change-requests", async (c) => {
+    const db = c.env?.DB;
+    const poStore = createPOStore(db);
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const po = await readPurchaseOrder(poStore, c.req.param("purchaseOrderId"));
+    if (auth) authorizePurchaseOrderReadOrChangeRequestReview(auth, po.customerId);
+    assertChangeRequestStore(poStore);
+    return ok(c, await poStore.listChangeRequests!(po.id));
+  });
+
+  app.post("/api/purchase-orders/:purchaseOrderId/change-requests", async (c) => {
+    const db = c.env?.DB;
+    const poStore = createPOStore(db);
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    const po = await readPurchaseOrder(poStore, c.req.param("purchaseOrderId"));
+    if (auth) authorizePurchaseOrderRead(auth, po.customerId);
+    const body = await parseJsonObject(c);
+    const fields = requireFields(body, ["requestType", "message"]);
+    assertChangeRequestStore(poStore);
+    const request = await poStore.createChangeRequest!({
+      id: `po_change_${crypto.randomUUID()}`,
+      purchaseOrderId: po.id,
+      customerId: po.customerId,
+      requestType: asChangeRequestType(fields.requestType),
+      message: asString(fields.message, "message"),
+      requestedByUserId: auth?.user.id,
+    });
+    await poStore.createAuditEvent({
+      actorUserId: auth?.user.id,
+      entityType: "purchase_order_change_request",
+      entityId: request.id,
+      action: "purchase_order.change_request_created",
+      metadata: { purchaseOrderId: po.id, requestType: request.requestType },
+    });
+    return ok(c, request);
+  });
+
+  app.post("/api/purchase-order-change-requests/:requestId/resolve", async (c) => {
+    const db = c.env?.DB;
+    const poStore = createPOStore(db);
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireAnyRole(auth, ["Sales"]);
+    const body = await parseJsonObject(c);
+    const fields = requireFields(body, ["status"]);
+    const status = asResolvedChangeRequestStatus(fields.status);
+    assertChangeRequestStore(poStore);
+    const existing = await poStore.getChangeRequest!(c.req.param("requestId"));
+    if (!existing) throw new ApiError("PO_CHANGE_REQUEST_NOT_FOUND", "PO change request not found", 404);
+    const updated = await poStore.resolveChangeRequest!(existing.id, {
+      status,
+      resolvedByUserId: auth?.user.id,
+      resolutionNote: optionalString(body.resolutionNote, "resolutionNote") ?? null,
+    });
+    if (!updated) throw new ApiError("PO_CHANGE_REQUEST_NOT_FOUND", "PO change request not found", 404);
+    await poStore.createAuditEvent({
+      actorUserId: auth?.user.id,
+      entityType: "purchase_order_change_request",
+      entityId: updated.id,
+      action: "purchase_order.change_request_resolved",
+      metadata: { purchaseOrderId: updated.purchaseOrderId, status: updated.status },
+    });
+    return ok(c, updated);
+  });
 }
 
 async function logSubmittedPONotification(
@@ -217,12 +295,104 @@ function authorizePurchaseOrderRead(auth: AuthContext, customerId: string) {
   if (auth.user.userType === "customer") requireCustomerAccess(auth, customerId);
 }
 
+function authorizePurchaseOrderReadOrChangeRequestReview(auth: AuthContext, customerId: string) {
+  if (auth.user.userType === "customer") {
+    requireCustomerAccess(auth, customerId);
+    return;
+  }
+  requireAnyRole(auth, ["Sales"]);
+}
+
 function authorizePurchaseOrderCreate(auth: AuthContext, customerId: string) {
   if (auth.user.userType === "customer") {
     requireCustomerAccess(auth, customerId);
     return;
   }
   requireAnyRole(auth, ["Sales"]);
+}
+
+async function assertUniquePONumber(store: PurchaseOrderStore, poNumber: string) {
+  const existing = await listPurchaseOrders(store);
+  if (existing.some((po) => po.poNumber.toLowerCase() === poNumber.toLowerCase())) {
+    throw new POError("PO_NUMBER_ALREADY_EXISTS", "A purchase order with this Customer PO # already exists");
+  }
+}
+
+async function normalizeCustomerPOLines(
+  auth: AuthContext,
+  customerId: string,
+  lines: ReturnType<typeof asLines>,
+  catalogStore: CatalogStore,
+) {
+  const normalized = [];
+  for (const [index, line] of lines.entries()) {
+    if (!line.productId) {
+      if (!line.description.trim() || line.masterItemId) {
+        throw new ApiError(
+          "CUSTOMER_PO_PRODUCT_DESCRIPTION_REQUIRED",
+          "Customer PO lines must include a product or product description",
+          400,
+          { fields: [`lines[${index}].description`] },
+        );
+      }
+      normalized.push({
+        ...line,
+        description: line.description.trim(),
+        productId: null,
+        masterItemId: null,
+      });
+      continue;
+    }
+    if (line.masterItemId) {
+      throw new ApiError(
+        "CUSTOMER_PO_PRODUCT_REQUIRED",
+        "Customer PO lines must use an active linked product",
+        400,
+        { fields: [`lines[${index}].productId`] },
+      );
+    }
+    const product = await catalogStore.getProduct(line.productId);
+    if (!product) {
+      throw new ApiError(
+        "CUSTOMER_PO_PRODUCT_REQUIRED",
+        "Customer PO lines must use an active linked product",
+        400,
+        { fields: [`lines[${index}].productId`] },
+      );
+    }
+    if (!product.customerId) {
+      throw new ApiError("FORBIDDEN", "Customer access is limited to linked records", 403);
+    }
+    requireCustomerAccess(auth, product.customerId);
+    if (product.customerId !== customerId) {
+      throw new ApiError("FORBIDDEN", "Customer access is limited to linked records", 403);
+    }
+    if (product.status !== "active") {
+      throw new ApiError(
+        "CUSTOMER_PO_PRODUCT_UNAVAILABLE",
+        "Customer PO lines must use an active linked product",
+        400,
+        { fields: [`lines[${index}].productId`] },
+      );
+    }
+    normalized.push({
+      ...line,
+      description: product.name,
+      masterItemId: null,
+    });
+  }
+  return normalized;
+}
+
+function assertChangeRequestStore(store: PurchaseOrderStore) {
+  if (
+    !store.createChangeRequest ||
+    !store.listChangeRequests ||
+    !store.getChangeRequest ||
+    !store.resolveChangeRequest
+  ) {
+    throw new ApiError("PO_CHANGE_REQUESTS_UNAVAILABLE", "PO change requests are unavailable", 501);
+  }
 }
 
 function asString(value: unknown, field: string) {
@@ -269,6 +439,16 @@ function asSupplyChainStatus(value: unknown) {
   return value as SupplyChainStatus;
 }
 
+function asChangeRequestType(value: unknown): POChangeRequestType {
+  if (value === "change" || value === "cancel") return value;
+  throw new ValidationError("requestType is invalid", { fields: ["requestType"] });
+}
+
+function asResolvedChangeRequestStatus(value: unknown): Exclude<POChangeRequestStatus, "open"> {
+  if (value === "resolved" || value === "rejected") return value;
+  throw new ValidationError("status is invalid", { fields: ["status"] });
+}
+
 function asLines(value: unknown) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ValidationError("lines must be a non-empty array", { fields: ["lines"] });
@@ -281,7 +461,7 @@ function asLines(value: unknown) {
 
     const record = line as Record<string, unknown>;
     return {
-      description: asString(record.description, `lines[${index}].description`),
+      description: optionalString(record.description, `lines[${index}].description`) ?? "",
       quantity: asNumber(record.quantity, `lines[${index}].quantity`),
       unitOfMeasure: asString(record.unitOfMeasure, `lines[${index}].unitOfMeasure`),
       productId: optionalString(record.productId, `lines[${index}].productId`) ?? null,

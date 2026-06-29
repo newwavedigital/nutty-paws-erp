@@ -219,7 +219,7 @@ function renderA10DataRecordBanner(moduleName) {
         ? 'local'
         : 'auth';
   const detail = moduleState.status === 'connected'
-    ? 'Backend connected. This screen is reading D1 records.'
+    ? 'This screen is reading D1 records.'
     : moduleState.status === 'stale'
       ? 'Backend data is unavailable. Showing stale backend-confirmed cache only.'
       : moduleState.status === 'loading'
@@ -290,8 +290,8 @@ function renderPageShellHeader(title, kicker = '', actions = '') {
 }
 
 function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' } = {}) {
+  if (state === 'connected') return '';
   const config = {
-    connected: ['Backend connected', 'ok', 'var(--success)'],
     loading: ['Checking backend...', '', 'var(--orange)'],
     auth: ['Sign in required', '', 'var(--orange)'],
     error: ['Backend unavailable', 'bad', 'var(--danger)'],
@@ -395,24 +395,16 @@ function opsStatus(label, tone) {
 
 function renderBackendDataStatusBanner(kind, dataState) {
   const connected = dataState.status === 'connected';
+  if (connected) return '';
   const loading = dataState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
+  const title = loading ? 'Checking backend...' : 'Offline preview';
   const details = {
-    customers: connected
-      ? 'Customer data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
-    products: connected
-      ? 'Product data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
-    'master-items': connected
-      ? 'Master List data is reading from protected backend records when available.'
-      : (dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.'),
-    inventory: connected
-      ? 'Inventory, Receiving Log, Move Log, and stock signals are reading from protected backend records when available.'
-      : (dataState.lastError || 'Browser inventory preview data remains visible while backend data is unavailable.')
+    customers: dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
+    products: dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
+    'master-items': dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
+    inventory: dataState.lastError || 'Browser inventory preview data remains visible while backend data is unavailable.'
   };
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="${kind}" style="border-left-color:${color}">
+  return `<div class="inv-check" data-backend-status="${kind}" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(details[kind] || details.customers)}</div>
   </div>`;
@@ -420,13 +412,11 @@ function renderBackendDataStatusBanner(kind, dataState) {
 
 function renderBackendProcurementBanner() {
   const connected = backendProcurementState.status === 'connected';
+  if (connected) return '';
   const loading = backendProcurementState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
-  const detail = connected
-    ? 'Need To Order, supplier POs, and receipt updates are reading from protected backend records when available.'
-    : (backendProcurementState.lastError || 'Browser procurement preview data remains visible while backend data is unavailable.');
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="procurement" style="border-left-color:${color}">
+  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const detail = backendProcurementState.lastError || 'Browser procurement preview data remains visible while backend data is unavailable.';
+  return `<div class="inv-check" data-backend-status="procurement" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -434,13 +424,11 @@ function renderBackendProcurementBanner() {
 
 function renderBackendProductionBanner() {
   const connected = backendProductionState.status === 'connected';
+  if (connected) return '';
   const loading = backendProductionState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
-  const detail = connected
-    ? 'Production Schedule, Production Log, QA routing, and correction actions are reading from protected backend records when available.'
-    : (backendProductionState.lastError || 'Browser production preview data remains visible while backend data is unavailable.');
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="production" style="border-left-color:${color}">
+  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const detail = backendProductionState.lastError || 'Browser production preview data remains visible while backend data is unavailable.';
+  return `<div class="inv-check" data-backend-status="production" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -448,13 +436,11 @@ function renderBackendProductionBanner() {
 
 function renderBackendQualityBanner() {
   const connected = backendQualityState.status === 'connected';
+  if (connected) return '';
   const loading = backendQualityState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
-  const detail = connected
-    ? 'QA queue, COA release, skip actions, and post-shipment COA links are reading from protected backend records when available.'
-    : (backendQualityState.lastError || 'Browser QA preview data remains visible while backend data is unavailable.');
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="quality" style="border-left-color:${color}">
+  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const detail = backendQualityState.lastError || 'Browser QA preview data remains visible while backend data is unavailable.';
+  return `<div class="inv-check" data-backend-status="quality" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -462,13 +448,11 @@ function renderBackendQualityBanner() {
 
 function renderBackendShippingBanner() {
   const connected = backendShippingState.status === 'connected';
+  if (connected) return '';
   const loading = backendShippingState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
-  const detail = connected
-    ? 'Shipping queue, shipment documents, shipped status, stocking status, and Shipping Log rows are reading from protected backend records when available.'
-    : (backendShippingState.lastError || 'Browser shipping preview data remains visible while backend data is unavailable.');
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="shipping" style="border-left-color:${color}">
+  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const detail = backendShippingState.lastError || 'Browser shipping preview data remains visible while backend data is unavailable.';
+  return `<div class="inv-check" data-backend-status="shipping" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -476,13 +460,11 @@ function renderBackendShippingBanner() {
 
 function renderBackendPickPackBanner() {
   const connected = backendPickPackState.status === 'connected';
+  if (connected) return '';
   const loading = backendPickPackState.loading;
-  const title = connected ? 'Backend connected' : loading ? 'Checking backend...' : 'Offline preview';
-  const detail = connected
-    ? 'Pick & Pack POs, picked status, shipping details, and shipped status are reading from protected backend records when available.'
-    : (backendPickPackState.lastError || 'Browser Pick & Pack preview data remains visible while backend data is unavailable.');
-  const color = connected ? 'var(--success)' : 'var(--orange)';
-  return `<div class="inv-check ${connected ? 'ok' : ''}" data-backend-status="pick-pack" style="border-left-color:${color}">
+  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const detail = backendPickPackState.lastError || 'Browser Pick & Pack preview data remains visible while backend data is unavailable.';
+  return `<div class="inv-check" data-backend-status="pick-pack" style="border-left-color:var(--orange)">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -2192,6 +2174,13 @@ async function readBackendPurchaseOrder(po) {
   const merged = mergeBackendPurchaseOrders([record]);
   await hydrateBackendPurchaseOrderFiles(merged);
   return merged[0];
+}
+
+async function createBackendPurchaseOrderChangeRequest(purchaseOrderId, requestType, message) {
+  return apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}/change-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ requestType, message })
+  });
 }
 
 async function updateBackendDepositStatus(po, status) {

@@ -38,9 +38,6 @@ function renderProduction(el) {
         <button class="btn btn-secondary btn-sm" onclick="calNav(1)">Next &raquo;</button>
         <button class="btn btn-secondary btn-sm" onclick="calToToday()">Today</button>
         <div style="flex:1"></div>
-        <div class="room-legend">
-          ${ROOMS.map(r=>`<span class="room-chip"><span class="room-dot" style="background:${roomColor(r)}"></span>${r}</span>`).join('')}
-        </div>
       </div>
       <div id="calendar" class="calendar"></div>
     </div>

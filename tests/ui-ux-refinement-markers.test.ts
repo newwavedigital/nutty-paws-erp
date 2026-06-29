@@ -5,6 +5,7 @@ import { frontendText, publicApp, publicStyles } from "./frontend-assets";
 
 const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
+const productionModule = readFileSync(resolve(__dirname, "..", "public", "js", "modules", "production", "index.js"), "utf8");
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, "..", "package.json"), "utf8")) as { version: string };
 const packageLockJson = JSON.parse(readFileSync(resolve(__dirname, "..", "package-lock.json"), "utf8")) as {
   version: string;
@@ -57,6 +58,8 @@ describe("UI/UX refinement markers", () => {
       "Content Library",
       "Team Chat",
       "Assignments",
+      '<div class="nav-section-label">Customer</div>',
+      'data-page="customer-portal"',
       "Support",
       "Feedback",
       "Account Management",
@@ -97,6 +100,14 @@ describe("UI/UX refinement markers", () => {
     ]) {
       expect(frontendText).toContain(marker);
     }
+  });
+
+  test("keeps Production Schedule room assignment without the toolbar room legend", () => {
+    expect(productionModule).not.toContain("room-legend");
+    expect(productionModule).toContain("const ROOMS = ['Squeeze Pack', 'Bnutty', 'Main', 'Dog House'];");
+    expect(productionModule).toContain('<label>Production Room</label>');
+    expect(productionModule).toContain("id=\"sched_room\"");
+    expect(productionModule).toContain("id=\"ev_room\"");
   });
 
   test("keeps sidebar spacing compact enough for the full navigation set", () => {

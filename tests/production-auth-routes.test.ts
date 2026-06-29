@@ -5,7 +5,7 @@ import type { AuthStore, RoleName } from "../src/auth/service";
 import { registerProductionRoutes } from "../src/production/routes";
 import type { ProductionStore } from "../src/production/service";
 
-function createAuthStore(role: "Customer" | "Production" | "Admin"): AuthStore {
+function createAuthStore(role: "Customer" | "Production" | "Warehousing" | "Admin"): AuthStore {
   return {
     async createUser() { throw new Error("not used"); },
     async getUserByEmail() { return null; },
@@ -58,7 +58,7 @@ function createProductionStore(): ProductionStore {
   };
 }
 
-function createProtectedApp(role: "Customer" | "Production" | "Admin") {
+function createProtectedApp(role: "Customer" | "Production" | "Warehousing" | "Admin") {
   return createApp((route) => {
     registerAuthRoutes(route, () => createAuthStore(role));
     registerProductionRoutes(route, () => createProductionStore(), () => createAuthStore(role));
@@ -66,16 +66,20 @@ function createProtectedApp(role: "Customer" | "Production" | "Admin") {
 }
 
 describe("protected production routes", () => {
-  it("blocks Customer users and allows Production users", async () => {
+  it("blocks Customer users and allows Production/Warehousing users", async () => {
     const customerResponse = await createProtectedApp("Customer").request("/api/production/logs", {
       headers: { authorization: "Bearer customer-token" },
     });
     const productionResponse = await createProtectedApp("Production").request("/api/production/logs", {
       headers: { authorization: "Bearer production-token" },
     });
+    const warehousingResponse = await createProtectedApp("Warehousing").request("/api/production/logs", {
+      headers: { authorization: "Bearer warehousing-token" },
+    });
 
     expect(customerResponse.status).toBe(403);
     expect(productionResponse.status).toBe(200);
+    expect(warehousingResponse.status).toBe(200);
   });
 
   it("allows Admin users through the existing admin override", async () => {

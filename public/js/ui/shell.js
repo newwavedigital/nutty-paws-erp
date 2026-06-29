@@ -24,7 +24,8 @@ const PAGE_TITLES = {
   'machinery': 'Machinery',
   'rd': 'Research & Development',
   'assignments': 'Assignments',
-  'customer-portal': 'Customer Portal'
+  'customer-portal': 'Customer Portal',
+  'profile-settings': 'Profile Settings'
 };
 
 const ALL_NAV_PAGES = [
@@ -48,12 +49,13 @@ const ALL_NAV_PAGES = [
   'machinery',
   'rd',
   'assignments',
-  'customer-portal'
+  'customer-portal',
+  'profile-settings'
 ];
-const CUSTOMER_ALLOWED_PAGES = new Set(['customer-portal', 'purchase-orders', 'products', 'feedback']);
+const CUSTOMER_ALLOWED_PAGES = new Set(['customer-portal', 'profile-settings']);
 const EMPLOYEE_NAV_PAGES = new Set(ALL_NAV_PAGES.filter(page => page !== 'customer-portal'));
 const ROLE_ALLOWED_PAGES = {
-  Admin: new Set(ALL_NAV_PAGES),
+  Admin: EMPLOYEE_NAV_PAGES,
   Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'shipping', 'feedback']),
   'Supply Chain & Procurement': new Set(['dashboard', 'supply-chain', 'procurement', 'suppliers', 'inventory', 'rd', 'feedback']),
   Warehousing: new Set(['dashboard', 'inventory', 'shipping', 'pick-pack', 'quality-assurance', 'production', 'feedback']),
@@ -69,7 +71,6 @@ const ROLE_LANDING_PAGES = {
   Customer: 'customer-portal'
 };
 const PARTIAL_LOCAL_PAGE_LIMITS = {
-  'customer-portal': 'Customer Portal is a protected preview. Some customer-facing records and generated notes are partial local-only until the next approved customer portal sprint.',
   'content-library': 'Content Library has backend file paths, but some folder/file preview records and generated notes are partial local-only.',
   slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
   'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
@@ -81,6 +82,15 @@ let authGateSetupRequestId = 0;
 
 const SHAREPOINT_INVENTORY_URL = 'https://bnutty2.sharepoint.com/:x:/s/Bnutty/IQD6NhKAgj2HR6N9vJGV9POQARgkf7S9r8zLdjYh4WMkb6g?e=ZJ4swm';
 const USER_ROLES = ['Admin', 'Sales', 'Supply Chain & Procurement', 'Warehousing', 'Production', 'Customer'];
+const STAGING_DEMO_PASSWORD = 'DemoAdmin123!';
+const STAGING_DEMO_ACCOUNTS = [
+  { role: 'Admin', email: 'admin_demo_1@staging.nuthouse.local' },
+  { role: 'Sales', email: 'sales_demo_1@staging.nuthouse.local' },
+  { role: 'Supply Chain', email: 'supply_chain_procurement_demo_1@staging.nuthouse.local' },
+  { role: 'Warehousing', email: 'warehousing_demo_1@staging.nuthouse.local' },
+  { role: 'Production', email: 'production_demo_1@staging.nuthouse.local' },
+  { role: 'Customer', email: 'customer_demo_1@staging.nuthouse.local' }
+];
 
 const BRANDS = ['Nut House Co-Packing', 'Bnutty', "Dilly's", 'Poochie Butter'];
 const INTERNAL_BRANDS = ['Bnutty', "Dilly's", 'Poochie Butter']; // these stock to warehouse instead of shipping out
@@ -255,6 +265,38 @@ function ensureAuthGateElement() {
   return gate;
 }
 
+function shouldShowStagingDemoCredentials() {
+  const host = window.location.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.includes('staging');
+}
+
+function fillStagingDemoLogin(email) {
+  const emailInput = document.getElementById('auth_gate_email');
+  const passwordInput = document.getElementById('auth_gate_password');
+  if (emailInput) emailInput.value = email;
+  if (passwordInput) passwordInput.value = STAGING_DEMO_PASSWORD;
+  emailInput?.focus();
+}
+
+function stagingDemoCredentialsHtml() {
+  if (!shouldShowStagingDemoCredentials()) return '';
+  return `
+    <div class="auth-demo-access" data-staging-demo-credentials>
+      <div class="auth-demo-access-header">
+        <strong>Staging demo access</strong>
+        <span>Shared password: <code>${escapeHtml(STAGING_DEMO_PASSWORD)}</code></span>
+      </div>
+      <div class="auth-demo-account-list">
+        ${STAGING_DEMO_ACCOUNTS.map(account => `
+          <button type="button" class="auth-demo-account" onclick="fillStagingDemoLogin('${escapeHtml(account.email)}')">
+            <span>${escapeHtml(account.role)}</span>
+            <code>${escapeHtml(account.email)}</code>
+          </button>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
 function renderLoginGate({ message = 'Sign in to open the ERP.', setupAvailable = false, checkingSetup = false } = {}) {
   const gate = ensureAuthGateElement();
   gate.hidden = false;
@@ -276,10 +318,12 @@ function renderLoginGate({ message = 'Sign in to open the ERP.', setupAvailable 
         ${checkingSetup ? '<span class="help-text">Checking first admin setup…</span>' : ''}
         ${setupAvailable ? '<button class="btn btn-secondary btn-sm" type="button" onclick="openBackendSetup()">First Admin Setup</button>' : ''}
       </div>
+      ${stagingDemoCredentialsHtml()}
     </div>`;
 }
 
 function showAuthGate(message = 'Sign in to open the ERP.') {
+  document.body.classList.remove('auth-pending');
   document.body.classList.add('auth-gated');
   const requestId = ++authGateSetupRequestId;
   renderLoginGate({ message, checkingSetup: true });
@@ -298,15 +342,16 @@ function showAuthGate(message = 'Sign in to open the ERP.') {
 
 function showAppShell() {
   authGateSetupRequestId++;
+  document.body.classList.remove('auth-pending');
   document.body.classList.remove('auth-gated');
   const gate = document.getElementById('authGate');
   if (gate) gate.hidden = true;
 }
 
 function enterAuthenticatedApp(page = roleLandingPageForCurrentUser()) {
-  showAppShell();
   updateTopbarAccount();
   updateSidebarNavigationForRole();
+  showAppShell();
   router(page);
 }
 
@@ -329,16 +374,26 @@ async function bootstrapAuthGate() {
 }
 
 function renderCustomerPortalPage(el) {
-  const linked = (backendAuthState.customerAccess || [])[0]?.customerId;
+  if (typeof renderSignedInCustomerPortalPage === 'function') {
+    renderSignedInCustomerPortalPage(el);
+    return;
+  }
   el.innerHTML = renderOpsPanel({
     title: 'Customer Portal',
     kicker: 'Customer access',
-    body: `
-      <div class="empty">
-        <strong>${linked ? 'Open your linked customer portal.' : 'Customer link unavailable.'}</strong>
-        <p>${linked ? 'View your profile, purchase orders, PO files, linked products, and inventory visibility from the protected customer portal.' : 'This backend session is not linked to a customer account.'}</p>
-        ${linked ? '<button class="btn btn-sm" onclick="viewSignedInCustomerPortal()">Open Customer Portal</button>' : '<button class="btn btn-sm" onclick="openBackendLogin()">Sign in</button>'}
-      </div>`
+    body: '<div class="empty">Customer Portal is still loading. Refresh the page if this message stays visible.</div>'
+  });
+}
+
+function renderProfileSettingsPage(el) {
+  if (typeof renderProfileSettings === 'function') {
+    renderProfileSettings(el);
+    return;
+  }
+  el.innerHTML = renderOpsPanel({
+    title: 'Profile Settings',
+    kicker: 'Account',
+    body: '<div class="empty">Profile settings are still loading. Refresh the page if this message stays visible.</div>'
   });
 }
 
@@ -381,6 +436,7 @@ function router(page) {
     case 'rd': renderRD(c); break;
     case 'assignments': renderAssignments(c); break;
     case 'customer-portal': renderCustomerPortalPage(c); break;
+    case 'profile-settings': renderProfileSettingsPage(c); break;
     default: c.innerHTML = '<p>Not found</p>';
   }
   addPartialLocalBanner(c, currentPage === 'restricted' ? requestedPage : currentPage);

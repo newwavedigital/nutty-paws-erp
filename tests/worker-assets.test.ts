@@ -71,6 +71,8 @@ describe("Worker staging frontend assets", () => {
     expect(rootIndex).toContain('src="public/app.js"');
     expect(publicIndex).toContain('href="styles.css"');
     expect(publicIndex).toContain('src="app.js"');
+    expect(rootIndex).toContain('<body class="auth-pending">');
+    expect(publicIndex).toContain('<body class="auth-pending">');
     expect(rootIndex).not.toContain("<style>");
     expect(publicIndex).not.toContain("<style>");
     expect(rootIndex).not.toContain("<script>");
@@ -101,13 +103,20 @@ describe("Worker staging frontend assets", () => {
       "Content Library",
       "Team Chat",
       "Assignments",
+      "Customer Portal",
       "Feedback",
       "Account Management",
     ]) {
       expect(publicIndex + publicApp).toContain(marker);
     }
     expect(publicApp).toContain("Assignments will be implemented in a future scope.");
-    expect(publicApp).toContain("Backend connected");
+    expect(publicApp).not.toContain("portal-status");
+    expect(publicApp).not.toContain("Checking API...");
+    expect(publicApp).not.toContain("API check OK");
+    expect(publicApp).not.toContain("API check unavailable");
+    expect(publicApp).not.toContain("Some portal actions may be unavailable.");
+    expect(publicStyles).not.toContain(".portal-status");
+    expect(publicStyles).not.toContain("portal-status");
   });
 
   test("serves Nut House favicon assets for browser and preview fallback paths", () => {
@@ -119,6 +128,16 @@ describe("Worker staging frontend assets", () => {
     expect(publicFaviconSvg).toContain(">NH<");
   });
 
+  test("removes old Customer Portal status markers from static frontend assets", () => {
+    expect(publicStyles).not.toContain(".portal-status");
+    expect(publicStyles).not.toContain("portal-status");
+    expect(publicApp).not.toContain("portal-status");
+    expect(publicApp).not.toContain("Checking API...");
+    expect(publicApp).not.toContain("API check OK");
+    expect(publicApp).not.toContain("API check unavailable");
+    expect(publicApp).not.toContain("Some portal actions may be unavailable.");
+  });
+
   test("defines customer RBAC navigation and restricted-route fallback markers", () => {
     expect(publicApp).toContain("const CUSTOMER_ALLOWED_PAGES");
     expect(publicApp).toContain("const EMPLOYEE_NAV_PAGES");
@@ -127,5 +146,13 @@ describe("Worker staging frontend assets", () => {
     expect(publicApp).toContain("function updateSidebarNavigationForRole");
     expect(publicApp).toContain("function renderRestrictedPage");
     expect(publicApp).toContain("This area is for employee and admin workflows.");
+  });
+
+  test("keeps staging demo credentials gated to staging and local hosts", () => {
+    expect(publicApp).toContain("function shouldShowStagingDemoCredentials");
+    expect(publicApp).toContain("data-staging-demo-credentials");
+    expect(publicApp).toContain("host.includes('staging')");
+    expect(publicApp).toContain("DemoAdmin123!");
+    expect(publicStyles).toContain(".auth-demo-access");
   });
 });

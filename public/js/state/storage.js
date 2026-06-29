@@ -508,7 +508,7 @@ function renderTopbarAccount() {
       </div>
       <div class="topbar-account-actions">
         <button class="btn btn-secondary btn-sm" type="button" onclick="refreshBackendAuth()">Refresh profile</button>
-        <button class="btn btn-secondary btn-sm" type="button" onclick="router('users')">Profile settings</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="router('profile-settings')">Profile settings</button>
         <button class="btn btn-sm" type="button" onclick="logoutBackendAuth()">Logout</button>
       </div>
     </div>`;

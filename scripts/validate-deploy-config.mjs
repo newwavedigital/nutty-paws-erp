@@ -66,6 +66,8 @@ export function validateDeployConfig(config) {
       environment.name === "production" ||
       environment.name === "prod";
 
+    validateSubmittedPONotifications(environment, errors);
+
     if (!productionLike) continue;
 
     if (environment.vars.AUTH_REQUIRED !== "true") {
@@ -76,6 +78,33 @@ export function validateDeployConfig(config) {
   }
 
   return errors;
+}
+
+function validateSubmittedPONotifications(environment, errors) {
+  if (environment.vars.SENDGRID_SUBMITTED_PO_ENABLED !== "true") {
+    return;
+  }
+
+  if (!requiredString(environment.vars.SUBMITTED_PO_NOTIFICATION_TO)) {
+    errors.push(
+      `${environment.name} enables submitted-PO SendGrid but SUBMITTED_PO_NOTIFICATION_TO is missing`,
+    );
+  }
+
+  if (!requiredString(environment.vars.SUBMITTED_PO_NOTIFICATION_FROM)) {
+    errors.push(
+      `${environment.name} enables submitted-PO SendGrid but SUBMITTED_PO_NOTIFICATION_FROM is missing`,
+    );
+  }
+}
+
+function requiredString(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export function parseJsonc(input) {
