@@ -1,4 +1,4 @@
-import { frontendText } from "./frontend-assets";
+import { frontendText, publicApp } from "./frontend-assets";
 ﻿import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -79,6 +79,21 @@ describe("frontend purchase-order API wiring", () => {
     expect(frontendText).toContain('input aria-label="Unit" value="Each"');
     expect(frontendText).not.toContain('input aria-label="Unit" value="Each" readonly');
     expect(frontendText).toContain("submitCustomerPoChangeRequest");
+    expect(frontendText).toContain('class="portal-action-cell">Actions');
+    expect(frontendText).toContain('aria-label="Request change"');
+    expect(frontendText).toContain('aria-label="Request cancellation"');
+    expect(frontendText).toContain("Request PO Change");
+    expect(frontendText).toContain("Request PO Cancellation");
+    expect(frontendText).toContain('label for="customer_po_request_reason">Reason');
+    expect(frontendText).toContain("Submit request");
+    expect(frontendText).toContain("portal-request-modal");
+    expect(frontendText).toContain("portal-request-actions");
+    expect(frontendText).not.toContain(">Request change</button>");
+    expect(frontendText).not.toContain(">Request cancel</button>");
+    const customerPortalStart = publicApp.indexOf("/* ----- Customer Portal preview ----- */");
+    const customerPortalEnd = publicApp.indexOf("async function deleteUser", customerPortalStart);
+    const customerPortalModule = publicApp.slice(customerPortalStart, customerPortalEnd);
+    expect(customerPortalModule).not.toContain("prompt(");
     expect(frontendText).not.toContain("No packaging items linked to your products.");
     expect(frontendText).not.toContain("No raw ingredients linked to your products.");
   });

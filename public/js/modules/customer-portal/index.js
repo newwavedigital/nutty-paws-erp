@@ -777,7 +777,7 @@ function customerPortalPoTableHtml(pos, completed) {
     return { po: p, total };
   });
   return `
-    <div class="table-wrap portal-table-mobile-hide"><table><thead><tr><th>PO #</th><th>Date</th><th>Items</th><th>File</th><th>${completed ? 'BOL #' : 'Status'}</th><th>Request</th></tr></thead><tbody>${rows.map(({ po:p }) => `<tr><td><strong>${escapeHtml(p.id)}</strong></td><td>${fmtDate(p.poDate)}</td><td>${p.lines.length} ${p.lines.length === 1 ? 'item' : 'items'}</td><td>${poFileLinkHtml(p)}</td><td>${completed ? escapeHtml(p.shipping?.bol||'-') : statusBadge(p.status)}</td><td>${customerPortalPoActionsHtml(p, completed)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="table-wrap portal-table-mobile-hide"><table><thead><tr><th>PO #</th><th>Date</th><th>Items</th><th>File</th><th>${completed ? 'BOL #' : 'Status'}</th><th class="portal-action-cell">Actions</th></tr></thead><tbody>${rows.map(({ po:p }) => `<tr><td><strong>${escapeHtml(p.id)}</strong></td><td>${fmtDate(p.poDate)}</td><td>${p.lines.length} ${p.lines.length === 1 ? 'item' : 'items'}</td><td>${poFileLinkHtml(p)}</td><td>${completed ? escapeHtml(p.shipping?.bol||'-') : statusBadge(p.status)}</td><td class="portal-action-cell">${customerPortalPoActionsHtml(p, completed)}</td></tr>`).join('')}</tbody></table></div>
     <div class="portal-card-list">${rows.map(({ po:p, total }) => `<div class="portal-card-row"><strong>${escapeHtml(p.id)}</strong><div class="portal-card-meta"><span>Date: ${fmtDate(p.poDate)}</span><span>Items: ${p.lines.length}</span><span>Total: ${total}</span><span>${completed ? 'BOL: ' + escapeHtml(p.shipping?.bol||'-') : 'Status: ' + statusBadge(p.status)}</span><span>${poFileLinkHtml(p)}</span><span>${customerPortalPoActionsHtml(p, completed)}</span></div></div>`).join('')}</div>
   `;
 }
@@ -785,22 +785,76 @@ function customerPortalPoTableHtml(pos, completed) {
 function customerPortalPoActionsHtml(po, completed) {
   const purchaseOrderId = backendPurchaseOrderId(po);
   if (completed || !purchaseOrderId) return '-';
+  const poNumber = po?.id || purchaseOrderId;
   return `<div class="portal-request-actions">
-    <button type="button" class="btn btn-secondary btn-sm" onclick="submitCustomerPoChangeRequest('${escapeAttr(purchaseOrderId)}', 'change')">Request change</button>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="submitCustomerPoChangeRequest('${escapeAttr(purchaseOrderId)}', 'cancel')">Request cancel</button>
+    <button type="button" class="btn btn-icon btn-sm portal-request-action-btn" title="Request change" aria-label="Request change" onclick="submitCustomerPoChangeRequest('${escapeAttr(purchaseOrderId)}', 'change', '${escapeAttr(poNumber)}')"><span aria-hidden="true">&#9998;</span></button>
+    <button type="button" class="btn btn-icon btn-sm portal-request-action-btn portal-request-action-danger" title="Request cancellation" aria-label="Request cancellation" onclick="submitCustomerPoChangeRequest('${escapeAttr(purchaseOrderId)}', 'cancel', '${escapeAttr(poNumber)}')"><span aria-hidden="true">&#128465;</span></button>
   </div>`;
 }
 
-async function submitCustomerPoChangeRequest(purchaseOrderId, requestType) {
-  const label = requestType === 'cancel' ? 'cancel' : 'change';
-  const message = prompt(`Describe the ${label} request for this PO:`);
-  if (!message || !message.trim()) return;
+function submitCustomerPoChangeRequest(purchaseOrderId, requestType, poNumber = '') {
+  const config = customerPoRequestConfig(requestType);
+  const displayPoNumber = poNumber || purchaseOrderId;
+  openModal(config.title, `
+    <form class="portal-request-modal-form" onsubmit="submitCustomerPoRequestForm(event, '${escapeAttr(purchaseOrderId)}', '${escapeAttr(config.type)}')">
+      <div class="portal-request-po-number"><span>PO #</span><strong>${escapeHtml(displayPoNumber)}</strong></div>
+      <div class="form-row">
+        <label for="customer_po_request_reason">Reason</label>
+        <textarea id="customer_po_request_reason" maxlength="500" placeholder="Briefly describe what Nut House should review."></textarea>
+        <div class="field-error" id="customer_po_request_reason_error" aria-live="polite"></div>
+      </div>
+      <div class="form-actions portal-request-modal-actions">
+        <button class="btn btn-secondary" type="button" onclick="closeModal()">Cancel</button>
+        <button class="btn" type="submit">Submit request</button>
+      </div>
+    </form>
+  `);
+  document.querySelector('.modal')?.classList.add('portal-request-modal');
+  setTimeout(() => document.getElementById('customer_po_request_reason')?.focus(), 0);
+}
+
+function customerPoRequestConfig(requestType) {
+  if (requestType === 'cancel') {
+    return {
+      type: 'cancel',
+      title: 'Request PO Cancellation',
+      label: 'cancellation'
+    };
+  }
+  return {
+    type: 'change',
+    title: 'Request PO Change',
+    label: 'change'
+  };
+}
+
+async function submitCustomerPoRequestForm(event, purchaseOrderId, requestType) {
+  event?.preventDefault();
+  const config = customerPoRequestConfig(requestType);
+  const reasonEl = document.getElementById('customer_po_request_reason');
+  const errorEl = document.getElementById('customer_po_request_reason_error');
+  const message = (reasonEl?.value || '').trim();
+  if (!message) {
+    if (reasonEl) {
+      reasonEl.classList.add('invalid');
+      reasonEl.setAttribute('aria-invalid', 'true');
+      reasonEl.focus();
+    }
+    if (errorEl) errorEl.textContent = 'Enter a reason before submitting this request.';
+    return;
+  }
+  if (reasonEl) {
+    reasonEl.classList.remove('invalid');
+    reasonEl.removeAttribute('aria-invalid');
+  }
+  if (errorEl) errorEl.textContent = '';
   try {
-    await createBackendPurchaseOrderChangeRequest(purchaseOrderId, requestType, message.trim());
-    toast(`PO ${label} request sent to Nut House.`);
+    await createBackendPurchaseOrderChangeRequest(purchaseOrderId, config.type, message);
+    closeModal();
+    toast(`PO ${config.label} request sent to Nut House.`);
   } catch (error) {
     markBackendUnavailable(error);
-    toast(error?.message || `PO ${label} request failed.`);
+    toast(error?.message || `PO ${config.label} request failed.`);
   }
 }
 async function deleteUser(id) {

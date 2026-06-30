@@ -364,6 +364,85 @@
     color: var(--black);
     background: #faf8f5;
   }
+  .portal-orders-panel table th.portal-action-cell,
+  .portal-orders-panel table td.portal-action-cell {
+    width: 92px;
+    min-width: 92px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .portal-request-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .portal-request-action-btn {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+    justify-content: center;
+    border-color: #c9b9a7;
+    background: var(--white);
+  }
+  .portal-request-action-btn span {
+    line-height: 1;
+    font-size: 14px;
+  }
+  .portal-request-action-danger {
+    color: var(--danger);
+  }
+  .modal.portal-request-modal {
+    max-width: 480px;
+    border-radius: 8px;
+    background: #fbfaf8;
+  }
+  .modal.portal-request-modal .modal-header {
+    background: var(--white);
+    color: var(--black);
+    border-bottom: 1px solid var(--grey-light);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+  }
+  .modal.portal-request-modal .modal-header h2 {
+    color: var(--brown);
+  }
+  .modal.portal-request-modal .modal-close {
+    color: var(--brown);
+  }
+  .portal-request-modal-form {
+    display: grid;
+    gap: 14px;
+  }
+  .portal-request-po-number {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-left: 4px solid var(--orange);
+    border-radius: 6px;
+    background: #fff9ef;
+    padding: 10px 12px;
+    color: var(--brown);
+  }
+  .portal-request-po-number span {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .portal-request-po-number strong {
+    color: var(--black);
+    font-size: 15px;
+  }
+  .portal-request-modal-form textarea {
+    min-height: 112px;
+    resize: vertical;
+  }
+  .portal-request-modal-actions {
+    margin-top: 0;
+  }
   .portal-download-btn {
     display: inline-flex;
     align-items: center;
