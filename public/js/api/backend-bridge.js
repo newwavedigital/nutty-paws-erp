@@ -231,8 +231,8 @@ function renderA10DataRecordBanner(moduleName) {
 hydrateA10DataRecordCaches();
 
 function markBackendUnavailable(error) {
-  backendApiState.status = 'local';
-  backendApiState.lastError = error?.message || 'Backend unavailable';
+  backendApiState.status = 'error';
+  backendApiState.lastError = BACKEND_READ_FAILED_MESSAGE;
 }
 
 function failBackendRequiredWrite(error, stateRef = null, fallbackMessage = 'Backend save failed. Nothing was saved locally.') {
@@ -255,18 +255,83 @@ function requireEmployeeBackendWrite(stateRef = null, message = 'Sign in as an e
   return failBackendRequiredWrite(null, stateRef, message);
 }
 
+const BACKEND_READ_FAILED_MESSAGE = 'Backend read failed. No local or preview data is shown.';
+
+function setBackendReadFailed(stateRef) {
+  if (!stateRef) return;
+  stateRef.status = 'error';
+  stateRef.lastError = BACKEND_READ_FAILED_MESSAGE;
+  stateRef.loading = false;
+  stateRef.loaded = true;
+}
+
+function clearProtectedBackendRows(area) {
+  switch (area) {
+    case 'account-management':
+      state.users = [];
+      break;
+    case 'customers':
+      state.customers = [];
+      break;
+    case 'products':
+      state.products = [];
+      state.boms = {};
+      break;
+    case 'master-items':
+      state.masterItems = [];
+      break;
+    case 'inventory':
+      state.ingredients = [];
+      state.receivingLog = [];
+      state.moveLog = [];
+      backendInventoryState.signals = null;
+      break;
+    case 'procurement':
+      state.procurementOrders = [];
+      backendProcurementState.needRows = [];
+      break;
+    case 'production':
+      backendProductionState.runs = [];
+      backendProductionState.logs = [];
+      state.productionLog = [];
+      state.purchaseOrders = [];
+      break;
+    case 'quality':
+      backendQualityState.queue = [];
+      state.purchaseOrders = [];
+      break;
+    case 'shipping':
+      backendShippingState.queue = [];
+      backendShippingState.logs = [];
+      state.shippingLog = [];
+      state.purchaseOrders = [];
+      break;
+    case 'pick-pack':
+      backendPickPackState.orders = [];
+      state.pickPackOrders = [];
+      break;
+    case 'research':
+      backendResearchState.requests = [];
+      state.rdRequests = [];
+      break;
+    case 'purchase-orders':
+      state.purchaseOrders = [];
+      break;
+  }
+}
+
 function renderBackendStatusBanner(context = 'purchase-orders') {
   const connected = backendApiState.status === 'connected';
   const loading = backendApiState.loadingPurchaseOrders;
   const authWaiting = backendApiState.lastError === 'Authentication is required';
   return renderDataStateBanner({
     kind: context,
-    state: connected ? 'connected' : loading ? 'loading' : authWaiting ? 'auth' : 'local',
+    state: connected ? 'connected' : loading ? 'loading' : authWaiting ? 'auth' : backendApiState.status === 'error' ? 'error' : 'auth',
     detail: connected
       ? 'This screen is reading protected backend records when available.'
       : authWaiting
         ? 'Sign in from Account Management to connect this screen to protected backend data.'
-        : 'Offline preview is visible. Sign in to load and save protected backend records.'
+        : backendApiState.lastError || 'Sign in to load protected backend records.'
   });
 }
 
@@ -295,11 +360,11 @@ function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' }
     loading: ['Checking backend...', '', 'var(--orange)'],
     auth: ['Sign in required', '', 'var(--orange)'],
     error: ['Backend unavailable', 'bad', 'var(--danger)'],
-    local: ['Offline preview', '', 'var(--orange)']
-  }[state] || ['Offline preview', '', 'var(--orange)'];
+    local: ['Sign in required', '', 'var(--orange)']
+  }[state] || ['Sign in required', '', 'var(--orange)'];
   return `<div class="inv-check ${config[1]}" data-backend-status="${escapeAttr(kind)}" style="border-left-color:${config[2]}">
     <strong>${escapeHtml(config[0])}</strong>
-    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail || 'Offline preview is visible until protected backend records load.')}</div>
+    <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail || 'Sign in to load protected backend records.')}</div>
   </div>`;
 }
 
@@ -357,10 +422,11 @@ function renderInlineFieldError(id, message = '') {
 
 function inventorySummaryHtml() {
   const signals = backendInventoryState.signals;
-  const conflicts = inventoryConflicts();
-  const low = signals ? signals.lowStockCount : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
-  const over = signals ? signals.overAllocationCount : conflicts.length;
-  const netIssues = state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
+  const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
+  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
+  const low = signals ? signals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
+  const over = signals ? signals.overAllocationCount : protectedInventoryError ? 0 : conflicts.length;
+  const netIssues = protectedInventoryError ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
   const today = new Date().toISOString().slice(0,10);
   const receiptsToday = (state.receivingLog || []).filter(r => r.date === today).length;
   const movesToday = (state.moveLog || []).filter(m => m.date === today).length;
@@ -397,14 +463,15 @@ function renderBackendDataStatusBanner(kind, dataState) {
   const connected = dataState.status === 'connected';
   if (connected) return '';
   const loading = dataState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
+  const error = dataState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
   const details = {
-    customers: dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
-    products: dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
-    'master-items': dataState.lastError || 'Browser customer/product preview data remains visible while backend data is unavailable.',
-    inventory: dataState.lastError || 'Browser inventory preview data remains visible while backend data is unavailable.'
+    customers: dataState.lastError || 'Sign in to load protected customer records.',
+    products: dataState.lastError || 'Sign in to load protected product records.',
+    'master-items': dataState.lastError || 'Sign in to load protected Master List records.',
+    inventory: dataState.lastError || 'Sign in to load protected inventory records.'
   };
-  return `<div class="inv-check" data-backend-status="${kind}" style="border-left-color:var(--orange)">
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="${kind}" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(details[kind] || details.customers)}</div>
   </div>`;
@@ -414,9 +481,10 @@ function renderBackendProcurementBanner() {
   const connected = backendProcurementState.status === 'connected';
   if (connected) return '';
   const loading = backendProcurementState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
-  const detail = backendProcurementState.lastError || 'Browser procurement preview data remains visible while backend data is unavailable.';
-  return `<div class="inv-check" data-backend-status="procurement" style="border-left-color:var(--orange)">
+  const error = backendProcurementState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
+  const detail = backendProcurementState.lastError || 'Sign in to load protected procurement records.';
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="procurement" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -426,9 +494,10 @@ function renderBackendProductionBanner() {
   const connected = backendProductionState.status === 'connected';
   if (connected) return '';
   const loading = backendProductionState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
-  const detail = backendProductionState.lastError || 'Browser production preview data remains visible while backend data is unavailable.';
-  return `<div class="inv-check" data-backend-status="production" style="border-left-color:var(--orange)">
+  const error = backendProductionState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
+  const detail = backendProductionState.lastError || 'Sign in to load protected production records.';
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="production" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -438,9 +507,10 @@ function renderBackendQualityBanner() {
   const connected = backendQualityState.status === 'connected';
   if (connected) return '';
   const loading = backendQualityState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
-  const detail = backendQualityState.lastError || 'Browser QA preview data remains visible while backend data is unavailable.';
-  return `<div class="inv-check" data-backend-status="quality" style="border-left-color:var(--orange)">
+  const error = backendQualityState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
+  const detail = backendQualityState.lastError || 'Sign in to load protected QA records.';
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="quality" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -450,9 +520,10 @@ function renderBackendShippingBanner() {
   const connected = backendShippingState.status === 'connected';
   if (connected) return '';
   const loading = backendShippingState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
-  const detail = backendShippingState.lastError || 'Browser shipping preview data remains visible while backend data is unavailable.';
-  return `<div class="inv-check" data-backend-status="shipping" style="border-left-color:var(--orange)">
+  const error = backendShippingState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
+  const detail = backendShippingState.lastError || 'Sign in to load protected shipping records.';
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="shipping" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -462,9 +533,10 @@ function renderBackendPickPackBanner() {
   const connected = backendPickPackState.status === 'connected';
   if (connected) return '';
   const loading = backendPickPackState.loading;
-  const title = loading ? 'Checking backend...' : 'Offline preview';
-  const detail = backendPickPackState.lastError || 'Browser Pick & Pack preview data remains visible while backend data is unavailable.';
-  return `<div class="inv-check" data-backend-status="pick-pack" style="border-left-color:var(--orange)">
+  const error = backendPickPackState.status === 'error';
+  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
+  const detail = backendPickPackState.lastError || 'Sign in to load protected Pick & Pack records.';
+  return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="pick-pack" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
   </div>`;
@@ -517,9 +589,8 @@ async function loadBackendQualityQueue() {
     backendQualityState.loaded = true;
     return queue;
   } catch (error) {
-    backendQualityState.status = 'error';
-    backendQualityState.lastError = 'Quality backend data is unavailable, so local QA demo records remain visible.';
-    backendQualityState.loaded = true;
+    clearProtectedBackendRows('quality');
+    setBackendReadFailed(backendQualityState);
     return [];
   } finally {
     backendQualityState.loading = false;
@@ -696,9 +767,8 @@ async function loadBackendShipping() {
     backendShippingState.lastError = '';
     backendShippingState.loaded = true;
   } catch (error) {
-    backendShippingState.status = 'error';
-    backendShippingState.lastError = 'Shipping backend data is unavailable, so local demo shipping remains visible.';
-    backendShippingState.loaded = true;
+    clearProtectedBackendRows('shipping');
+    setBackendReadFailed(backendShippingState);
   } finally {
     backendShippingState.loading = false;
   }
@@ -905,9 +975,8 @@ async function loadBackendPickPack() {
     backendPickPackState.lastError = '';
     backendPickPackState.loaded = true;
   } catch (error) {
-    backendPickPackState.status = 'error';
-    backendPickPackState.lastError = 'Pick & Pack backend data is unavailable, so local Pick & Pack records remain visible.';
-    backendPickPackState.loaded = true;
+    clearProtectedBackendRows('pick-pack');
+    setBackendReadFailed(backendPickPackState);
   } finally {
     backendPickPackState.loading = false;
   }
@@ -1501,8 +1570,8 @@ async function loadBackendProduction() {
     backendProductionState.lastError = '';
     backendProductionState.loaded = true;
   } catch (error) {
-    backendProductionState.status = 'error';
-    backendProductionState.lastError = 'Production backend data is unavailable, so local demo production remains visible.';
+    clearProtectedBackendRows('production');
+    setBackendReadFailed(backendProductionState);
   } finally {
     backendProductionState.loading = false;
   }
@@ -1599,8 +1668,8 @@ async function loadBackendProcurement() {
     backendProcurementState.lastError = '';
     backendProcurementState.loaded = true;
   } catch (error) {
-    backendProcurementState.status = 'error';
-    backendProcurementState.lastError = 'Procurement backend data is unavailable, so local demo procurement remains visible.';
+    clearProtectedBackendRows('procurement');
+    setBackendReadFailed(backendProcurementState);
   } finally {
     backendProcurementState.loading = false;
   }
@@ -1690,8 +1759,8 @@ async function loadBackendCustomers() {
     backendCustomerState.lastError = '';
     backendCustomerState.loaded = true;
   } catch (error) {
-    backendCustomerState.status = 'error';
-    backendCustomerState.lastError = 'Customer backend data is unavailable, so local demo customers remain visible.';
+    clearProtectedBackendRows('customers');
+    setBackendReadFailed(backendCustomerState);
   } finally {
     backendCustomerState.loading = false;
   }
@@ -1708,8 +1777,8 @@ async function loadBackendCustomerProfile() {
     backendCustomerState.loaded = true;
     return customer;
   } catch (error) {
-    backendCustomerState.status = 'error';
-    backendCustomerState.lastError = 'Customer profile backend data is unavailable, so local demo customer details remain visible.';
+    clearProtectedBackendRows('customers');
+    setBackendReadFailed(backendCustomerState);
     return null;
   } finally {
     backendCustomerState.loading = false;
@@ -1726,8 +1795,8 @@ async function loadBackendProducts() {
     backendProductState.lastError = '';
     backendProductState.loaded = true;
   } catch (error) {
-    backendProductState.status = 'error';
-    backendProductState.lastError = 'Product backend data is unavailable, so local demo products remain visible.';
+    clearProtectedBackendRows('products');
+    setBackendReadFailed(backendProductState);
   } finally {
     backendProductState.loading = false;
   }
@@ -1743,8 +1812,8 @@ async function loadBackendMasterItems() {
     backendMasterItemState.lastError = '';
     backendMasterItemState.loaded = true;
   } catch (error) {
-    backendMasterItemState.status = 'error';
-    backendMasterItemState.lastError = 'Master List backend data is unavailable, so local demo master items remain visible.';
+    clearProtectedBackendRows('master-items');
+    setBackendReadFailed(backendMasterItemState);
   } finally {
     backendMasterItemState.loading = false;
   }
@@ -1763,8 +1832,8 @@ async function loadBackendInventory() {
     backendInventoryState.lastError = '';
     backendInventoryState.loaded = true;
   } catch (error) {
-    backendInventoryState.status = 'error';
-    backendInventoryState.lastError = 'Inventory backend data is unavailable, so local demo inventory remains visible.';
+    clearProtectedBackendRows('inventory');
+    setBackendReadFailed(backendInventoryState);
   } finally {
     backendInventoryState.loading = false;
   }
@@ -2152,6 +2221,7 @@ async function ensureBackendPurchaseOrdersLoaded() {
     if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
   } catch (error) {
     markBackendUnavailable(error);
+    clearProtectedBackendRows('purchase-orders');
     backendApiState.loadedPurchaseOrders = true;
   } finally {
     backendApiState.loadingPurchaseOrders = false;

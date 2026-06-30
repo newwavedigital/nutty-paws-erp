@@ -3,7 +3,13 @@
    ========================================================================= */
 function renderDashboard(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.signals && !backendInventoryState.loading) {
-    loadBackendInventorySignals().then(() => { if (currentPage === 'dashboard') router('dashboard'); }).catch(() => {});
+    loadBackendInventorySignals()
+      .then(() => { if (currentPage === 'dashboard') router('dashboard'); })
+      .catch(() => {
+        clearProtectedBackendRows('inventory');
+        setBackendReadFailed(backendInventoryState);
+        if (currentPage === 'dashboard') router('dashboard');
+      });
   }
   const pos = state.purchaseOrders;
   const open = pos.filter(p => p.status !== 'completed');
@@ -11,7 +17,8 @@ function renderDashboard(el) {
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
   const inShipping = pos.filter(p => p.status === 'shipping').length;
   const backendSignals = backendInventoryState.signals || null;
-  const lowStock = backendSignals ? backendSignals.lowStockCount : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
+  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
   const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
   const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
 
@@ -28,7 +35,7 @@ function renderDashboard(el) {
     })
     .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
 
-  const conflicts = inventoryConflicts();
+  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
   const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : conflicts.length;
   const blockerRows = [
     { label: 'Supply Chain blockers', count: inSC, route: 'supply-chain', detail: 'POs awaiting ingredient/deposit readiness review.' },
@@ -113,7 +120,7 @@ function renderDashboard(el) {
         <button class="btn btn-secondary btn-sm" onclick="router('inventory')">Manage Inventory</button>
       </div>
       ${lowStock === 0
-        ? '<div class="empty">All ingredients are above reorder levels.</div>'
+        ? `<div class="empty">${protectedInventoryError ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>Ingredient</th><th>On Hand</th><th>Reorder At</th><th>Supplier</th></tr></thead>
             <tbody>

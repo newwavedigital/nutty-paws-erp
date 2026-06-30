@@ -13,7 +13,7 @@ describe("frontend purchase-order API wiring", () => {
     const retiredReadyStatusCopy = ["Records", "ready"].join(" ");
     expect(frontendText).not.toContain(retiredBackendStatusCopy);
     expect(frontendText).not.toContain(retiredReadyStatusCopy);
-    expect(frontendText).toContain("Offline preview");
+    expect(frontendText).toContain("Sign in required");
   });
 
   test("uses the purchase-order API endpoints for list/create/read/update and workflow commands", () => {

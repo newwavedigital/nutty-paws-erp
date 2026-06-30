@@ -93,10 +93,7 @@ function mergeBackendResearchRequests(records) {
     record,
     localRows.find(local => researchRequestMatches(local, record)) || {}
   ));
-  const mergedKeys = new Set();
-  mapped.forEach(row => researchRequestKeys(row).forEach(key => mergedKeys.add(key)));
-  const remainingLocal = localRows.filter(row => !researchRequestKeys(row).some(key => mergedKeys.has(key)));
-  state.rdRequests = [...mapped, ...remainingLocal];
+  state.rdRequests = mapped;
   backendResearchState.requests = mapped;
   try { saveState(); } catch (err) {}
   return mapped;
@@ -110,8 +107,8 @@ function renderBackendResearchBanner() {
   const detail = connected
     ? 'R&D requests, working notes, post-production comments, completion, and archive actions are reading from protected backend records when available.'
     : authBlocked
-      ? 'Sign in as an employee/admin to load and save backend research records. Local demo requests remain visible.'
-      : (backendResearchState.lastError || 'Local R&D demo data remains visible while backend data is unavailable.');
+      ? 'Sign in as an employee/admin to load and save backend research records.'
+      : (backendResearchState.lastError || 'Sign in to load protected backend research records.');
   return `<div data-backend-status="research">${renderDataStateBanner({ kind: 'research', state, detail })}</div>`;
 }
 
@@ -138,9 +135,8 @@ async function loadBackendResearch() {
     backendResearchState.lastError = '';
     backendResearchState.loaded = true;
   } catch (error) {
-    backendResearchState.status = 'error';
-    backendResearchState.lastError = 'Research backend data is unavailable, so local demo R&D requests remain visible.';
-    backendResearchState.loaded = true;
+    clearProtectedBackendRows('research');
+    setBackendReadFailed(backendResearchState);
   } finally {
     backendResearchState.loading = false;
   }

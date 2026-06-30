@@ -10,7 +10,7 @@ function backendAuthPanelHtml() {
   const statusText = backendUserState.status === 'connected'
     ? 'Backend Account Management is connected.'
     : backendUserState.status === 'error'
-      ? escapeHtml(backendUserState.lastError || 'Backend Account Management is unavailable, so browser-preview users remain visible.')
+      ? escapeHtml(backendUserState.lastError || BACKEND_READ_FAILED_MESSAGE)
       : 'Create the first admin or log in as backend Admin before adding users. Browser-preview users cannot log in.';
   return `
     <div class="inv-check ${signedIn ? 'ok' : ''}" data-auth-panel="account-management" style="margin-bottom:12px;border-left-color:${signedIn ? 'var(--success)' : 'var(--orange)'}">
@@ -201,8 +201,8 @@ async function loadBackendUsers() {
     backendUserState.lastError = '';
     saveState();
   } catch (err) {
-    backendUserState.status = 'error';
-    backendUserState.lastError = 'Account Management could not reach the backend user API. User records were not refreshed.';
+    clearProtectedBackendRows('account-management');
+    setBackendReadFailed(backendUserState);
   } finally {
     backendUserState.loadingUsers = false;
   }

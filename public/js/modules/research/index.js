@@ -159,7 +159,9 @@ async function editRdRequest(id) {
         r = (state.rdRequests || []).find(x => x._backendId === requestId || x.id === requestId || x.rdId === requestId || x.requestId === requestId) || localRequest;
       } catch (error) {
         backendResearchState.status = 'error';
-        backendResearchState.lastError = 'Research request details are unavailable right now, so the local demo record remains editable.';
+        backendResearchState.lastError = BACKEND_READ_FAILED_MESSAGE;
+        clearProtectedBackendRows('research');
+        return;
       }
     }
   }

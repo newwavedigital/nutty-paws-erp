@@ -52,7 +52,6 @@ describe("Sprint A9 account menu and auth-on staging markers", () => {
 
   test("removes legacy visible demo/auth-needed status labels", () => {
     for (const html of [rootHtml, publicHtml]) {
-      expect(frontendText).toContain("Offline preview");
       expect(frontendText).toContain("Sign in required");
       expect(frontendText).not.toContain("Demo Data Active");
       expect(frontendText).not.toContain("Demo data active");

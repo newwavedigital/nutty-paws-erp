@@ -35,6 +35,9 @@ function renderProcurement(el) {
 }
 
 function procurementNeedItems() {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendProcurementState.status === 'error') {
+    return [];
+  }
   if (backendProcurementState.needRows && backendProcurementState.needRows.length) {
     return backendProcurementState.needRows.map(row => backendNeedRowToLocalIngredient(row, state.ingredients.find(i => i._backendId === row.inventoryItemId || i.id === row.inventoryItemId)));
   }
