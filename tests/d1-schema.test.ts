@@ -17,6 +17,8 @@ const migrationPaths = [
   "migrations/0010_phase_2b_sprint_11_research_workflow.sql",
   "migrations/0011_phase_2b_data_architecture_missing_modules.sql",
   "migrations/0012_phase_2b_a10_file_metadata_scope.sql",
+  "migrations/0013_customer_po_hardening.sql",
+  "migrations/0014_inventory_receiving_move_corrections.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 const stagingDatabaseName = "nut-house-portal-staging-db";
@@ -104,6 +106,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "production_run_materials",
         "production_runs",
         "products",
+        "purchase_order_change_requests",
         "purchase_order_lines",
         "purchase_order_status_events",
         "purchase_orders",
@@ -267,6 +270,12 @@ describe("Phase 2A D1 baseline schema migration", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "receiving_id", notnull: 1 }),
           expect.objectContaining({ name: "total_quantity", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "archived_at" }),
+          expect.objectContaining({ name: "archived_by_user_id" }),
+          expect.objectContaining({ name: "updated_by_user_id" }),
+          expect.objectContaining({ name: "stock_applied_quantity", notnull: 1 }),
+          expect.objectContaining({ name: "stock_applied_inventory_item_id" }),
         ]),
       );
 
@@ -280,6 +289,10 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "move_id", notnull: 1 }),
           expect.objectContaining({ name: "receiving_id", notnull: 1 }),
           expect.objectContaining({ name: "quantity_moved", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "archived_at" }),
+          expect.objectContaining({ name: "archived_by_user_id" }),
+          expect.objectContaining({ name: "updated_by_user_id" }),
         ]),
       );
 

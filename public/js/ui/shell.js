@@ -75,7 +75,7 @@ const PARTIAL_LOCAL_PAGE_LIMITS = {
   slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
   'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
   machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.',
-  inventory: 'Inventory has backend-backed core records, but receiving-log edits, move-log edits, and generated local notes are partial local-only.',
+  inventory: 'Inventory has backend-backed core records. Generated local notes may remain partial local-only.',
   assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'
 };
 let authGateSetupRequestId = 0;

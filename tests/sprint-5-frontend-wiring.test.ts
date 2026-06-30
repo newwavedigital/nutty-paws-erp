@@ -29,6 +29,8 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "async function saveBackendInventoryItem",
       "async function saveBackendReceivingEntry",
       "async function saveBackendMoveEntry",
+      "async function archiveBackendReceivingEntry",
+      "async function archiveBackendMoveEntry",
       "async function uploadBackendProductMedia",
       "async function uploadBackendInventoryCoa",
     ]) {
@@ -36,12 +38,16 @@ describe("Sprint 5 frontend inventory wiring", () => {
     }
   });
 
-  test("uses Sprint 5 backend endpoints and file categories", () => {
+  test("uses Sprint 5 backend endpoints, durable correction methods, and file categories", () => {
     for (const marker of [
       "/api/inventory",
       "/api/inventory/receiving",
+      "/api/inventory/receiving/${encodeURIComponent(backendId)}",
       "/api/inventory/moves",
+      "/api/inventory/moves/${encodeURIComponent(backendId)}",
       "/api/inventory/signals",
+      "method: isNew ? 'POST' : 'PATCH'",
+      "method: 'DELETE'",
       "product_image",
       "nutrition_facts",
       "inventory_coa",
@@ -58,6 +64,8 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "async function saveBackendInventoryItem",
       "async function saveBackendReceivingEntry",
       "async function saveBackendMoveEntry",
+      "async function archiveBackendReceivingEntry",
+      "async function archiveBackendMoveEntry",
       "async function uploadBackendInventoryCoa",
       "/api/inventory/signals",
     ]) {

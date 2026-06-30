@@ -8,6 +8,8 @@ import { requireAuthWhenEnabled, requireEmployee } from "../auth/guards";
 import type { AuthContext, AuthStore } from "../auth/service";
 import { D1InventoryStore } from "./d1-store";
 import {
+  archiveMoveLogEntry,
+  archiveReceivingLogEntry,
   calculateInventorySignals,
   createInventorySetupItem,
   createMoveLogEntry,
@@ -15,7 +17,9 @@ import {
   getInventoryAvailability,
   releaseInventoryReservation,
   reserveInventory,
+  updateMoveLogEntry,
   updateInventorySetupItem,
+  updateReceivingLogEntry,
   type InventoryCategory,
   type InventoryItemInput,
   type InventoryStore,
@@ -93,7 +97,28 @@ export function registerInventoryRoutes(
       receivedBy: optionalString(body.receivedBy, "receivedBy") ?? null,
       carrier: optionalString(body.carrier, "carrier") ?? null,
       supplierId: optionalString(body.supplierId, "supplierId") ?? null,
+      actorUserId: actorUserId(auth, body),
     });
+    return ok(c, entry);
+  });
+
+  app.patch("/api/inventory/receiving/:receivingEntryId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const body = await parseJsonObject(c);
+    const entry = await updateReceivingLogEntry(createStore(db), c.req.param("receivingEntryId"), {
+      ...partialReceivingInputFromBody(body),
+      actorUserId: actorUserId(auth, body),
+    });
+    return ok(c, entry);
+  });
+
+  app.delete("/api/inventory/receiving/:receivingEntryId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const entry = await archiveReceivingLogEntry(createStore(db), c.req.param("receivingEntryId"), auth?.user.id);
     return ok(c, entry);
   });
 
@@ -118,7 +143,28 @@ export function registerInventoryRoutes(
       movedBy: optionalString(body.movedBy, "movedBy") ?? null,
       fromLocation: optionalString(body.fromLocation, "fromLocation") ?? null,
       toLocation: optionalString(body.toLocation, "toLocation") ?? null,
+      actorUserId: actorUserId(auth, body),
     });
+    return ok(c, entry);
+  });
+
+  app.patch("/api/inventory/moves/:moveEntryId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const body = await parseJsonObject(c);
+    const entry = await updateMoveLogEntry(createStore(db), c.req.param("moveEntryId"), {
+      ...partialMoveInputFromBody(body),
+      actorUserId: actorUserId(auth, body),
+    });
+    return ok(c, entry);
+  });
+
+  app.delete("/api/inventory/moves/:moveEntryId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const entry = await archiveMoveLogEntry(createStore(db), c.req.param("moveEntryId"), auth?.user.id);
     return ok(c, entry);
   });
 
@@ -225,6 +271,37 @@ function partialInventoryItemInputFromBody(body: Record<string, unknown>, id: st
     ...(body.location !== undefined ? { location: optionalString(body.location, "location") ?? null } : {}),
     ...(body.lotNumber !== undefined ? { lotNumber: optionalString(body.lotNumber, "lotNumber") ?? null } : {}),
     ...(body.lotsJson !== undefined ? { lotsJson: optionalString(body.lotsJson, "lotsJson") ?? null } : {}),
+  };
+}
+
+function partialReceivingInputFromBody(body: Record<string, unknown>) {
+  return {
+    ...(body.masterItemId !== undefined ? { masterItemId: asString(body.masterItemId, "masterItemId") } : {}),
+    ...(body.inventoryItemId !== undefined ? { inventoryItemId: optionalString(body.inventoryItemId, "inventoryItemId") ?? null } : {}),
+    ...(body.itemName !== undefined ? { itemName: asString(body.itemName, "itemName") } : {}),
+    ...(body.date !== undefined ? { date: asString(body.date, "date") } : {}),
+    ...(body.time !== undefined ? { time: asString(body.time, "time") } : {}),
+    ...(body.packages !== undefined ? { packages: asNumber(body.packages, "packages") } : {}),
+    ...(body.quantityPerPackage !== undefined ? { quantityPerPackage: asNumber(body.quantityPerPackage, "quantityPerPackage") } : {}),
+    ...(body.unitOfMeasure !== undefined ? { unitOfMeasure: asString(body.unitOfMeasure, "unitOfMeasure") } : {}),
+    ...(body.lotNumber !== undefined ? { lotNumber: optionalString(body.lotNumber, "lotNumber") ?? null } : {}),
+    ...(body.allergens !== undefined ? { allergens: stringArray(body.allergens) } : {}),
+    ...(body.receivedBy !== undefined ? { receivedBy: optionalString(body.receivedBy, "receivedBy") ?? null } : {}),
+    ...(body.carrier !== undefined ? { carrier: optionalString(body.carrier, "carrier") ?? null } : {}),
+    ...(body.supplierId !== undefined ? { supplierId: optionalString(body.supplierId, "supplierId") ?? null } : {}),
+  };
+}
+
+function partialMoveInputFromBody(body: Record<string, unknown>) {
+  return {
+    ...(body.receivingId !== undefined ? { receivingId: asString(body.receivingId, "receivingId") } : {}),
+    ...(body.date !== undefined ? { date: asString(body.date, "date") } : {}),
+    ...(body.time !== undefined ? { time: asString(body.time, "time") } : {}),
+    ...(body.caseCount !== undefined ? { caseCount: asNumber(body.caseCount, "caseCount") } : {}),
+    ...(body.quantityPerCase !== undefined ? { quantityPerCase: asNumber(body.quantityPerCase, "quantityPerCase") } : {}),
+    ...(body.movedBy !== undefined ? { movedBy: optionalString(body.movedBy, "movedBy") ?? null } : {}),
+    ...(body.fromLocation !== undefined ? { fromLocation: optionalString(body.fromLocation, "fromLocation") ?? null } : {}),
+    ...(body.toLocation !== undefined ? { toLocation: optionalString(body.toLocation, "toLocation") ?? null } : {}),
   };
 }
 

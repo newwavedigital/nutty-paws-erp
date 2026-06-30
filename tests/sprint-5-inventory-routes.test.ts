@@ -53,6 +53,12 @@ function makeReceivingEntry(overrides: Partial<ReceivingEntryRecord> = {}): Rece
     carrier: "LTL",
     supplierId: "supplier-1",
     ...overrides,
+    status: overrides.status ?? "active",
+    archivedAt: overrides.archivedAt ?? null,
+    archivedByUserId: overrides.archivedByUserId ?? null,
+    updatedByUserId: overrides.updatedByUserId ?? null,
+    stockAppliedQuantity: overrides.stockAppliedQuantity ?? 100,
+    stockAppliedInventoryItemId: overrides.stockAppliedInventoryItemId ?? "inv-1",
   };
 }
 
@@ -75,6 +81,10 @@ function makeMoveEntry(overrides: Partial<MoveEntryRecord> = {}): MoveEntryRecor
     fromLocation: "Dock",
     toLocation: "A-1",
     ...overrides,
+    status: overrides.status ?? "active",
+    archivedAt: overrides.archivedAt ?? null,
+    archivedByUserId: overrides.archivedByUserId ?? null,
+    updatedByUserId: overrides.updatedByUserId ?? null,
   };
 }
 
@@ -114,15 +124,50 @@ function createRouteStore(overrides: Partial<InventoryStore> = {}) {
       receiving.set(entry.id, entry);
       return entry;
     },
+    async getReceivingEntry(id: string) {
+      return receiving.get(id) ?? null;
+    },
     async getReceivingEntryByBusinessId(receivingId: string) {
       return [...receiving.values()].find((entry) => entry.receivingId === receivingId) ?? null;
     },
+    async updateReceivingEntry(id: string, input: ReceivingEntryInput) {
+      const current = receiving.get(id);
+      if (!current) return null;
+      const updated = makeReceivingEntry({ ...current, ...input, id });
+      receiving.set(id, updated);
+      return updated;
+    },
+    async archiveReceivingEntry(id: string, input: { archivedAt: string; actorUserId?: string }) {
+      const current = receiving.get(id);
+      if (!current) return null;
+      const archived = makeReceivingEntry({ ...current, status: "archived", archivedAt: input.archivedAt, archivedByUserId: input.actorUserId ?? null });
+      receiving.set(id, archived);
+      return archived;
+    },
+    async adjustInventoryOnHand() { return true; },
     async listMoveEntries() { return [...moves.values()]; },
     async nextMoveSequence() { return 1002; },
     async createMoveEntry(input: MoveEntryInput) {
       const entry = makeMoveEntry({ ...input, id: input.id });
       moves.set(entry.id, entry);
       return entry;
+    },
+    async getMoveEntry(id: string) {
+      return moves.get(id) ?? null;
+    },
+    async updateMoveEntry(id: string, input: MoveEntryInput) {
+      const current = moves.get(id);
+      if (!current) return null;
+      const updated = makeMoveEntry({ ...current, ...input, id });
+      moves.set(id, updated);
+      return updated;
+    },
+    async archiveMoveEntry(id: string, input: { archivedAt: string; actorUserId?: string }) {
+      const current = moves.get(id);
+      if (!current) return null;
+      const archived = makeMoveEntry({ ...current, status: "archived", archivedAt: input.archivedAt, archivedByUserId: input.actorUserId ?? null });
+      moves.set(id, archived);
+      return archived;
     },
     ...overrides,
   };
@@ -254,6 +299,64 @@ describe("Sprint 5 inventory setup routes", () => {
         unitOfMeasure: "lb",
       },
     });
+  });
+
+  it("updates and archives receiving entries through backend routes", async () => {
+    const app = createRouteApp();
+
+    const updateResponse = await app.request("/api/inventory/receiving/receiving-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        packages: 6,
+        quantityPerPackage: 20,
+        lotNumber: "LOT-4",
+      }),
+    });
+
+    expect(updateResponse.status).toBe(200);
+    await expect(updateResponse.json()).resolves.toMatchObject({
+      data: { id: "receiving-1", totalQuantity: 120, lotNumber: "LOT-4" },
+    });
+
+    const archiveResponse = await app.request("/api/inventory/receiving/receiving-1", { method: "DELETE" });
+
+    expect(archiveResponse.status).toBe(200);
+    await expect(archiveResponse.json()).resolves.toMatchObject({
+      data: { id: "receiving-1", status: "archived", archivedAt: expect.any(String) },
+    });
+  });
+
+  it("updates and archives move entries through backend routes without stock movement calls", async () => {
+    const calls: string[] = [];
+    const app = createRouteApp(createRouteStore({
+      async adjustInventoryOnHand(input) { calls.push(`adjust:${input.quantityDelta}`); return true; },
+      async createMovement(input) { calls.push(`movement:${input.movementType}:${input.quantityDelta}`); },
+    }));
+
+    const updateResponse = await app.request("/api/inventory/moves/move-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        caseCount: 4,
+        quantityPerCase: 10,
+        fromLocation: "Dock",
+        toLocation: "A-2",
+      }),
+    });
+
+    expect(updateResponse.status).toBe(200);
+    await expect(updateResponse.json()).resolves.toMatchObject({
+      data: { id: "move-1", quantityMoved: 40, toLocation: "A-2" },
+    });
+
+    const archiveResponse = await app.request("/api/inventory/moves/move-1", { method: "DELETE" });
+
+    expect(archiveResponse.status).toBe(200);
+    await expect(archiveResponse.json()).resolves.toMatchObject({
+      data: { id: "move-1", status: "archived", archivedAt: expect.any(String) },
+    });
+    expect(calls).toEqual([]);
   });
 
   it("returns dashboard inventory signals for low stock, over-allocation, and net available", async () => {

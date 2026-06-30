@@ -1254,7 +1254,11 @@ function backendReceivingToLocal(entry, existing = {}) {
     allergens: entry.allergens || [],
     receivedBy: entry.receivedBy || '',
     carrier: entry.carrier || '',
-    supplierId: entry.supplierId || ''
+    supplierId: entry.supplierId || '',
+    status: entry.status || 'active',
+    archivedAt: entry.archivedAt || null,
+    stockAppliedQuantity: entry.stockAppliedQuantity || 0,
+    stockAppliedInventoryItemId: entry.stockAppliedInventoryItemId || ''
   };
 }
 
@@ -1278,7 +1282,9 @@ function backendMoveToLocal(entry, existing = {}) {
     uom: entry.unitOfMeasure,
     movedBy: entry.movedBy || '',
     fromLocation: entry.fromLocation || '',
-    toLocation: entry.toLocation || ''
+    toLocation: entry.toLocation || '',
+    status: entry.status || 'active',
+    archivedAt: entry.archivedAt || null
   };
 }
 
@@ -1865,12 +1871,24 @@ async function saveBackendInventoryItem(id, isNew, data) {
   return item;
 }
 
-async function saveBackendReceivingEntry(data) {
-  const entry = await apiRequest('/api/inventory/receiving', {
-    method: 'POST',
+function backendInventoryItemIdForReceipt(data) {
+  if (data.inventoryItemId) return data.inventoryItemId;
+  const item = (state.ingredients || []).find(row =>
+    row._backendId === data._backendInventoryItemId ||
+    row.id === data._backendInventoryItemId ||
+    row.masterItemId === data.masterItemId ||
+    row.name === data.itemName
+  );
+  return item?._backendId || item?.id || null;
+}
+
+async function saveBackendReceivingEntry(id, isNew, data) {
+  const backendId = data._backendId || id;
+  const entry = await apiRequest(isNew ? '/api/inventory/receiving' : `/api/inventory/receiving/${encodeURIComponent(backendId)}`, {
+    method: isNew ? 'POST' : 'PATCH',
     body: JSON.stringify({
       masterItemId: data.masterItemId,
-      inventoryItemId: data.inventoryItemId || null,
+      inventoryItemId: backendInventoryItemIdForReceipt(data),
       itemName: data.itemName,
       date: data.date,
       time: data.time,
@@ -1888,9 +1906,17 @@ async function saveBackendReceivingEntry(data) {
   return entry;
 }
 
-async function saveBackendMoveEntry(data) {
-  const entry = await apiRequest('/api/inventory/moves', {
-    method: 'POST',
+async function archiveBackendReceivingEntry(id) {
+  const backendId = (state.receivingLog || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const entry = await apiRequest(`/api/inventory/receiving/${encodeURIComponent(backendId)}`, { method: 'DELETE' });
+  backendInventoryState.loaded = false;
+  return entry;
+}
+
+async function saveBackendMoveEntry(id, isNew, data) {
+  const backendId = data._backendId || id;
+  const entry = await apiRequest(isNew ? '/api/inventory/moves' : `/api/inventory/moves/${encodeURIComponent(backendId)}`, {
+    method: isNew ? 'POST' : 'PATCH',
     body: JSON.stringify({
       receivingId: data.receivingId,
       date: data.date,
@@ -1903,6 +1929,13 @@ async function saveBackendMoveEntry(data) {
     })
   });
   mergeBackendMoveEntries([entry]);
+  return entry;
+}
+
+async function archiveBackendMoveEntry(id) {
+  const backendId = (state.moveLog || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const entry = await apiRequest(`/api/inventory/moves/${encodeURIComponent(backendId)}`, { method: 'DELETE' });
+  backendInventoryState.loaded = false;
   return entry;
 }
 

@@ -479,6 +479,8 @@ async function saveReceiving(id, isNew) {
   const masterItemId = document.getElementById('rcv_item').value;
   const master = (state.masterItems || []).find(m => m.id === masterItemId);
   if (!master) { toast('Pick an Item Name from the Master List.'); return; }
+  const existing = (state.receivingLog || []).find(x => x.id === id);
+  const inventoryItem = (state.ingredients || []).find(i => i.masterItemId === masterItemId || i.name === master.name);
   const packages = parseFloat(document.getElementById('rcv_packages').value);
   const qtyPerPackage = parseFloat(document.getElementById('rcv_qtypp').value);
   const pk = isNaN(packages) ? 0 : packages;
@@ -486,6 +488,8 @@ async function saveReceiving(id, isNew) {
   const data = {
     id,
     receivingId: document.getElementById('rcv_id').value,
+    _backendId: existing?._backendId,
+    inventoryItemId: inventoryItem?._backendId || inventoryItem?.id || existing?.inventoryItemId || '',
     date: document.getElementById('rcv_date').value,
     time: document.getElementById('rcv_time').value,
     masterItemId,
@@ -501,14 +505,17 @@ async function saveReceiving(id, isNew) {
     supplierId: document.getElementById('rcv_vendor').value || ''
   };
   if (!requireEmployeeBackendWrite(backendInventoryState)) return;
-  if (!isNew) return failBackendRequiredWrite(null, backendInventoryState, 'Receiving Log edits are not backend-backed yet. Nothing was saved locally.');
   try {
-    const saved = await saveBackendReceivingEntry(data);
+    const saved = await saveBackendReceivingEntry(id, isNew, data);
     data.id = saved.id;
     data._backendId = saved.id;
     data.receivingId = saved.receivingId;
+    data.inventoryItemId = saved.inventoryItemId || data.inventoryItemId;
+    data.stockAppliedQuantity = saved.stockAppliedQuantity || 0;
+    data.stockAppliedInventoryItemId = saved.stockAppliedInventoryItemId || '';
     backendInventoryState.status = 'connected';
     backendInventoryState.loaded = false;
+    backendInventoryState.signals = null;
     backendInventoryState.lastError = '';
   } catch (error) {
     failBackendRequiredWrite(error, backendInventoryState);
@@ -533,10 +540,19 @@ async function deleteReceiving(id) {
     tone: 'danger'
   });
   if (!ok) return;
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  try {
+    await archiveBackendReceivingEntry(id);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+    return;
+  }
   state.receivingLog = (state.receivingLog || []).filter(x => x.id !== id);
   saveState();
+  backendInventoryState.loaded = false;
+  backendInventoryState.signals = null;
   router('inventory');
-  toast('Receiving record deleted.');
+  toast('Receiving record archived.');
 }
 
 /* =========================================================================
@@ -750,6 +766,7 @@ async function saveMove(id, isNew) {
   const data = {
     id,
     moveId: document.getElementById('mv_id').value,
+    _backendId: (state.moveLog || []).find(x => x.id === id)?._backendId,
     date: document.getElementById('mv_date').value,
     time: document.getElementById('mv_time').value,
     receivingId,
@@ -765,9 +782,8 @@ async function saveMove(id, isNew) {
     toLocation
   };
   if (!requireEmployeeBackendWrite(backendInventoryState)) return;
-  if (!isNew) return failBackendRequiredWrite(null, backendInventoryState, 'Move Log edits are not backend-backed yet. Nothing was saved locally.');
   try {
-    const saved = await saveBackendMoveEntry(data);
+    const saved = await saveBackendMoveEntry(id, isNew, data);
     data.id = saved.id;
     data._backendId = saved.id;
     data.moveId = saved.moveId;
@@ -802,10 +818,18 @@ async function deleteMove(id) {
     tone: 'danger'
   });
   if (!ok) return;
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  try {
+    await archiveBackendMoveEntry(id);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+    return;
+  }
   state.moveLog = (state.moveLog || []).filter(x => x.id !== id);
   saveState();
+  backendInventoryState.loaded = false;
   router('inventory');
-  toast('Move record deleted.');
+  toast('Move record archived.');
 }
 
 /* =========================================================================

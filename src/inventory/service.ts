@@ -59,10 +59,26 @@ export type ReceivingEntryRecord = {
   receivedBy: string | null;
   carrier: string | null;
   supplierId: string | null;
+  status: "active" | "archived";
+  archivedAt: string | null;
+  archivedByUserId: string | null;
+  updatedByUserId: string | null;
+  stockAppliedQuantity: number;
+  stockAppliedInventoryItemId: string | null;
 };
 
-export type ReceivingEntryInput = Omit<ReceivingEntryRecord, "allergens"> & {
+export type ReceivingEntryInput = Omit<
+  ReceivingEntryRecord,
+  "allergens" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId" | "stockAppliedQuantity" | "stockAppliedInventoryItemId"
+> & {
   allergens: string[];
+  actorUserId?: string;
+  status?: "active" | "archived";
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
+  updatedByUserId?: string | null;
+  stockAppliedQuantity?: number;
+  stockAppliedInventoryItemId?: string | null;
 };
 
 export type MoveEntryRecord = {
@@ -82,9 +98,19 @@ export type MoveEntryRecord = {
   movedBy: string | null;
   fromLocation: string | null;
   toLocation: string | null;
+  status: "active" | "archived";
+  archivedAt: string | null;
+  archivedByUserId: string | null;
+  updatedByUserId: string | null;
 };
 
-export type MoveEntryInput = MoveEntryRecord;
+export type MoveEntryInput = Omit<MoveEntryRecord, "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId"> & {
+  actorUserId?: string;
+  status?: "active" | "archived";
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
+  updatedByUserId?: string | null;
+};
 
 export type InventoryReservationRecord = {
   id: string;
@@ -96,18 +122,18 @@ export type InventoryReservationRecord = {
 
 export type InventoryMovementInput = {
   inventoryItemId: string;
-  movementType: "reserved" | "released";
+  movementType: "received" | "adjusted" | "reserved" | "released" | "consumed";
   quantityDelta: number;
-  referenceType: "inventory_reservation";
+  referenceType: "receiving_entry" | "inventory_reservation" | string;
   referenceId: string;
   actorUserId?: string;
 };
 
 export type InventoryAuditInput = {
   actorUserId?: string;
-  entityType: "inventory_reservation";
+  entityType: "inventory_reservation" | "receiving_entry" | "move_entry";
   entityId: string;
-  action: "inventory.reserved" | "inventory.released";
+  action: "inventory.received" | "inventory.adjusted" | "inventory.reserved" | "inventory.released" | "receiving.archived" | "move.archived";
   metadata: Record<string, unknown>;
 };
 
@@ -129,14 +155,21 @@ export type InventoryStore = {
   listInventoryItems?(): Promise<InventoryItemSetupRecord[]>;
   createInventoryItem?(input: InventoryItemInput): Promise<InventoryItemSetupRecord>;
   updateInventoryItem?(id: string, input: InventoryItemInput): Promise<InventoryItemSetupRecord | null>;
+  adjustInventoryOnHand?(input: { inventoryItemId: string; quantityDelta: number }): Promise<boolean>;
   masterItemExists?(masterItemId: string): Promise<boolean>;
   listReceivingEntries?(): Promise<ReceivingEntryRecord[]>;
   nextReceivingSequence?(): Promise<number>;
   createReceivingEntry?(input: ReceivingEntryInput): Promise<ReceivingEntryRecord>;
+  getReceivingEntry?(id: string): Promise<ReceivingEntryRecord | null>;
   getReceivingEntryByBusinessId?(receivingId: string): Promise<ReceivingEntryRecord | null>;
+  updateReceivingEntry?(id: string, input: ReceivingEntryInput): Promise<ReceivingEntryRecord | null>;
+  archiveReceivingEntry?(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<ReceivingEntryRecord | null>;
   listMoveEntries?(): Promise<MoveEntryRecord[]>;
   nextMoveSequence?(): Promise<number>;
   createMoveEntry?(input: MoveEntryInput): Promise<MoveEntryRecord>;
+  getMoveEntry?(id: string): Promise<MoveEntryRecord | null>;
+  updateMoveEntry?(id: string, input: MoveEntryInput): Promise<MoveEntryRecord | null>;
+  archiveMoveEntry?(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MoveEntryRecord | null>;
 };
 
 export class InventoryError extends ApiError {
@@ -147,11 +180,11 @@ export class InventoryError extends ApiError {
 }
 
 function inventoryStatusFor(code: string) {
-  if (code === "INVENTORY_ITEM_NOT_FOUND" || code === "RESERVATION_NOT_FOUND") {
+  if (code === "INVENTORY_ITEM_NOT_FOUND" || code === "RESERVATION_NOT_FOUND" || code === "RECEIVING_ENTRY_NOT_FOUND" || code === "MOVE_ENTRY_NOT_FOUND") {
     return 404;
   }
 
-  if (code === "INSUFFICIENT_INVENTORY") {
+  if (code === "INSUFFICIENT_INVENTORY" || code === "INVENTORY_STOCK_CONFLICT" || code === "RECEIVING_ENTRY_ARCHIVED" || code === "MOVE_ENTRY_ARCHIVED") {
     return 409;
   }
 
@@ -221,23 +254,84 @@ export async function updateInventorySetupItem(store: InventoryStore, id: string
   return store.updateInventoryItem(id, merged);
 }
 
-export async function createReceivingLogEntry(store: InventoryStore, input: Omit<ReceivingEntryInput, "id" | "receivingId" | "totalQuantity">) {
-  if (!store.createReceivingEntry || !store.nextReceivingSequence || !store.masterItemExists) {
+export async function createReceivingLogEntry(store: InventoryStore, input: Omit<ReceivingEntryInput, "id" | "receivingId" | "totalQuantity" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId" | "stockAppliedQuantity" | "stockAppliedInventoryItemId">) {
+  if (!store.createReceivingEntry || !store.nextReceivingSequence || !store.masterItemExists || !store.adjustInventoryOnHand) {
     throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
   }
   await assertMasterItemExists(store, input.masterItemId);
+  const inventoryItemId = requireInventoryItemId(input.inventoryItemId);
   assertNonNegative(input.packages, "packages");
   assertNonNegative(input.quantityPerPackage, "quantityPerPackage");
   const totalQuantity = +(input.packages * input.quantityPerPackage).toFixed(2);
+  await applyInventoryDelta(store, inventoryItemId, totalQuantity);
+  const id = `receiving_${crypto.randomUUID()}`;
+  await store.createMovement({
+    inventoryItemId,
+    movementType: "received",
+    quantityDelta: totalQuantity,
+    referenceType: "receiving_entry",
+    referenceId: id,
+    actorUserId: input.actorUserId,
+  });
   return store.createReceivingEntry({
     ...input,
-    id: `receiving_${crypto.randomUUID()}`,
+    id,
     receivingId: `RCV-${await store.nextReceivingSequence()}`,
+    inventoryItemId,
     totalQuantity,
+    status: "active",
+    archivedAt: null,
+    archivedByUserId: null,
+    updatedByUserId: input.actorUserId ?? null,
+    stockAppliedQuantity: totalQuantity,
+    stockAppliedInventoryItemId: inventoryItemId,
   });
 }
 
-export async function createMoveLogEntry(store: InventoryStore, input: Omit<MoveEntryInput, "id" | "moveId" | "masterItemId" | "inventoryItemId" | "itemName" | "lotNumber" | "quantityMoved" | "unitOfMeasure">) {
+export async function updateReceivingLogEntry(store: InventoryStore, receivingEntryId: string, input: Partial<Omit<ReceivingEntryInput, "id" | "receivingId" | "totalQuantity" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId" | "stockAppliedQuantity" | "stockAppliedInventoryItemId">>) {
+  if (!store.getReceivingEntry || !store.updateReceivingEntry || !store.masterItemExists || !store.adjustInventoryOnHand) {
+    throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
+  }
+  const existing = await store.getReceivingEntry(receivingEntryId);
+  if (!existing) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+  if (existing.status === "archived") throw new InventoryError("RECEIVING_ENTRY_ARCHIVED", "Archived receiving entries cannot be edited");
+  const merged = buildReceivingInput(existing, input);
+  await assertMasterItemExists(store, merged.masterItemId);
+  merged.inventoryItemId = requireInventoryItemId(merged.inventoryItemId);
+  await applyReceivingStockDelta(store, existing, merged, input.actorUserId);
+  const updated = await store.updateReceivingEntry(receivingEntryId, merged);
+  if (!updated) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+  return updated;
+}
+
+export async function archiveReceivingLogEntry(store: InventoryStore, receivingEntryId: string, actorUserId?: string) {
+  if (!store.getReceivingEntry || !store.archiveReceivingEntry || !store.adjustInventoryOnHand) {
+    throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
+  }
+  const existing = await store.getReceivingEntry(receivingEntryId);
+  if (!existing) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+  if (existing.status === "archived") return existing;
+  if (existing.stockAppliedInventoryItemId && existing.stockAppliedQuantity > 0) {
+    const quantityDelta = -existing.stockAppliedQuantity;
+    await applyInventoryDelta(store, existing.stockAppliedInventoryItemId, quantityDelta);
+    await store.createMovement({
+      inventoryItemId: existing.stockAppliedInventoryItemId,
+      movementType: "adjusted",
+      quantityDelta,
+      referenceType: "receiving_entry",
+      referenceId: existing.id,
+      actorUserId,
+    });
+  }
+  const archived = await store.archiveReceivingEntry(receivingEntryId, {
+    archivedAt: new Date().toISOString(),
+    actorUserId,
+  });
+  if (!archived) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+  return archived;
+}
+
+export async function createMoveLogEntry(store: InventoryStore, input: Omit<MoveEntryInput, "id" | "moveId" | "masterItemId" | "inventoryItemId" | "itemName" | "lotNumber" | "quantityMoved" | "unitOfMeasure" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId">) {
   if (!store.createMoveEntry || !store.nextMoveSequence || !store.getReceivingEntryByBusinessId) {
     throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
   }
@@ -255,7 +349,61 @@ export async function createMoveLogEntry(store: InventoryStore, input: Omit<Move
     lotNumber: receipt.lotNumber,
     quantityMoved: +(input.caseCount * input.quantityPerCase).toFixed(2),
     unitOfMeasure: receipt.unitOfMeasure,
+    status: "active",
+    archivedAt: null,
+    archivedByUserId: null,
+    updatedByUserId: input.actorUserId ?? null,
   });
+}
+
+export async function updateMoveLogEntry(store: InventoryStore, moveEntryId: string, input: Partial<Omit<MoveEntryInput, "id" | "moveId" | "masterItemId" | "inventoryItemId" | "itemName" | "lotNumber" | "quantityMoved" | "unitOfMeasure" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId">>) {
+  if (!store.getMoveEntry || !store.updateMoveEntry || !store.getReceivingEntryByBusinessId) {
+    throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
+  }
+  const existing = await store.getMoveEntry(moveEntryId);
+  if (!existing) throw new InventoryError("MOVE_ENTRY_NOT_FOUND", "Move entry not found");
+  if (existing.status === "archived") throw new InventoryError("MOVE_ENTRY_ARCHIVED", "Archived move entries cannot be edited");
+  const receivingId = input.receivingId ?? existing.receivingId;
+  const receipt = await store.getReceivingEntryByBusinessId(receivingId);
+  if (!receipt || receipt.status === "archived") throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+  const caseCount = input.caseCount ?? existing.caseCount;
+  const quantityPerCase = input.quantityPerCase ?? existing.quantityPerCase;
+  assertNonNegative(caseCount, "caseCount");
+  assertNonNegative(quantityPerCase, "quantityPerCase");
+  const updated = await store.updateMoveEntry(moveEntryId, {
+    ...existing,
+    ...input,
+    receivingId,
+    masterItemId: receipt.masterItemId,
+    inventoryItemId: receipt.inventoryItemId,
+    itemName: receipt.itemName,
+    lotNumber: receipt.lotNumber,
+    caseCount,
+    quantityPerCase,
+    quantityMoved: +(caseCount * quantityPerCase).toFixed(2),
+    unitOfMeasure: receipt.unitOfMeasure,
+    status: "active",
+    archivedAt: null,
+    archivedByUserId: null,
+    updatedByUserId: input.actorUserId ?? existing.updatedByUserId,
+  });
+  if (!updated) throw new InventoryError("MOVE_ENTRY_NOT_FOUND", "Move entry not found");
+  return updated;
+}
+
+export async function archiveMoveLogEntry(store: InventoryStore, moveEntryId: string, actorUserId?: string) {
+  if (!store.getMoveEntry || !store.archiveMoveEntry) {
+    throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
+  }
+  const existing = await store.getMoveEntry(moveEntryId);
+  if (!existing) throw new InventoryError("MOVE_ENTRY_NOT_FOUND", "Move entry not found");
+  if (existing.status === "archived") return existing;
+  const archived = await store.archiveMoveEntry(moveEntryId, {
+    archivedAt: new Date().toISOString(),
+    actorUserId,
+  });
+  if (!archived) throw new InventoryError("MOVE_ENTRY_NOT_FOUND", "Move entry not found");
+  return archived;
 }
 
 export async function getInventoryAvailability(store: InventoryStore, inventoryItemId: string) {
@@ -384,6 +532,82 @@ function assertPositiveQuantity(quantity: number) {
 async function assertMasterItemExists(store: InventoryStore, masterItemId: string) {
   const exists = await store.masterItemExists?.(masterItemId);
   if (!exists) throw new InventoryError("MASTER_ITEM_REQUIRED", "A valid Master List item is required");
+}
+
+function requireInventoryItemId(inventoryItemId: string | null | undefined) {
+  if (!inventoryItemId) throw new InventoryError("INVENTORY_ITEM_REQUIRED", "A backend inventory item is required");
+  return inventoryItemId;
+}
+
+async function applyInventoryDelta(store: InventoryStore, inventoryItemId: string, quantityDelta: number) {
+  if (quantityDelta === 0) return;
+  const adjusted = await store.adjustInventoryOnHand?.({ inventoryItemId, quantityDelta });
+  if (!adjusted) {
+    throw new InventoryError("INVENTORY_STOCK_CONFLICT", "Inventory stock correction would make on-hand quantity invalid");
+  }
+}
+
+function buildReceivingInput(existing: ReceivingEntryRecord, input: Partial<ReceivingEntryInput>): ReceivingEntryInput {
+  const packages = input.packages ?? existing.packages;
+  const quantityPerPackage = input.quantityPerPackage ?? existing.quantityPerPackage;
+  assertNonNegative(packages, "packages");
+  assertNonNegative(quantityPerPackage, "quantityPerPackage");
+  const inventoryItemId = input.inventoryItemId !== undefined ? input.inventoryItemId : existing.inventoryItemId;
+  const totalQuantity = +(packages * quantityPerPackage).toFixed(2);
+  return {
+    ...existing,
+    ...input,
+    inventoryItemId,
+    packages,
+    quantityPerPackage,
+    totalQuantity,
+    status: "active",
+    archivedAt: null,
+    archivedByUserId: null,
+    updatedByUserId: input.actorUserId ?? existing.updatedByUserId,
+    stockAppliedQuantity: totalQuantity,
+    stockAppliedInventoryItemId: inventoryItemId,
+  };
+}
+
+async function applyReceivingStockDelta(store: InventoryStore, existing: ReceivingEntryRecord, updated: ReceivingEntryInput, actorUserId?: string) {
+  const oldItemId = existing.stockAppliedInventoryItemId;
+  const oldQuantity = existing.stockAppliedQuantity ?? 0;
+  const newItemId = requireInventoryItemId(updated.stockAppliedInventoryItemId);
+  const newQuantity = updated.stockAppliedQuantity ?? 0;
+  if (oldItemId && oldItemId !== newItemId && oldQuantity > 0) {
+    await applyInventoryDelta(store, oldItemId, -oldQuantity);
+    await store.createMovement({
+      inventoryItemId: oldItemId,
+      movementType: "adjusted",
+      quantityDelta: -oldQuantity,
+      referenceType: "receiving_entry",
+      referenceId: existing.id,
+      actorUserId,
+    });
+    await applyInventoryDelta(store, newItemId, newQuantity);
+    await store.createMovement({
+      inventoryItemId: newItemId,
+      movementType: "adjusted",
+      quantityDelta: newQuantity,
+      referenceType: "receiving_entry",
+      referenceId: existing.id,
+      actorUserId,
+    });
+    return;
+  }
+  const quantityDelta = oldItemId ? +(newQuantity - oldQuantity).toFixed(2) : newQuantity;
+  await applyInventoryDelta(store, newItemId, quantityDelta);
+  if (quantityDelta !== 0) {
+    await store.createMovement({
+      inventoryItemId: newItemId,
+      movementType: "adjusted",
+      quantityDelta,
+      referenceType: "receiving_entry",
+      referenceId: existing.id,
+      actorUserId,
+    });
+  }
 }
 
 function assertNonNegative(quantity: number, field: string) {

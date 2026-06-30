@@ -33,4 +33,31 @@ describe("frontend fail-closed backend writes", () => {
     expect(deleteUserBody).toContain("failBackendRequiredWrite");
     expect(deleteUserBody).not.toContain("Account Management could not reach the backend user API; keeping browser-preview users active.");
   });
+
+  test("keeps Receiving and Move Log corrections backend-required", () => {
+    const saveReceivingStart = publicApp.indexOf("async function saveReceiving");
+    const deleteReceivingStart = publicApp.indexOf("async function deleteReceiving");
+    const saveMoveStart = publicApp.indexOf("async function saveMove");
+    const deleteMoveStart = publicApp.indexOf("async function deleteMove");
+
+    expect(saveReceivingStart).toBeGreaterThan(0);
+    expect(deleteReceivingStart).toBeGreaterThan(0);
+    expect(saveMoveStart).toBeGreaterThan(0);
+    expect(deleteMoveStart).toBeGreaterThan(0);
+
+    const saveReceivingBody = publicApp.slice(saveReceivingStart, deleteReceivingStart);
+    const deleteReceivingBody = publicApp.slice(deleteReceivingStart, publicApp.indexOf("/* =========================================================================", deleteReceivingStart));
+    const saveMoveBody = publicApp.slice(saveMoveStart, deleteMoveStart);
+    const deleteMoveBody = publicApp.slice(deleteMoveStart, publicApp.indexOf("/* =========================================================================", deleteMoveStart));
+
+    expect(saveReceivingBody).toContain("saveBackendReceivingEntry(id, isNew, data)");
+    expect(saveReceivingBody).not.toContain("Receiving Log edits are not backend-backed yet");
+    expect(deleteReceivingBody).toContain("archiveBackendReceivingEntry");
+    expect(deleteReceivingBody.indexOf("archiveBackendReceivingEntry")).toBeLessThan(deleteReceivingBody.indexOf("state.receivingLog"));
+
+    expect(saveMoveBody).toContain("saveBackendMoveEntry(id, isNew, data)");
+    expect(saveMoveBody).not.toContain("Move Log edits are not backend-backed yet");
+    expect(deleteMoveBody).toContain("archiveBackendMoveEntry");
+    expect(deleteMoveBody.indexOf("archiveBackendMoveEntry")).toBeLessThan(deleteMoveBody.indexOf("state.moveLog"));
+  });
 });

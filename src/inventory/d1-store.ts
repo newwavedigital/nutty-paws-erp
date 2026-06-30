@@ -56,6 +56,12 @@ type ReceivingRow = {
   received_by: string | null;
   carrier: string | null;
   supplier_id: string | null;
+  status?: "active" | "archived";
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
+  stock_applied_quantity?: number;
+  stock_applied_inventory_item_id?: string | null;
 };
 
 type MoveRow = {
@@ -75,6 +81,10 @@ type MoveRow = {
   moved_by: string | null;
   from_location: string | null;
   to_location: string | null;
+  status?: "active" | "archived";
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
+  updated_by_user_id?: string | null;
 };
 
 export class D1InventoryStore implements InventoryStore {
@@ -368,6 +378,23 @@ export class D1InventoryStore implements InventoryStore {
     return (await this.listInventoryItems()).find((item) => item.id === id) ?? null;
   }
 
+  async adjustInventoryOnHand(input: { inventoryItemId: string; quantityDelta: number }): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `
+          UPDATE inventory_items
+          SET on_hand_quantity = on_hand_quantity + ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND on_hand_quantity + ? >= allocated_quantity
+            AND on_hand_quantity + ? >= 0
+        `,
+      )
+      .bind(input.quantityDelta, input.inventoryItemId, input.quantityDelta, input.quantityDelta)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
   async masterItemExists(masterItemId: string): Promise<boolean> {
     const row = await this.db.prepare("SELECT id FROM master_items WHERE id = ?").bind(masterItemId).first<{ id: string }>();
     return Boolean(row);
@@ -380,8 +407,11 @@ export class D1InventoryStore implements InventoryStore {
           SELECT id, receiving_id, master_item_id, inventory_item_id, item_name,
                  date, time, packages, quantity_per_package, total_quantity,
                  unit_of_measure, lot_number, allergens_json, received_by,
-                 carrier, supplier_id
+                 carrier, supplier_id, status, archived_at,
+                 archived_by_user_id, updated_by_user_id,
+                 stock_applied_quantity, stock_applied_inventory_item_id
           FROM receiving_entries
+          WHERE status = 'active'
           ORDER BY date DESC, time DESC, receiving_id DESC
         `,
       )
@@ -401,9 +431,10 @@ export class D1InventoryStore implements InventoryStore {
             id, receiving_id, master_item_id, inventory_item_id, item_name,
             date, time, packages, quantity_per_package, total_quantity,
             unit_of_measure, lot_number, allergens_json, received_by, carrier,
-            supplier_id
+            supplier_id, status, updated_by_user_id, stock_applied_quantity,
+            stock_applied_inventory_item_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .bind(
@@ -423,9 +454,32 @@ export class D1InventoryStore implements InventoryStore {
         input.receivedBy,
         input.carrier,
         input.supplierId,
+        input.status ?? "active",
+        input.updatedByUserId ?? null,
+        input.stockAppliedQuantity ?? 0,
+        input.stockAppliedInventoryItemId ?? null,
       )
       .run();
     return (await this.getReceivingEntryByBusinessId(input.receivingId)) as ReceivingEntryRecord;
+  }
+
+  async getReceivingEntry(id: string): Promise<ReceivingEntryRecord | null> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT id, receiving_id, master_item_id, inventory_item_id, item_name,
+                 date, time, packages, quantity_per_package, total_quantity,
+                 unit_of_measure, lot_number, allergens_json, received_by,
+                 carrier, supplier_id, status, archived_at,
+                 archived_by_user_id, updated_by_user_id,
+                 stock_applied_quantity, stock_applied_inventory_item_id
+          FROM receiving_entries
+          WHERE id = ?
+        `,
+      )
+      .bind(id)
+      .first<ReceivingRow>();
+    return row ? mapReceivingRow(row) : null;
   }
 
   async getReceivingEntryByBusinessId(receivingId: string): Promise<ReceivingEntryRecord | null> {
@@ -435,14 +489,90 @@ export class D1InventoryStore implements InventoryStore {
           SELECT id, receiving_id, master_item_id, inventory_item_id, item_name,
                  date, time, packages, quantity_per_package, total_quantity,
                  unit_of_measure, lot_number, allergens_json, received_by,
-                 carrier, supplier_id
+                 carrier, supplier_id, status, archived_at,
+                 archived_by_user_id, updated_by_user_id,
+                 stock_applied_quantity, stock_applied_inventory_item_id
           FROM receiving_entries
           WHERE receiving_id = ?
+            AND status = 'active'
         `,
       )
       .bind(receivingId)
       .first<ReceivingRow>();
     return row ? mapReceivingRow(row) : null;
+  }
+
+  async updateReceivingEntry(id: string, input: ReceivingEntryInput): Promise<ReceivingEntryRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE receiving_entries
+          SET master_item_id = ?,
+              inventory_item_id = ?,
+              item_name = ?,
+              date = ?,
+              time = ?,
+              packages = ?,
+              quantity_per_package = ?,
+              total_quantity = ?,
+              unit_of_measure = ?,
+              lot_number = ?,
+              allergens_json = ?,
+              received_by = ?,
+              carrier = ?,
+              supplier_id = ?,
+              status = 'active',
+              updated_by_user_id = ?,
+              stock_applied_quantity = ?,
+              stock_applied_inventory_item_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(
+        input.masterItemId,
+        input.inventoryItemId,
+        input.itemName,
+        input.date,
+        input.time,
+        input.packages,
+        input.quantityPerPackage,
+        input.totalQuantity,
+        input.unitOfMeasure,
+        input.lotNumber,
+        JSON.stringify(input.allergens),
+        input.receivedBy,
+        input.carrier,
+        input.supplierId,
+        input.updatedByUserId,
+        input.stockAppliedQuantity,
+        input.stockAppliedInventoryItemId,
+        id,
+      )
+      .run();
+    return this.getReceivingEntry(id);
+  }
+
+  async archiveReceivingEntry(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<ReceivingEntryRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE receiving_entries
+          SET status = 'archived',
+              archived_at = ?,
+              archived_by_user_id = ?,
+              updated_by_user_id = ?,
+              stock_applied_quantity = 0,
+              stock_applied_inventory_item_id = NULL,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(input.archivedAt, input.actorUserId ?? null, input.actorUserId ?? null, id)
+      .run();
+    return this.getReceivingEntry(id);
   }
 
   async listMoveEntries(): Promise<MoveEntryRecord[]> {
@@ -452,8 +582,10 @@ export class D1InventoryStore implements InventoryStore {
           SELECT id, move_id, receiving_id, master_item_id, inventory_item_id,
                  item_name, lot_number, date, time, case_count,
                  quantity_per_case, quantity_moved, unit_of_measure, moved_by,
-                 from_location, to_location
+                 from_location, to_location, status, archived_at,
+                 archived_by_user_id, updated_by_user_id
           FROM move_entries
+          WHERE status = 'active'
           ORDER BY date DESC, time DESC, move_id DESC
         `,
       )
@@ -472,9 +604,10 @@ export class D1InventoryStore implements InventoryStore {
           INSERT INTO move_entries (
             id, move_id, receiving_id, master_item_id, inventory_item_id,
             item_name, lot_number, date, time, case_count, quantity_per_case,
-            quantity_moved, unit_of_measure, moved_by, from_location, to_location
+            quantity_moved, unit_of_measure, moved_by, from_location, to_location,
+            status, updated_by_user_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .bind(
@@ -494,9 +627,96 @@ export class D1InventoryStore implements InventoryStore {
         input.movedBy,
         input.fromLocation,
         input.toLocation,
+        input.status ?? "active",
+        input.updatedByUserId ?? null,
       )
       .run();
     return (await this.listMoveEntries()).find((entry) => entry.id === input.id) as MoveEntryRecord;
+  }
+
+  async getMoveEntry(id: string): Promise<MoveEntryRecord | null> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT id, move_id, receiving_id, master_item_id, inventory_item_id,
+                 item_name, lot_number, date, time, case_count,
+                 quantity_per_case, quantity_moved, unit_of_measure, moved_by,
+                 from_location, to_location, status, archived_at,
+                 archived_by_user_id, updated_by_user_id
+          FROM move_entries
+          WHERE id = ?
+        `,
+      )
+      .bind(id)
+      .first<MoveRow>();
+    return row ? mapMoveRow(row) : null;
+  }
+
+  async updateMoveEntry(id: string, input: MoveEntryInput): Promise<MoveEntryRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE move_entries
+          SET receiving_id = ?,
+              master_item_id = ?,
+              inventory_item_id = ?,
+              item_name = ?,
+              lot_number = ?,
+              date = ?,
+              time = ?,
+              case_count = ?,
+              quantity_per_case = ?,
+              quantity_moved = ?,
+              unit_of_measure = ?,
+              moved_by = ?,
+              from_location = ?,
+              to_location = ?,
+              status = 'active',
+              updated_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(
+        input.receivingId,
+        input.masterItemId,
+        input.inventoryItemId,
+        input.itemName,
+        input.lotNumber,
+        input.date,
+        input.time,
+        input.caseCount,
+        input.quantityPerCase,
+        input.quantityMoved,
+        input.unitOfMeasure,
+        input.movedBy,
+        input.fromLocation,
+        input.toLocation,
+        input.updatedByUserId,
+        id,
+      )
+      .run();
+    return this.getMoveEntry(id);
+  }
+
+  async archiveMoveEntry(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MoveEntryRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE move_entries
+          SET status = 'archived',
+              archived_at = ?,
+              archived_by_user_id = ?,
+              updated_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(input.archivedAt, input.actorUserId ?? null, input.actorUserId ?? null, id)
+      .run();
+    return this.getMoveEntry(id);
   }
 
   private async nextSequence(table: string, column: string, base: number) {
@@ -560,6 +780,12 @@ function mapReceivingRow(row: ReceivingRow): ReceivingEntryRecord {
     receivedBy: row.received_by,
     carrier: row.carrier,
     supplierId: row.supplier_id,
+    status: row.status ?? "active",
+    archivedAt: row.archived_at ?? null,
+    archivedByUserId: row.archived_by_user_id ?? null,
+    updatedByUserId: row.updated_by_user_id ?? null,
+    stockAppliedQuantity: row.stock_applied_quantity ?? 0,
+    stockAppliedInventoryItemId: row.stock_applied_inventory_item_id ?? null,
   };
 }
 
@@ -581,6 +807,10 @@ function mapMoveRow(row: MoveRow): MoveEntryRecord {
     movedBy: row.moved_by,
     fromLocation: row.from_location,
     toLocation: row.to_location,
+    status: row.status ?? "active",
+    archivedAt: row.archived_at ?? null,
+    archivedByUserId: row.archived_by_user_id ?? null,
+    updatedByUserId: row.updated_by_user_id ?? null,
   };
 }
 
