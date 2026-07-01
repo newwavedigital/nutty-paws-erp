@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { registerInventoryRoutes } from "../src/inventory/routes";
 import type {
+  InventoryAdjustmentInput,
+  InventoryAdjustmentRecord,
   InventoryItemInput,
   InventoryItemSetupRecord,
   InventoryStore,
@@ -92,6 +94,7 @@ function createRouteStore(overrides: Partial<InventoryStore> = {}) {
   const items = new Map<string, InventoryItemSetupRecord>([["inv-1", makeInventoryItem()]]);
   const receiving = new Map<string, ReceivingEntryRecord>([["receiving-1", makeReceivingEntry()]]);
   const moves = new Map<string, MoveEntryRecord>([["move-1", makeMoveEntry()]]);
+  const adjustments: InventoryAdjustmentRecord[] = [];
 
   const store: InventoryStore = {
     async getInventoryItem(id) {
@@ -115,6 +118,25 @@ function createRouteStore(overrides: Partial<InventoryStore> = {}) {
       const item = makeInventoryItem({ ...(items.get(id) ?? {}), ...input, id, netAvailableQuantity: input.onHandQuantity - (input.allocatedQuantity ?? 0) });
       items.set(id, item);
       return item;
+    },
+    async archiveInventoryItem(id: string, input: { archivedAt: string; actorUserId?: string }) {
+      const item = items.get(id);
+      if (!item) return null;
+      const archived = makeInventoryItem({ ...item, status: "archived", archivedAt: input.archivedAt, archivedByUserId: input.actorUserId ?? null } as Partial<InventoryItemSetupRecord>);
+      items.set(id, archived);
+      return archived;
+    },
+    async countActiveReservationsForInventoryItem(id: string) {
+      return id === "inv-1" ? 0 : 0;
+    },
+    async createInventoryAdjustment(input: InventoryAdjustmentInput) {
+      const adjustment = {
+        ...input,
+        adjustedByUserId: input.adjustedByUserId ?? null,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      };
+      adjustments.push(adjustment);
+      return adjustment;
     },
     async masterItemExists(masterItemId: string) { return masterItemId === "master-1"; },
     async listReceivingEntries() { return [...receiving.values()]; },
@@ -239,6 +261,120 @@ describe("Sprint 5 inventory setup routes", () => {
         code: "INSUFFICIENT_INVENTORY",
         message: "On-hand quantity cannot be below allocated quantity",
       },
+    });
+  });
+
+  it("archives zero-balance Inventory items through backend DELETE", async () => {
+    const app = createRouteApp(createRouteStore({
+      async listInventoryItems() {
+        return [makeInventoryItem({ onHandQuantity: 0, allocatedQuantity: 0, netAvailableQuantity: 0 })];
+      },
+    }));
+
+    const response = await app.request("/api/inventory/inv-1", { method: "DELETE" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        id: "inv-1",
+        status: "archived",
+        archivedAt: expect.any(String),
+      },
+    });
+  });
+
+  it("blocks Inventory item archive while stock or allocation remains", async () => {
+    const app = createRouteApp();
+
+    const response = await app.request("/api/inventory/inv-1", { method: "DELETE" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "INVENTORY_ITEM_ARCHIVE_BLOCKED",
+        message: "Cannot archive Raw Peanuts. On hand is 100 lb; Allocated quantity is 25 lb.",
+        details: {
+          itemName: "Raw Peanuts",
+          blockers: [
+            { field: "onHandQuantity", label: "On hand", value: 100, unit: "lb" },
+            { field: "allocatedQuantity", label: "Allocated quantity", value: 25, unit: "lb" },
+          ],
+        },
+      },
+    });
+  });
+
+  it("returns not found when archived Inventory items are patched", async () => {
+    const app = createRouteApp(createRouteStore({
+      async listInventoryItems() {
+        return [];
+      },
+    }));
+
+    const response = await app.request("/api/inventory/inv-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ onHandQuantity: 0 }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "INVENTORY_ITEM_NOT_FOUND",
+        message: "Inventory item not found",
+      },
+    });
+  });
+
+  it("persists stock adjustment reasons through a dedicated backend route", async () => {
+    const calls: InventoryAdjustmentRecord[] = [];
+    const app = createRouteApp(createRouteStore({
+      async createInventoryAdjustment(input: InventoryAdjustmentInput) {
+        const adjustment = {
+          ...input,
+          adjustedByUserId: input.adjustedByUserId ?? null,
+          createdAt: "2026-07-01T00:00:00.000Z",
+        };
+        calls.push(adjustment);
+        return adjustment;
+      },
+    } as Partial<InventoryStore>));
+
+    const response = await app.request("/api/inventory/inv-1/adjustments", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        onHandQuantity: 88,
+        reason: "Cycle count correction",
+        note: "Quarterly count",
+        lotsJson: JSON.stringify([{ lotNumber: "LOT-1", qty: 88 }]),
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        adjustment: {
+          inventoryItemId: "inv-1",
+          quantityBefore: 100,
+          quantityAfter: 88,
+          quantityDelta: -12,
+          reason: "Cycle count correction",
+          note: "Quarterly count",
+        },
+        item: {
+          id: "inv-1",
+          onHandQuantity: 88,
+        },
+      },
+    });
+    expect(calls[0]).toMatchObject({
+      inventoryItemId: "inv-1",
+      quantityBefore: 100,
+      quantityAfter: 88,
+      quantityDelta: -12,
+      reason: "Cycle count correction",
+      note: "Quarterly count",
     });
   });
 

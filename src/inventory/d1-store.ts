@@ -1,5 +1,7 @@
 import type {
   InventoryAuditInput,
+  InventoryAdjustmentInput,
+  InventoryAdjustmentRecord,
   InventoryItemInput,
   InventoryItemRecord,
   InventoryItemSetupRecord,
@@ -29,6 +31,9 @@ type InventoryItemRow = {
   location?: string | null;
   lot_number?: string | null;
   lots_json?: string | null;
+  status?: "active" | "archived";
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
 };
 
 type ReservationRow = {
@@ -85,6 +90,20 @@ type MoveRow = {
   archived_at?: string | null;
   archived_by_user_id?: string | null;
   updated_by_user_id?: string | null;
+};
+
+type InventoryAdjustmentRow = {
+  id: string;
+  inventory_item_id: string;
+  quantity_before: number;
+  quantity_after: number;
+  quantity_delta: number;
+  reason: string;
+  note: string | null;
+  lots_before_json: string | null;
+  lots_after_json: string | null;
+  adjusted_by_user_id: string | null;
+  created_at: string;
 };
 
 export class D1InventoryStore implements InventoryStore {
@@ -292,9 +311,13 @@ export class D1InventoryStore implements InventoryStore {
                  inv.lead_time_days,
                  inv.location,
                  inv.lot_number,
-                 inv.lots_json
+                 inv.lots_json,
+                 inv.status,
+                 inv.archived_at,
+                 inv.archived_by_user_id
           FROM inventory_items inv
           JOIN master_items mi ON mi.id = inv.master_item_id
+          WHERE inv.status = 'active'
           ORDER BY mi.name
         `,
       )
@@ -356,6 +379,7 @@ export class D1InventoryStore implements InventoryStore {
               lots_json = ?,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
+            AND status = 'active'
         `,
       )
       .bind(
@@ -376,6 +400,104 @@ export class D1InventoryStore implements InventoryStore {
       )
       .run();
     return (await this.listInventoryItems()).find((item) => item.id === id) ?? null;
+  }
+
+  async archiveInventoryItem(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<InventoryItemSetupRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE inventory_items
+          SET status = 'archived',
+              archived_at = ?,
+              archived_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(input.archivedAt, input.actorUserId ?? null, id)
+      .run();
+    const row = await this.db
+      .prepare(
+        `
+          SELECT inv.id,
+                 inv.master_item_id,
+                 mi.name AS master_item_name,
+                 mi.item_type,
+                 inv.category,
+                 inv.supplier_id,
+                 inv.customer_id,
+                 inv.on_hand_quantity,
+                 inv.allocated_quantity,
+                 inv.reorder_point_quantity,
+                 inv.unit_of_measure,
+                 inv.unit_cost_cents,
+                 inv.lead_time_days,
+                 inv.location,
+                 inv.lot_number,
+                 inv.lots_json,
+                 inv.status,
+                 inv.archived_at,
+                 inv.archived_by_user_id
+          FROM inventory_items inv
+          JOIN master_items mi ON mi.id = inv.master_item_id
+          WHERE inv.id = ?
+        `,
+      )
+      .bind(id)
+      .first<InventoryItemRow>();
+    return row ? mapInventorySetupRow(row) : null;
+  }
+
+  async countActiveReservationsForInventoryItem(id: string): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM inventory_reservations
+          WHERE inventory_item_id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(id)
+      .first<{ count: number }>();
+    return row?.count ?? 0;
+  }
+
+  async createInventoryAdjustment(input: InventoryAdjustmentInput): Promise<InventoryAdjustmentRecord> {
+    await this.db
+      .prepare(
+        `
+          INSERT INTO inventory_adjustments (
+            id,
+            inventory_item_id,
+            quantity_before,
+            quantity_after,
+            quantity_delta,
+            reason,
+            note,
+            lots_before_json,
+            lots_after_json,
+            adjusted_by_user_id
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .bind(
+        input.id,
+        input.inventoryItemId,
+        input.quantityBefore,
+        input.quantityAfter,
+        input.quantityDelta,
+        input.reason,
+        input.note,
+        input.lotsBeforeJson,
+        input.lotsAfterJson,
+        input.adjustedByUserId ?? null,
+      )
+      .run();
+    const row = await this.db.prepare("SELECT * FROM inventory_adjustments WHERE id = ?").bind(input.id).first<InventoryAdjustmentRow>();
+    return mapInventoryAdjustmentRow(row as InventoryAdjustmentRow);
   }
 
   async adjustInventoryOnHand(input: { inventoryItemId: string; quantityDelta: number }): Promise<boolean> {
@@ -753,6 +875,25 @@ function mapInventorySetupRow(row: InventoryItemRow): InventoryItemSetupRecord {
     location: row.location ?? null,
     lotNumber: row.lot_number ?? null,
     lotsJson: row.lots_json ?? null,
+    status: row.status ?? "active",
+    archivedAt: row.archived_at ?? null,
+    archivedByUserId: row.archived_by_user_id ?? null,
+  };
+}
+
+function mapInventoryAdjustmentRow(row: InventoryAdjustmentRow): InventoryAdjustmentRecord {
+  return {
+    id: row.id,
+    inventoryItemId: row.inventory_item_id,
+    quantityBefore: row.quantity_before,
+    quantityAfter: row.quantity_after,
+    quantityDelta: row.quantity_delta,
+    reason: row.reason,
+    note: row.note ?? null,
+    lotsBeforeJson: row.lots_before_json ?? null,
+    lotsAfterJson: row.lots_after_json ?? null,
+    adjustedByUserId: row.adjusted_by_user_id ?? null,
+    createdAt: row.created_at,
   };
 }
 

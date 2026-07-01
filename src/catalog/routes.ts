@@ -120,6 +120,20 @@ export function registerCatalogRoutes(
     if (!masterItem) throw new ApiError("MASTER_ITEM_NOT_FOUND", "Master item not found", 404);
     return ok(c, masterItem);
   });
+
+  app.delete("/api/master-items/:masterItemId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const store = createCatalogStore(db);
+    if (!store.archiveMasterItem) throw new ApiError("CATALOG_WRITE_UNAVAILABLE", "Catalog writes are unavailable", 501);
+    const masterItem = await store.archiveMasterItem(c.req.param("masterItemId"), {
+      archivedAt: new Date().toISOString(),
+      actorUserId: auth?.user.id,
+    });
+    if (!masterItem) throw new ApiError("MASTER_ITEM_NOT_FOUND", "Master item not found", 404);
+    return ok(c, masterItem);
+  });
 }
 
 function scopeProductsForAuth(products: ProductRecord[], auth: AuthContext | null) {

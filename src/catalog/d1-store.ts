@@ -38,6 +38,9 @@ type MasterItemRow = {
   unit_of_measure: string;
   customer_id?: string | null;
   allergens_json?: string | null;
+  status?: "active" | "archived";
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
 };
 
 type ProductBomRow = {
@@ -217,8 +220,10 @@ export class D1CatalogStore implements CatalogStore {
     const result = await this.db
       .prepare(
         `
-          SELECT id, sku, name, item_type, unit_of_measure, customer_id, allergens_json
+          SELECT id, sku, name, item_type, unit_of_measure, customer_id,
+                 allergens_json, status, archived_at, archived_by_user_id
           FROM master_items
+          WHERE status = 'active'
           ORDER BY name
         `,
       )
@@ -231,7 +236,8 @@ export class D1CatalogStore implements CatalogStore {
     const row = await this.db
       .prepare(
         `
-          SELECT id, sku, name, item_type, unit_of_measure, customer_id, allergens_json
+          SELECT id, sku, name, item_type, unit_of_measure, customer_id,
+                 allergens_json, status, archived_at, archived_by_user_id
           FROM master_items
           WHERE id = ?
         `,
@@ -293,6 +299,24 @@ export class D1CatalogStore implements CatalogStore {
     return this.getMasterItem(id);
   }
 
+  async archiveMasterItem(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MasterItemRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE master_items
+          SET status = 'archived',
+              archived_at = ?,
+              archived_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'active'
+        `,
+      )
+      .bind(input.archivedAt, input.actorUserId ?? null, id)
+      .run();
+    return this.getMasterItem(id);
+  }
+
   private async withBomItems(products: ProductRecord[]) {
     if (products.length === 0) return products;
     const productIds = new Set(products.map((product) => product.id));
@@ -348,6 +372,9 @@ function mapMasterItem(row: MasterItemRow): MasterItemRecord {
     unitOfMeasure: row.unit_of_measure,
     customerId: row.customer_id ?? "general",
     allergens: parseJsonArray(row.allergens_json),
+    status: row.status ?? "active",
+    archivedAt: row.archived_at ?? null,
+    archivedByUserId: row.archived_by_user_id ?? null,
   };
 }
 

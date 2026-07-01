@@ -58,6 +58,16 @@ function createCatalogStore() {
     async listMasterItems() { return masterItems; },
     async getMasterItem(id) { return masterItems.find((item) => item.id === id) ?? null; },
   };
+  (store as CatalogStore & { archiveMasterItem(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MasterItemRecord | null> }).archiveMasterItem = async (id, input) => {
+    const item = masterItems.find((candidate) => candidate.id === id);
+    if (!item) return null;
+    Object.assign(item, {
+      status: "archived",
+      archivedAt: input.archivedAt,
+      archivedByUserId: input.actorUserId ?? null,
+    });
+    return item;
+  };
 
   return store;
 }
@@ -161,5 +171,30 @@ describe("catalog routes", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ data: { id: "product-1", status: "inactive" } });
     await expect(catalog.getProduct("product-1")).resolves.toMatchObject({ status: "inactive" });
+  });
+
+  it("archives master items through DELETE while preserving direct readback", async () => {
+    const auth = createAuthStore();
+    const catalog = createCatalogStore();
+    await seedUser(auth, { id: "admin-user", email: "admin@example.com", role: "Admin" });
+    const app = createRouteApp(auth.store, catalog);
+    const token = await login(app, "admin@example.com");
+
+    const response = await app.request("/api/master-items/master-1", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        id: "master-1",
+        status: "archived",
+        archivedAt: expect.any(String),
+        archivedByUserId: "admin-user",
+      },
+    });
+
+    await expect(catalog.getMasterItem("master-1")).resolves.toMatchObject({ status: "archived" });
   });
 });

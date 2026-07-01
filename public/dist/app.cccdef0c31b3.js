@@ -2432,6 +2432,7 @@ async function loadBackendInventory() {
   try {
     const items = await apiRequest('/api/inventory');
     mergeBackendInventoryItems(items);
+    await loadBackendInventoryCoaFiles();
     await loadBackendReceivingEntries();
     await loadBackendMoveEntries();
     await loadBackendInventorySignals();
@@ -2462,6 +2463,21 @@ async function loadBackendInventorySignals() {
   if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return null;
   backendInventoryState.signals = await apiRequest('/api/inventory/signals');
   return backendInventoryState.signals;
+}
+
+async function loadBackendInventoryCoaFiles() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return;
+  const inventoryItems = (state.ingredients || []).filter(item => item._backendId);
+  await Promise.all(inventoryItems.map(async item => {
+    try {
+      const files = await apiRequest(`/api/files?ownerType=inventory_item&ownerId=${encodeURIComponent(item._backendId)}`);
+      const coa = (files || []).find(file => file.fileCategory === 'inventory_coa') || null;
+      item.coa = coa ? mapBackendFileToPrototype(coa) : null;
+    } catch (error) {
+      // Keep inventory loading resilient; file-list failure should not hide stock truth.
+      item.coa = item.coa || null;
+    }
+  }));
 }
 
 function buildBackendProductPayload(data, cleanFormula) {
@@ -2517,6 +2533,13 @@ async function saveBackendMasterItem(id, isNew, data) {
   return item;
 }
 
+async function archiveBackendMasterItem(id) {
+  const backendId = (state.masterItems || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const item = await apiRequest(`/api/master-items/${encodeURIComponent(backendId)}`, { method: 'DELETE' });
+  backendMasterItemState.loaded = false;
+  return item;
+}
+
 function masterItemForInventoryName(itemName) {
   return (state.masterItems || []).find(m => m.name === itemName || m.id === itemName);
 }
@@ -2554,6 +2577,41 @@ async function saveBackendInventoryItem(id, isNew, data) {
   });
   mergeBackendInventoryItems([item]);
   return item;
+}
+
+async function archiveBackendInventoryItem(id, options = {}) {
+  const backendId = (state.ingredients || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const item = await apiRequest(`/api/inventory/${encodeURIComponent(backendId)}${options.force ? '?force=true' : ''}`, { method: 'DELETE' });
+  backendInventoryState.loaded = false;
+  backendInventoryState.signals = null;
+  return item;
+}
+
+async function adjustBackendInventoryItem(id, data, reason, note = '') {
+  const backendId = data._backendId || id;
+  const lots = Array.isArray(data.lots)
+    ? data.lots.map(lot => {
+        const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;
+        return { ...lot, qty, quantity: qty };
+      })
+    : [];
+  const onHandQuantity = lots.length
+    ? lots.reduce((sum, lot) => sum + (Number(lot.qty ?? lot.quantity ?? 0) || 0), 0)
+    : (Number(data.stock) || 0);
+  const result = await apiRequest(`/api/inventory/${encodeURIComponent(backendId)}/adjustments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      onHandQuantity,
+      reason: reason || 'Cycle count correction',
+      note: note || null,
+      lotsJson: JSON.stringify(lots)
+    })
+  });
+  const item = result.item;
+  if (!item) throw new Error('Backend inventory adjustment response did not include the updated item.');
+  mergeBackendInventoryItems([item]);
+  backendInventoryState.signals = null;
+  return { adjustment: result.adjustment, item };
 }
 
 function backendInventoryItemIdForReceipt(data) {
@@ -2798,6 +2856,7 @@ function mapBackendFileToPrototype(file) {
     _backendFileId: file.id,
     _backendOwnerId: file.ownerId,
     _backendFile: true,
+    fileId: file.id,
     name: file.fileName,
     type: file.contentType || '',
     size: file.sizeBytes || 0,
@@ -9912,6 +9971,14 @@ function inventoryCustomer(item) {
   return '<span class="pill">General</span>';
 }
 
+function inventoryCoaLinkHtml(coa) {
+  if (!coa) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
+  const fileId = coa.fileId || coa._backendFileId || coa.id || '';
+  const href = fileId ? `/api/files/${encodeURIComponent(fileId)}/download` : (coa.dataUrl || '#');
+  const label = coa.name || coa.fileName || 'CoA';
+  return `<a href="${href}" download="${escapeHtml(label)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(label)}">&#128196; CoA</a>`;
+}
+
 // Shared inner-tab row for the Inventory page (categories + Master List)
 function inventoryTabsHtml() {
   const tabs = ['Finished Good', 'Ingredient', 'Packaging', 'Master List', 'Receiving Log', 'Move Log', 'Shipping Log'];
@@ -10027,7 +10094,7 @@ function renderInventory(el) {
                 `<td>${i.reorderLevel}</td>`
               );
               if (showLeadTime) cells.push(`<td>${i.leadTimeDays ? i.leadTimeDays + ' days' : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>`);
-              if (showCoa) cells.push(`<td>${i.coa ? `<a href="${i.coa.dataUrl}" download="${escapeHtml(i.coa.name)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(i.coa.name)}">&#128196; CoA</a>` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>`);
+              if (showCoa) cells.push(`<td>${inventoryCoaLinkHtml(i.coa)}</td>`);
               cells.push(
                 `<td>${locLines || '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>`,
                 `<td>${statusBadge}</td>`,
@@ -10194,25 +10261,30 @@ async function saveMasterItem(id, isNew) {
 async function deleteMasterItem(id) {
   const m = (state.masterItems || []).find(x => x.id === id);
   if (!m) return;
-  if (employeeBackendSessionActive()) {
-    return failBackendRequiredWrite(null, backendMasterItemState, 'Master item delete requires backend archive support. Nothing was saved locally.');
-  }
   const inUse = state.ingredients.some(i => (i.name||'').toLowerCase() === (m.name||'').toLowerCase());
   const ok = await openConfirmModal({
-    title: 'Delete master item',
+    title: 'Archive master item',
     record: m.name || id,
-    message: 'Delete this Master List item?',
+    message: 'Archive this Master List item?',
     risk: inUse
-      ? 'It is used by one or more inventory items. Those items will not be deleted, but this name will no longer be selectable.'
-      : 'This removes the item definition from setup lists.',
-    confirmLabel: 'Delete Master Item',
+      ? 'It is used by one or more inventory items. Those items will remain in history, but this name will no longer be selectable for new records.'
+      : 'This hides the item definition from active setup lists without deleting history.',
+    confirmLabel: 'Archive Master Item',
     tone: 'danger'
   });
   if (!ok) return;
+  if (!requireEmployeeBackendWrite(backendMasterItemState, 'Master item archive requires backend confirmation. Nothing was saved locally.')) return;
+  try {
+    await archiveBackendMasterItem(id);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendMasterItemState, 'Master item archive requires backend confirmation. Nothing was saved locally.');
+    return;
+  }
   state.masterItems = state.masterItems.filter(x => x.id !== id);
   saveState();
+  backendMasterItemState.loaded = false;
   router('inventory');
-  toast('Master item deleted.');
+  toast('Master item archived.');
 }
 
 /* =========================================================================
@@ -11055,7 +11127,7 @@ async function saveIngredient(id, isNew) {
     data.id = saved.id;
     data._backendId = saved.id;
     data.masterItemId = saved.masterItemId;
-    if (pendingInventoryCoaFile) await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile);
+    if (pendingInventoryCoaFile) data.coa = await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile).then(mapBackendFileToPrototype);
     pendingInventoryCoaFile = null;
     backendInventoryState.status = 'connected';
     backendInventoryState.loaded = false;
@@ -11075,22 +11147,68 @@ async function saveIngredient(id, isNew) {
 }
 async function deleteIngredient(id) {
   const item = getIngredient(id);
-  if (employeeBackendSessionActive()) {
-    return failBackendRequiredWrite(null, backendInventoryState, 'Inventory item delete requires backend archive support. Nothing was saved locally.');
-  }
+  const currentRoles = Array.isArray(backendAuthState.roles) && backendAuthState.roles.length
+    ? backendAuthState.roles
+    : (Array.isArray(backendAuthState.user?.roles) ? backendAuthState.user.roles : []);
+  const isAdmin = currentRoles.includes('Admin');
   const ok = await openConfirmModal({
-    title: 'Delete inventory item',
+    title: 'Archive inventory item',
     record: item?.name || id,
-    message: 'Delete this inventory item from the current workspace?',
-    risk: 'This can affect low-stock, allocation, and procurement visibility in local/demo mode.',
-    confirmLabel: 'Delete Item',
+    message: 'Archive this inventory item?',
+    risk: 'Only zero on-hand, zero allocated items with no active reservations can be archived. History and files remain linked.',
+    confirmLabel: 'Archive Item',
     tone: 'danger'
   });
   if (!ok) return;
+  if (!requireEmployeeBackendWrite(backendInventoryState, 'Inventory item archive requires backend confirmation. Nothing was saved locally.')) return;
+  try {
+    await archiveBackendInventoryItem(id);
+  } catch (error) {
+    if (error?.envelope?.error?.code === 'INVENTORY_ITEM_ARCHIVE_BLOCKED') {
+      const details = error.envelope.error.details || {};
+      const blockers = Array.isArray(details.blockers) ? details.blockers : [];
+      const itemName = details.itemName || item?.name || id;
+      const blockerText = blockers.length
+        ? blockers.map(b => `${b.label || 'Blocked'} of ${itemName} is still ${b.value}${b.unit ? ' ' + b.unit : ''}.`).join(' ')
+        : (error.message || `Cannot archive ${itemName}.`);
+      if (!isAdmin) {
+        await openConfirmModal({
+          title: 'Archive blocked',
+          record: itemName,
+          message: blockerText,
+          risk: 'Only Admin can force delete this Inventory item.',
+          confirmLabel: 'Close',
+          cancelLabel: 'Close',
+          tone: 'workflow'
+        });
+        return;
+      }
+      const force = await openConfirmModal({
+        title: 'Force archive inventory item',
+        record: itemName,
+        message: blockerText,
+        risk: 'This bypasses live stock/allocation/reservation safety checks. History is preserved, but related workflows may still reference this archived item.',
+        confirmLabel: 'Force Archive',
+        tone: 'danger'
+      });
+      if (!force) return;
+      try {
+        await archiveBackendInventoryItem(id, { force: true });
+      } catch (forceError) {
+        failBackendRequiredWrite(forceError, backendInventoryState, 'Inventory item force delete requires Admin backend confirmation. Nothing was saved locally.');
+        return;
+      }
+    } else {
+      failBackendRequiredWrite(error, backendInventoryState, 'Inventory item archive requires backend confirmation. Nothing was saved locally.');
+      return;
+    }
+  }
   state.ingredients = state.ingredients.filter(i => i.id !== id);
   saveState();
+  backendInventoryState.loaded = false;
+  backendInventoryState.signals = null;
   router('inventory');
-  toast('Item deleted.');
+  toast('Inventory item archived.');
 }
 function adjustStock(id) {
   const i = state.ingredients.find(x=>x.id===id);
@@ -11117,6 +11235,9 @@ function adjustStock(id) {
         <option>Other</option>
       </select>
     </div>
+    <div class="form-row" style="margin-top:10px"><label>Adjustment Note</label>
+      <textarea id="adj_note" placeholder="Optional detail for audit trail"></textarea>
+    </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="doAdjust('${id}')">Apply</button>
@@ -11142,9 +11263,11 @@ async function doAdjust(id) {
     }
   });
   syncItemLots(draft);
+  const reason = document.getElementById('adj_reason')?.value || 'Cycle count correction';
+  const note = (document.getElementById('adj_note')?.value || '').trim();
   try {
-    const saved = await saveBackendInventoryItem(id, false, draft);
-    Object.assign(i, backendInventoryItemToLocalIngredient(saved, i));
+    const saved = await adjustBackendInventoryItem(id, draft, reason, note);
+    Object.assign(i, backendInventoryItemToLocalIngredient(saved.item, i));
     backendInventoryState.status = 'connected';
     backendInventoryState.loaded = false;
     backendInventoryState.lastError = '';

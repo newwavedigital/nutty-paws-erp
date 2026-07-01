@@ -23,6 +23,9 @@ export type InventoryItemSetupRecord = InventoryItemRecord & {
   location: string | null;
   lotNumber: string | null;
   lotsJson: string | null;
+  status?: "active" | "archived";
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
 };
 
 export type InventoryItemInput = {
@@ -131,10 +134,37 @@ export type InventoryMovementInput = {
 
 export type InventoryAuditInput = {
   actorUserId?: string;
-  entityType: "inventory_reservation" | "receiving_entry" | "move_entry";
+  entityType: "inventory_reservation" | "receiving_entry" | "move_entry" | "inventory_item" | "inventory_adjustment";
   entityId: string;
-  action: "inventory.received" | "inventory.adjusted" | "inventory.reserved" | "inventory.released" | "receiving.archived" | "move.archived";
+  action: "inventory.received" | "inventory.adjusted" | "inventory.reserved" | "inventory.released" | "inventory.archived" | "receiving.archived" | "move.archived";
   metadata: Record<string, unknown>;
+};
+
+export type InventoryAdjustmentRecord = {
+  id: string;
+  inventoryItemId: string;
+  quantityBefore: number;
+  quantityAfter: number;
+  quantityDelta: number;
+  reason: string;
+  note: string | null;
+  lotsBeforeJson: string | null;
+  lotsAfterJson: string | null;
+  adjustedByUserId: string | null;
+  createdAt: string;
+};
+
+export type InventoryAdjustmentInput = {
+  id: string;
+  inventoryItemId: string;
+  quantityBefore: number;
+  quantityAfter: number;
+  quantityDelta: number;
+  reason: string;
+  note: string | null;
+  lotsBeforeJson: string | null;
+  lotsAfterJson: string | null;
+  adjustedByUserId?: string | null;
 };
 
 export type InventoryStore = {
@@ -156,6 +186,9 @@ export type InventoryStore = {
   createInventoryItem?(input: InventoryItemInput): Promise<InventoryItemSetupRecord>;
   updateInventoryItem?(id: string, input: InventoryItemInput): Promise<InventoryItemSetupRecord | null>;
   adjustInventoryOnHand?(input: { inventoryItemId: string; quantityDelta: number }): Promise<boolean>;
+  archiveInventoryItem?(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<InventoryItemSetupRecord | null>;
+  countActiveReservationsForInventoryItem?(id: string): Promise<number>;
+  createInventoryAdjustment?(input: InventoryAdjustmentInput): Promise<InventoryAdjustmentRecord>;
   masterItemExists?(masterItemId: string): Promise<boolean>;
   listReceivingEntries?(): Promise<ReceivingEntryRecord[]>;
   nextReceivingSequence?(): Promise<number>;
@@ -173,8 +206,8 @@ export type InventoryStore = {
 };
 
 export class InventoryError extends ApiError {
-  constructor(code: string, message: string) {
-    super(code, message, inventoryStatusFor(code));
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(code, message, inventoryStatusFor(code), details);
     this.name = "InventoryError";
   }
 }
@@ -184,7 +217,15 @@ function inventoryStatusFor(code: string) {
     return 404;
   }
 
-  if (code === "INSUFFICIENT_INVENTORY" || code === "INVENTORY_STOCK_CONFLICT" || code === "RECEIVING_ENTRY_ARCHIVED" || code === "MOVE_ENTRY_ARCHIVED") {
+  if (
+    code === "INSUFFICIENT_INVENTORY" ||
+    code === "INVENTORY_STOCK_CONFLICT" ||
+    code === "INVENTORY_ITEM_ARCHIVE_BLOCKED" ||
+    code === "INVENTORY_ADJUSTMENT_UNAVAILABLE" ||
+    code === "INVALID_INVENTORY_ADJUSTMENT_REASON" ||
+    code === "RECEIVING_ENTRY_ARCHIVED" ||
+    code === "MOVE_ENTRY_ARCHIVED"
+  ) {
     return 409;
   }
 
@@ -257,6 +298,122 @@ export async function updateInventorySetupItem(store: InventoryStore, id: string
   assertNonNegative(merged.reorderPointQuantity, "reorderPointQuantity");
   assertOnHandCoversAllocation(merged.onHandQuantity, merged.allocatedQuantity ?? 0);
   return store.updateInventoryItem(id, merged);
+}
+
+export async function archiveInventorySetupItem(store: InventoryStore, inventoryItemId: string, actorUserId?: string, options: { force?: boolean } = {}) {
+  if (!store.listInventoryItems || !store.archiveInventoryItem) {
+    throw new InventoryError("INVENTORY_SETUP_UNAVAILABLE", "Inventory setup is unavailable");
+  }
+  const existing = (await store.listInventoryItems()).find((item) => item.id === inventoryItemId);
+  if (!existing) throw new InventoryError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found");
+  const activeReservations = await store.countActiveReservationsForInventoryItem?.(inventoryItemId) ?? 0;
+  const blockers = [
+    ...(existing.onHandQuantity !== 0 ? [{ field: "onHandQuantity", label: "On hand", value: existing.onHandQuantity, unit: existing.unitOfMeasure }] : []),
+    ...(existing.allocatedQuantity !== 0 ? [{ field: "allocatedQuantity", label: "Allocated quantity", value: existing.allocatedQuantity, unit: existing.unitOfMeasure }] : []),
+    ...(activeReservations > 0 ? [{ field: "activeReservations", label: "Active reservations", value: activeReservations, unit: "reservation(s)" }] : []),
+  ];
+  if (blockers.length > 0 && !options.force) {
+    const itemName = existing.masterItemName || existing.id;
+    const reasonText = blockers.map((blocker) => `${blocker.label} is ${blocker.value}${blocker.unit ? ` ${blocker.unit}` : ""}`).join("; ");
+    throw new InventoryError(
+      "INVENTORY_ITEM_ARCHIVE_BLOCKED",
+      `Cannot archive ${itemName}. ${reasonText}.`,
+      { itemId: existing.id, itemName, blockers },
+    );
+  }
+  const archived = await store.archiveInventoryItem(inventoryItemId, {
+    archivedAt: new Date().toISOString(),
+    actorUserId,
+  });
+  if (!archived) throw new InventoryError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found");
+  await store.createAuditEvent({
+    actorUserId,
+    entityType: "inventory_item",
+    entityId: inventoryItemId,
+    action: "inventory.archived",
+    metadata: {
+      masterItemId: existing.masterItemId,
+      category: existing.category,
+      forced: !!options.force,
+      blockers,
+    },
+  });
+  return archived;
+}
+
+export async function adjustInventorySetupItem(
+  store: InventoryStore,
+  inventoryItemId: string,
+  input: { onHandQuantity: number; reason: string; note?: string | null; lotsJson?: string | null; actorUserId?: string },
+) {
+  if (!store.listInventoryItems || !store.updateInventoryItem || !store.createInventoryAdjustment) {
+    throw new InventoryError("INVENTORY_ADJUSTMENT_UNAVAILABLE", "Inventory adjustment is unavailable");
+  }
+  const existing = (await store.listInventoryItems()).find((item) => item.id === inventoryItemId);
+  if (!existing) throw new InventoryError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found");
+  assertNonNegative(input.onHandQuantity, "onHandQuantity");
+  assertOnHandCoversAllocation(input.onHandQuantity, existing.allocatedQuantity);
+  const reason = input.reason.trim();
+  if (!reason) throw new InventoryError("INVALID_INVENTORY_ADJUSTMENT_REASON", "Inventory adjustment reason is required");
+  const quantityBefore = existing.onHandQuantity;
+  const quantityAfter = input.onHandQuantity;
+  const quantityDelta = +(quantityAfter - quantityBefore).toFixed(2);
+  const lotsBeforeJson = existing.lotsJson;
+  const lotsAfterJson = input.lotsJson ?? existing.lotsJson;
+  const updated = await store.updateInventoryItem(inventoryItemId, {
+    id: existing.id,
+    masterItemId: existing.masterItemId,
+    category: existing.category,
+    supplierId: existing.supplierId,
+    customerId: existing.customerId,
+    onHandQuantity: quantityAfter,
+    allocatedQuantity: existing.allocatedQuantity,
+    reorderPointQuantity: existing.reorderPointQuantity,
+    unitOfMeasure: existing.unitOfMeasure,
+    unitCostCents: existing.unitCostCents,
+    leadTimeDays: existing.leadTimeDays,
+    location: existing.location,
+    lotNumber: existing.lotNumber,
+    lotsJson: lotsAfterJson,
+  });
+  if (!updated) throw new InventoryError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found");
+  const adjustment = await store.createInventoryAdjustment({
+    id: `inventory_adjustment_${crypto.randomUUID()}`,
+    inventoryItemId,
+    quantityBefore,
+    quantityAfter,
+    quantityDelta,
+    reason,
+    note: input.note?.trim() || null,
+    lotsBeforeJson,
+    lotsAfterJson,
+    adjustedByUserId: input.actorUserId ?? null,
+  });
+  if (quantityDelta !== 0) {
+    await store.createMovement({
+      inventoryItemId,
+      movementType: "adjusted",
+      quantityDelta,
+      referenceType: "inventory_adjustment",
+      referenceId: adjustment.id,
+      actorUserId: input.actorUserId,
+    });
+  }
+  await store.createAuditEvent({
+    actorUserId: input.actorUserId,
+    entityType: "inventory_adjustment",
+    entityId: adjustment.id,
+    action: "inventory.adjusted",
+    metadata: {
+      inventoryItemId,
+      quantityBefore,
+      quantityAfter,
+      quantityDelta,
+      reason,
+      note: adjustment.note,
+    },
+  });
+  return { adjustment, item: updated };
 }
 
 export async function createReceivingLogEntry(store: InventoryStore, input: Omit<ReceivingEntryInput, "id" | "receivingId" | "totalQuantity" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId" | "stockAppliedQuantity" | "stockAppliedInventoryItemId">) {

@@ -30,6 +30,9 @@ export type MasterItemRecord = {
   unitOfMeasure: string;
   customerId?: string | null;
   allergens?: string[];
+  status?: "active" | "archived";
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
 };
 
 export type ProductBomRecord = {
@@ -88,4 +91,5 @@ export type CatalogStore = {
   getMasterItem(id: string): Promise<MasterItemRecord | null>;
   createMasterItem?(input: MasterItemInput): Promise<MasterItemRecord>;
   updateMasterItem?(id: string, input: MasterItemInput): Promise<MasterItemRecord | null>;
+  archiveMasterItem?(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MasterItemRecord | null>;
 };

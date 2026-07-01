@@ -7,6 +7,7 @@
         "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
         "dev:wrangler": "wrangler dev",
         "test": "vitest run",
+        "test:e2e:inventory": "playwright test tests/e2e/inventory-hardening.spec.ts",
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "frontend:build": "node scripts/build-frontend-assets.mjs",
@@ -37,6 +38,7 @@
     },
     "devDependencies": {
         "@cloudflare/workers-types": "^4.20260609.1",
+        "@playwright/test": "^1.61.1",
         "@types/node": "^25.9.2",
         "@vitest/coverage-v8": "^4.1.8",
         "typescript": "^6.0.3",

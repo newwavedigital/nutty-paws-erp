@@ -1886,6 +1886,7 @@ async function loadBackendInventory() {
   try {
     const items = await apiRequest('/api/inventory');
     mergeBackendInventoryItems(items);
+    await loadBackendInventoryCoaFiles();
     await loadBackendReceivingEntries();
     await loadBackendMoveEntries();
     await loadBackendInventorySignals();
@@ -1916,6 +1917,21 @@ async function loadBackendInventorySignals() {
   if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return null;
   backendInventoryState.signals = await apiRequest('/api/inventory/signals');
   return backendInventoryState.signals;
+}
+
+async function loadBackendInventoryCoaFiles() {
+  if (!backendAuthState.token || backendAuthState.user?.userType === 'customer') return;
+  const inventoryItems = (state.ingredients || []).filter(item => item._backendId);
+  await Promise.all(inventoryItems.map(async item => {
+    try {
+      const files = await apiRequest(`/api/files?ownerType=inventory_item&ownerId=${encodeURIComponent(item._backendId)}`);
+      const coa = (files || []).find(file => file.fileCategory === 'inventory_coa') || null;
+      item.coa = coa ? mapBackendFileToPrototype(coa) : null;
+    } catch (error) {
+      // Keep inventory loading resilient; file-list failure should not hide stock truth.
+      item.coa = item.coa || null;
+    }
+  }));
 }
 
 function buildBackendProductPayload(data, cleanFormula) {
@@ -1971,6 +1987,13 @@ async function saveBackendMasterItem(id, isNew, data) {
   return item;
 }
 
+async function archiveBackendMasterItem(id) {
+  const backendId = (state.masterItems || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const item = await apiRequest(`/api/master-items/${encodeURIComponent(backendId)}`, { method: 'DELETE' });
+  backendMasterItemState.loaded = false;
+  return item;
+}
+
 function masterItemForInventoryName(itemName) {
   return (state.masterItems || []).find(m => m.name === itemName || m.id === itemName);
 }
@@ -2008,6 +2031,41 @@ async function saveBackendInventoryItem(id, isNew, data) {
   });
   mergeBackendInventoryItems([item]);
   return item;
+}
+
+async function archiveBackendInventoryItem(id, options = {}) {
+  const backendId = (state.ingredients || []).find(row => row.id === id || row._backendId === id)?._backendId || id;
+  const item = await apiRequest(`/api/inventory/${encodeURIComponent(backendId)}${options.force ? '?force=true' : ''}`, { method: 'DELETE' });
+  backendInventoryState.loaded = false;
+  backendInventoryState.signals = null;
+  return item;
+}
+
+async function adjustBackendInventoryItem(id, data, reason, note = '') {
+  const backendId = data._backendId || id;
+  const lots = Array.isArray(data.lots)
+    ? data.lots.map(lot => {
+        const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;
+        return { ...lot, qty, quantity: qty };
+      })
+    : [];
+  const onHandQuantity = lots.length
+    ? lots.reduce((sum, lot) => sum + (Number(lot.qty ?? lot.quantity ?? 0) || 0), 0)
+    : (Number(data.stock) || 0);
+  const result = await apiRequest(`/api/inventory/${encodeURIComponent(backendId)}/adjustments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      onHandQuantity,
+      reason: reason || 'Cycle count correction',
+      note: note || null,
+      lotsJson: JSON.stringify(lots)
+    })
+  });
+  const item = result.item;
+  if (!item) throw new Error('Backend inventory adjustment response did not include the updated item.');
+  mergeBackendInventoryItems([item]);
+  backendInventoryState.signals = null;
+  return { adjustment: result.adjustment, item };
 }
 
 function backendInventoryItemIdForReceipt(data) {
@@ -2252,6 +2310,7 @@ function mapBackendFileToPrototype(file) {
     _backendFileId: file.id,
     _backendOwnerId: file.ownerId,
     _backendFile: true,
+    fileId: file.id,
     name: file.fileName,
     type: file.contentType || '',
     size: file.sizeBytes || 0,

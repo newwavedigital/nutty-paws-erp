@@ -1,6 +1,6 @@
 ﻿import type { Hono } from "hono";
 import { ok } from "../api/responses";
-import { ValidationError } from "../api/errors";
+import { ApiError, ValidationError } from "../api/errors";
 import { parseJsonObject, requireFields } from "../api/validation";
 import type { AppBindings } from "../app";
 import { D1AuthStore } from "../auth/d1-store";
@@ -8,6 +8,9 @@ import { requireAuthWhenEnabled, requireEmployee } from "../auth/guards";
 import type { AuthContext, AuthStore } from "../auth/service";
 import { D1InventoryStore } from "./d1-store";
 import {
+  InventoryError,
+  adjustInventorySetupItem,
+  archiveInventorySetupItem,
   archiveMoveLogEntry,
   archiveReceivingLogEntry,
   calculateInventorySignals,
@@ -66,9 +69,36 @@ export function registerInventoryRoutes(
     if (auth) requireEmployee(auth);
     const store = createStore(db);
     const existing = (await store.listInventoryItems?.() ?? []).find((item) => item.id === c.req.param("inventoryItemId"));
-    if (!existing) throw new ValidationError("Inventory item not found", { code: "INVENTORY_ITEM_NOT_FOUND" });
+    if (!existing) throw new InventoryError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found");
     const updated = await updateInventorySetupItem(store, existing.id, existing, partialInventoryItemInputFromBody(await parseJsonObject(c), existing.id));
     return ok(c, updated);
+  });
+
+  app.delete("/api/inventory/:inventoryItemId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const force = c.req.query("force") === "true";
+    if (force && !auth?.roles.includes("Admin")) {
+      throw new ApiError("FORBIDDEN", "Only Admin can force delete Inventory items", 403);
+    }
+    const archived = await archiveInventorySetupItem(createStore(db), c.req.param("inventoryItemId"), auth?.user.id, { force });
+    return ok(c, archived);
+  });
+
+  app.post("/api/inventory/:inventoryItemId/adjustments", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const body = await parseJsonObject(c);
+    const adjustment = await adjustInventorySetupItem(createStore(db), c.req.param("inventoryItemId"), {
+      onHandQuantity: asNumber(body.onHandQuantity, "onHandQuantity"),
+      reason: asString(body.reason, "reason"),
+      note: optionalString(body.note, "note") ?? null,
+      lotsJson: optionalString(body.lotsJson, "lotsJson") ?? null,
+      actorUserId: actorUserId(auth, body),
+    });
+    return ok(c, adjustment);
   });
 
   app.get("/api/inventory/receiving", async (c) => {

@@ -65,6 +65,8 @@ describe("frontend fail-closed backend writes", () => {
     const requiredMarkers = [
       "Customer delete requires backend confirmation. Nothing was saved locally.",
       "Product delete requires backend confirmation. Nothing was saved locally.",
+      "Master item archive requires backend confirmation. Nothing was saved locally.",
+      "Inventory item archive requires backend confirmation. Nothing was saved locally.",
       "Inventory adjustment requires backend confirmation. Nothing was saved locally.",
       "Purchase order cancellation requires backend confirmation. Nothing was saved locally.",
       "Procurement PO cancellation requires backend confirmation. Nothing was saved locally.",
@@ -81,6 +83,9 @@ describe("frontend fail-closed backend writes", () => {
 
     expect(publicApp).toContain("archiveBackendCustomer");
     expect(publicApp).toContain("archiveBackendProduct");
+    expect(publicApp).toContain("archiveBackendMasterItem");
+    expect(publicApp).toContain("archiveBackendInventoryItem");
+    expect(publicApp).toContain("adjustBackendInventoryItem");
     expect(publicApp).toContain("cancelBackendPurchaseOrder");
     expect(publicApp).toContain("cancelBackendProcurementOrder");
     expect(publicApp).toContain("saveBackendQualityNotes");

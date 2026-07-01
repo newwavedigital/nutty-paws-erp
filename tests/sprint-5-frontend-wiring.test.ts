@@ -62,7 +62,24 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;",
       "const onHandQuantity = lots.length",
       "syncItemLots(draft);",
-      "const saved = await saveBackendInventoryItem(id, false, draft);",
+      "const saved = await adjustBackendInventoryItem(id, draft, reason, note);",
+    ]) {
+      expect(frontendText).toContain(marker);
+    }
+  });
+
+  test("uses backend archive and file metadata for production Inventory controls", () => {
+    for (const marker of [
+      "async function archiveBackendMasterItem",
+      "async function archiveBackendInventoryItem",
+      "async function adjustBackendInventoryItem",
+      "async function loadBackendInventoryCoaFiles",
+      "/api/master-items/${encodeURIComponent(backendId)}",
+      "/api/inventory/${encodeURIComponent(backendId)}",
+      "/api/inventory/${encodeURIComponent(backendId)}/adjustments",
+      "Backend inventory adjustment response did not include the updated item.",
+      "reason: reason || 'Cycle count correction'",
+      "fileId ? `/api/files/${encodeURIComponent(fileId)}/download`",
     ]) {
       expect(frontendText).toContain(marker);
     }

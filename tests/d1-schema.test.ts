@@ -19,6 +19,7 @@ const migrationPaths = [
   "migrations/0012_phase_2b_a10_file_metadata_scope.sql",
   "migrations/0013_customer_po_hardening.sql",
   "migrations/0014_inventory_receiving_move_corrections.sql",
+  "migrations/0015_inventory_archive_adjustment_hardening.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 const stagingDatabaseName = "nut-house-portal-staging-db";
@@ -87,6 +88,7 @@ describe("Phase 2A D1 baseline schema migration", () => {
         "feedback_items",
         "file_metadata",
         "food_safety_records",
+        "inventory_adjustments",
         "inventory_items",
         "inventory_lots",
         "inventory_movements",
@@ -145,6 +147,39 @@ describe("Phase 2A D1 baseline schema migration", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "on_hand_quantity", notnull: 1 }),
           expect.objectContaining({ name: "allocated_quantity", notnull: 1 }),
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "archived_at" }),
+          expect.objectContaining({ name: "archived_by_user_id" }),
+        ]),
+      );
+
+      const masterItemArchiveColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('master_items');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(masterItemArchiveColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "status", notnull: 1 }),
+          expect.objectContaining({ name: "archived_at" }),
+          expect.objectContaining({ name: "archived_by_user_id" }),
+        ]),
+      );
+
+      const inventoryAdjustmentColumns = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA table_info('inventory_adjustments');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(inventoryAdjustmentColumns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "inventory_item_id", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_before", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_after", notnull: 1 }),
+          expect.objectContaining({ name: "quantity_delta", notnull: 1 }),
+          expect.objectContaining({ name: "reason", notnull: 1 }),
+          expect.objectContaining({ name: "lots_before_json" }),
+          expect.objectContaining({ name: "lots_after_json" }),
         ]),
       );
 
