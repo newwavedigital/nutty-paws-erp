@@ -12,7 +12,11 @@ function syncItemLots(item) {
   if (!Array.isArray(item.lots) || item.lots.length === 0) {
     item.lots = [{ lotNumber: item.lotNumber||'', building: item.building||'', location: item.location||'', qty: parseFloat(item.stock)||0 }];
   }
-  item.stock = item.lots.reduce((s, l) => s + (parseFloat(l.qty)||0), 0);
+  item.lots = item.lots.map(l => {
+    const qty = parseFloat(l.qty ?? l.quantity) || 0;
+    return { ...l, qty, quantity: qty };
+  });
+  item.stock = item.lots.reduce((s, l) => s + (parseFloat(l.qty ?? l.quantity)||0), 0);
   // primary entry (used by pick list, lot pre-fill, etc.)
   item.lotNumber = item.lots[0].lotNumber || '';
   item.building = item.lots[0].building || '';
@@ -1224,7 +1228,7 @@ function adjustStock(id) {
           <td>${l.lotNumber ? '<span class="pill">'+escapeHtml(l.lotNumber)+'</span>' : '-'}</td>
           <td>${escapeHtml(l.building||'-')}</td>
           <td>${escapeHtml(l.location||'-')}</td>
-          <td><input type="number" step="0.01" min="0" id="adj_qty_${idx}" value="${l.qty!=null?l.qty:0}" style="width:100%;padding:6px 8px;border:1px solid var(--grey);border-radius:4px" /></td>
+          <td><input type="number" step="0.01" min="0" id="adj_qty_${idx}" value="${l.qty ?? l.quantity ?? 0}" style="width:100%;padding:6px 8px;border:1px solid var(--grey);border-radius:4px" /></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
@@ -1247,16 +1251,22 @@ async function doAdjust(id) {
   if (!i) return;
   if (!requireEmployeeBackendWrite(backendInventoryState)) return;
   if (!i._backendId) return failBackendRequiredWrite(null, backendInventoryState, 'Inventory adjustment requires backend confirmation. Nothing was saved locally.');
-  if (!Array.isArray(i.lots) || !i.lots.length) {
-    i.lots = [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }];
-  }
-  i.lots.forEach((l, idx) => {
+  const draft = {
+    ...i,
+    lots: (Array.isArray(i.lots) && i.lots.length ? i.lots : [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }])
+      .map(lot => ({ ...lot }))
+  };
+  draft.lots.forEach((l, idx) => {
     const inp = document.getElementById('adj_qty_'+idx);
-    if (inp) l.qty = parseFloat(inp.value) || 0;
+    if (inp) {
+      const qty = parseFloat(inp.value) || 0;
+      l.qty = qty;
+      l.quantity = qty;
+    }
   });
-  syncItemLots(i);
+  syncItemLots(draft);
   try {
-    const saved = await saveBackendInventoryItem(id, false, i);
+    const saved = await saveBackendInventoryItem(id, false, draft);
     Object.assign(i, backendInventoryItemToLocalIngredient(saved, i));
     backendInventoryState.status = 'connected';
     backendInventoryState.loaded = false;

@@ -49,4 +49,17 @@ describe("Sprint 7 frontend production wiring", () => {
       expect(frontendText).toContain(marker);
     }
   });
+
+  test("reopens backend production logs by log-backed run id without requiring purchaseOrders", () => {
+    for (const marker of [
+      "const productionRunId = r._backendProductionRunId || po?._backendProductionRunId;",
+      "onclick=\"reopenProductionForCorrection('${r.id}')\"",
+      "async function reopenProductionForCorrection(logId)",
+      "const log = (state.productionLog || []).find(r => r.id === logId);",
+      "await reopenBackendProductionRun(productionRunId, reason.trim());",
+      "Production correction reopen requires backend confirmation. Nothing was saved locally."
+    ]) {
+      expect(frontendText).toContain(marker);
+    }
+  });
 });

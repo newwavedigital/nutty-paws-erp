@@ -224,6 +224,24 @@ describe("Sprint 5 inventory setup routes", () => {
     });
   });
 
+  it("returns a domain error when Inventory item on-hand drops below allocated quantity", async () => {
+    const app = createRouteApp();
+
+    const response = await app.request("/api/inventory/inv-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ onHandQuantity: 20 }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "INSUFFICIENT_INVENTORY",
+        message: "On-hand quantity cannot be below allocated quantity",
+      },
+    });
+  });
+
   it("blocks Inventory item creation without a valid Master List item", async () => {
     const app = createRouteApp(createRouteStore({ async masterItemExists() { return false; } }));
 

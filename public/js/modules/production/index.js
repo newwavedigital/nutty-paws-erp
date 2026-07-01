@@ -172,6 +172,7 @@ function viewProductionLog(id) {
   const r = (state.productionLog || []).find(x => x.id === id);
   if (!r) return;
   const po = (state.purchaseOrders || []).find(p => p.id === r.poId || p._backendId === r.poId);
+  const productionRunId = r._backendProductionRunId || po?._backendProductionRunId;
   const sameDay = !r.productionEndDate || r.productionEndDate === r.productionDate;
   const dates = sameDay ? fmtDate(r.productionDate) : `${fmtDate(r.productionDate)} &rarr; ${fmtDate(r.productionEndDate)}`;
   const w = r.wasteLossPct||0;
@@ -214,37 +215,41 @@ function viewProductionLog(id) {
     </table></div>
     ${r.notes ? `<div style="margin-top:14px"><div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:4px">Production Notes</div><div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;white-space:pre-wrap;font-size:13px">${escapeHtml(r.notes)}</div></div>` : ''}
     <div class="form-actions">
-      ${po?._backendProductionRunId ? `<button class="btn btn-secondary" onclick="reopenProductionForCorrection('${po.id}')">Reopen for Correction</button>` : ''}
+      ${productionRunId ? `<button class="btn btn-secondary" onclick="reopenProductionForCorrection('${r.id}')">Reopen for Correction</button>` : ''}
       <button class="btn btn-secondary" onclick="closeModal()">Close</button>
     </div>
   `);
 }
 
-async function reopenProductionForCorrection(poId) {
-  const po = (state.purchaseOrders || []).find(p => p.id === poId);
-  if (!po) return;
+async function reopenProductionForCorrection(logId) {
+  const log = (state.productionLog || []).find(r => r.id === logId);
+  if (!log) return;
+  const po = (state.purchaseOrders || []).find(p => p.id === log.poId || p._backendId === log.poId);
+  const productionRunId = log._backendProductionRunId || po?._backendProductionRunId;
   const reason = window.prompt('Reason for reopening this finalized production run?');
   if (!reason || !reason.trim()) return;
-  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && po._backendProductionRunId) {
-    try {
-      await reopenBackendProductionRun(po, reason.trim());
-      backendProductionState.status = 'connected';
-    } catch (error) {
-      backendProductionState.status = 'error';
-      backendProductionState.lastError = 'Production backend correction reopen failed.';
-      toast(error.message || backendProductionState.lastError);
-      return;
-    }
-  } else if (employeeBackendSessionActive()) {
+  if (!productionRunId || !requireEmployeeBackendWrite(backendProductionState, 'Production correction reopen requires backend confirmation. Nothing was saved locally.')) {
+    if (productionRunId) return;
     failBackendRequiredWrite(null, backendProductionState, 'Production correction reopen requires backend confirmation. Nothing was saved locally.');
     return;
   }
-  po.productionFinalized = false;
-  po.status = 'in_production';
-  po.completionNotes = reason.trim();
+  try {
+    await reopenBackendProductionRun(productionRunId, reason.trim());
+    backendProductionState.status = 'connected';
+  } catch (error) {
+    backendProductionState.status = 'error';
+    backendProductionState.lastError = 'Production backend correction reopen failed.';
+    toast(error.message || backendProductionState.lastError);
+    return;
+  }
+  if (po) {
+    po.productionFinalized = false;
+    po.status = 'in_production';
+    po.completionNotes = reason.trim();
+  }
   saveState();
   closeModal();
-  toast(`${po.id} reopened for production correction.`);
+  toast(`${log.poId || 'Production run'} reopened for production correction.`);
   router('production');
 }
 async function deleteProductionLog(id) {

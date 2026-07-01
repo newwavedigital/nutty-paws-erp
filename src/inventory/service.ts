@@ -227,6 +227,7 @@ export async function createInventorySetupItem(store: InventoryStore, input: Inv
   assertNonNegative(input.onHandQuantity, "onHandQuantity");
   assertNonNegative(input.allocatedQuantity ?? 0, "allocatedQuantity");
   assertNonNegative(input.reorderPointQuantity, "reorderPointQuantity");
+  assertOnHandCoversAllocation(input.onHandQuantity, input.allocatedQuantity ?? 0);
   return store.createInventoryItem(input);
 }
 
@@ -251,6 +252,10 @@ export async function updateInventorySetupItem(store: InventoryStore, id: string
     lotsJson: input.lotsJson ?? existing.lotsJson,
   };
   await assertMasterItemExists(store, merged.masterItemId);
+  assertNonNegative(merged.onHandQuantity, "onHandQuantity");
+  assertNonNegative(merged.allocatedQuantity ?? 0, "allocatedQuantity");
+  assertNonNegative(merged.reorderPointQuantity, "reorderPointQuantity");
+  assertOnHandCoversAllocation(merged.onHandQuantity, merged.allocatedQuantity ?? 0);
   return store.updateInventoryItem(id, merged);
 }
 
@@ -613,5 +618,11 @@ async function applyReceivingStockDelta(store: InventoryStore, existing: Receivi
 function assertNonNegative(quantity: number, field: string) {
   if (!Number.isFinite(quantity) || quantity < 0) {
     throw new InventoryError("INVALID_QUANTITY", `${field} must be zero or greater`);
+  }
+}
+
+function assertOnHandCoversAllocation(onHandQuantity: number, allocatedQuantity: number) {
+  if (allocatedQuantity > onHandQuantity) {
+    throw new InventoryError("INSUFFICIENT_INVENTORY", "On-hand quantity cannot be below allocated quantity");
   }
 }

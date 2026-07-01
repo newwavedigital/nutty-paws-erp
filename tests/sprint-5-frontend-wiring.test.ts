@@ -57,6 +57,17 @@ describe("Sprint 5 frontend inventory wiring", () => {
     }
   });
 
+  test("normalizes adjusted lot quantities before saving backend inventory items", () => {
+    for (const marker of [
+      "const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;",
+      "const onHandQuantity = lots.length",
+      "syncItemLots(draft);",
+      "const saved = await saveBackendInventoryItem(id, false, draft);",
+    ]) {
+      expect(frontendText).toContain(marker);
+    }
+  });
+
   test("keeps public entrypoint mirrored for Sprint 5 frontend markers", () => {
     for (const marker of [
       "const backendInventoryState",

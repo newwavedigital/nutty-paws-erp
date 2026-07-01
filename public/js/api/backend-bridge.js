@@ -1309,7 +1309,10 @@ function backendMasterItemToLocalMasterItem(item, existing = {}) {
 }
 
 function backendInventoryItemToLocalIngredient(item, existing = {}) {
-  const lots = parseJsonFallback(item.lotsJson, existing.lots || []);
+  const lots = parseJsonFallback(item.lotsJson, existing.lots || []).map(lot => {
+    const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;
+    return { ...lot, qty, quantity: qty };
+  });
   return {
     ...existing,
     id: item.id,
@@ -1679,14 +1682,15 @@ async function finalizeBackendProductionRun(po) {
   return run;
 }
 
-async function reopenBackendProductionRun(po, reason) {
-  const productionRunId = po._backendProductionRunId;
+async function reopenBackendProductionRun(productionRun, reason) {
+  const productionRunId = typeof productionRun === 'string' ? productionRun : productionRun?._backendProductionRunId;
   if (!productionRunId) throw new Error('Backend production run is unavailable.');
   const run = await apiRequest(`/api/production/runs/${encodeURIComponent(productionRunId)}/reopen`, {
     method: 'POST',
     body: JSON.stringify({ reason, actorUserId: BACKEND_ACTOR_USER_ID })
   });
   mergeBackendProductionRuns([run]);
+  await loadBackendProductionLogs();
   backendProductionState.loaded = false;
   return run;
 }
@@ -1974,12 +1978,21 @@ function masterItemForInventoryName(itemName) {
 async function saveBackendInventoryItem(id, isNew, data) {
   const master = masterItemForInventoryName(data.name);
   const backendId = data._backendId || id;
+  const lots = Array.isArray(data.lots)
+    ? data.lots.map(lot => {
+        const qty = Number(lot.qty ?? lot.quantity ?? 0) || 0;
+        return { ...lot, qty, quantity: qty };
+      })
+    : [];
+  const onHandQuantity = lots.length
+    ? lots.reduce((sum, lot) => sum + (Number(lot.qty ?? lot.quantity ?? 0) || 0), 0)
+    : (Number(data.stock) || 0);
   const payload = {
     masterItemId: data.masterItemId || master?.id,
     category: data.category,
     supplierId: data.supplierId || null,
     customerId: data.customerId || 'general',
-    onHandQuantity: data.stock || 0,
+    onHandQuantity,
     allocatedQuantity: data.allocatedQuantity || 0,
     reorderPointQuantity: data.reorderLevel || 0,
     unitOfMeasure: data.unit || master?.unitOfMeasure || 'lb',
@@ -1987,7 +2000,7 @@ async function saveBackendInventoryItem(id, isNew, data) {
     leadTimeDays: data.leadTimeDays || 0,
     location: data.location || null,
     lotNumber: data.lotNumber || null,
-    lotsJson: JSON.stringify(data.lots || [])
+    lotsJson: JSON.stringify(lots)
   };
   const item = await apiRequest(isNew ? '/api/inventory' : `/api/inventory/${encodeURIComponent(backendId)}`, {
     method: isNew ? 'POST' : 'PATCH',
