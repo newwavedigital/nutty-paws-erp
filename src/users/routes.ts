@@ -42,13 +42,16 @@ export function registerUserRoutes(app: Hono<AppBindings>, createStore: StoreFac
     const fields = requireFields(body, ["email", "displayName", "password", "roles"]);
     const roles = asRoles(fields.roles);
     const customerAccess = customerAccessForRoles(roles, optionalString(body.customerId, "customerId"));
+    const email = normalizeEmail(asString(fields.email, "email"));
+    await assertEmailAvailable(store, email);
     const user: AuthUserRecord = {
       id: `user_${crypto.randomUUID()}`,
-      email: normalizeEmail(asString(fields.email, "email")),
+      email,
       displayName: asString(fields.displayName, "displayName").trim(),
       userType: roles.includes("Customer") ? "customer" : "employee",
       passwordHash: await hashPassword(asString(fields.password, "password")),
       isActive: true,
+      createdAt: new Date().toISOString(),
     };
 
     await store.createUser(user);
@@ -63,12 +66,23 @@ export function registerUserRoutes(app: Hono<AppBindings>, createStore: StoreFac
     const auth = await requireAuth(c, store);
     requireAnyRole(auth, ["Admin"]);
     const body = await parseJsonObject(c);
+    const userId = c.req.param("userId");
+    const existing = await store.getUserById(userId);
+    if (!existing) throw new ApiError("USER_NOT_FOUND", "User not found", 404);
     const roles = Array.isArray(body.roles) ? asRoles(body.roles) : null;
     const customerAccess = roles ? customerAccessForRoles(roles, optionalString(body.customerId, "customerId")) : null;
-    const updated = await store.updateUser(c.req.param("userId"), {
+    const nextEmail = optionalString(body.email, "email");
+    const email = nextEmail ? normalizeEmail(nextEmail) : undefined;
+    if (email) await assertEmailAvailable(store, email, userId);
+    const isActive = typeof body.isActive === "boolean" ? body.isActive : undefined;
+    await assertAdminWouldRemain(store, existing, roles, isActive);
+    const temporaryPassword = optionalString(body.temporaryPassword, "temporaryPassword");
+    const updated = await store.updateUser(userId, {
+      email,
       displayName: optionalString(body.displayName, "displayName"),
       userType: roles?.includes("Customer") ? "customer" : roles ? "employee" : undefined,
-      isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
+      passwordHash: temporaryPassword ? await hashPassword(temporaryPassword) : undefined,
+      isActive,
     });
 
     if (!updated) throw new ApiError("USER_NOT_FOUND", "User not found", 404);
@@ -85,6 +99,7 @@ export function registerUserRoutes(app: Hono<AppBindings>, createStore: StoreFac
     const userId = c.req.param("userId");
     const existing = await store.getUserById(userId);
     if (!existing) throw new ApiError("USER_NOT_FOUND", "User not found", 404);
+    await assertAdminWouldRemain(store, existing, null, false);
     const updated = await store.updateUser(userId, {
       email: deactivatedEmailFor(userId),
       isActive: false,
@@ -105,6 +120,35 @@ async function serializeUsers(store: UserAdminStore) {
 
 function deactivatedEmailFor(userId: string) {
   return `deactivated+${userId.replace(/[^a-zA-Z0-9_-]/g, "_")}@nuthouse.local`;
+}
+
+async function assertEmailAvailable(store: UserAdminStore, email: string, currentUserId?: string) {
+  const existing = await store.getUserByEmail(email);
+  if (existing && existing.id !== currentUserId) {
+    throw new ApiError("EMAIL_ALREADY_EXISTS", "Email is already assigned to another active user", 409, { fields: ["email"] });
+  }
+}
+
+async function assertAdminWouldRemain(
+  store: UserAdminStore,
+  existing: AuthUserRecord,
+  nextRoles: RoleName[] | null,
+  nextIsActive: boolean | undefined,
+) {
+  const currentRoles = await rolesFor(store, existing.id);
+  if (!currentRoles.includes("Admin")) return;
+  const remainsActive = nextIsActive !== false;
+  const remainsAdmin = nextRoles ? nextRoles.includes("Admin") : true;
+  if (remainsActive && remainsAdmin) return;
+
+  const users = await store.listUsers();
+  for (const user of users) {
+    if (user.id === existing.id || !user.isActive) continue;
+    const roles = await rolesFor(store, user.id);
+    if (roles.includes("Admin")) return;
+  }
+
+  throw new ApiError("LAST_ADMIN_REQUIRED", "At least one active Admin account is required", 409);
 }
 
 async function rolesFor(store: UserAdminStore, userId: string) {

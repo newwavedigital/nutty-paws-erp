@@ -46,12 +46,12 @@ function createAuthStore() {
     },
   };
 
-  return { authStore, userStore, users, roles, customerAccess };
+  return { authStore, userStore, users, sessions, roles, customerAccess };
 }
 
 async function seedUser(
   data: ReturnType<typeof createAuthStore>,
-  input: { id: string; email: string; role: RoleName; userType?: "employee" | "customer"; customerId?: string },
+  input: { id: string; email: string; role: RoleName; userType?: "employee" | "customer"; customerId?: string; createdAt?: string },
 ) {
   data.users.set(input.id, {
     id: input.id,
@@ -60,6 +60,7 @@ async function seedUser(
     userType: input.userType ?? (input.role === "Customer" ? "customer" : "employee"),
     passwordHash: await hashPassword("secret123"),
     isActive: true,
+    createdAt: input.createdAt,
   });
   data.roles.set(input.id, [input.role]);
   if (input.customerId) data.customerAccess.set(input.id, [{ customerId: input.customerId, accessLevel: "manager" }]);
@@ -101,6 +102,25 @@ describe("user admin routes", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       data: { email: "sales@example.com", userType: "employee", roles: ["Sales"], customerAccess: [] },
+    });
+  });
+
+  it("serializes backend user creation dates for Account Management", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin", createdAt: "2026-06-30T12:00:00.000Z" });
+    await seedUser(data, { id: "sales-1", email: "sales@example.com", role: "Sales", createdAt: "2026-07-01T09:00:00.000Z" });
+    const app = createRouteApp(data.authStore, data.userStore);
+    const token = await login(app, "admin@example.com");
+
+    const response = await app.request("/api/users", { headers: { authorization: `Bearer ${token}` } });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: expect.arrayContaining([
+        expect.objectContaining({ email: "admin@example.com", createdAt: "2026-06-30T12:00:00.000Z" }),
+        expect.objectContaining({ email: "sales@example.com", createdAt: "2026-07-01T09:00:00.000Z" }),
+      ]),
     });
   });
 
@@ -200,6 +220,78 @@ describe("user admin routes", () => {
     });
     expect(recreate.status).toBe(200);
     await expect(recreate.json()).resolves.toMatchObject({ data: { email: "sales@example.com", isActive: true } });
+  });
+
+  it("allows Admin users to edit login email and set a temporary password without revoking sessions", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin" });
+    await seedUser(data, { id: "sales-1", email: "sales@example.com", role: "Sales" });
+    const app = createRouteApp(data.authStore, data.userStore);
+    const token = await login(app, "admin@example.com");
+
+    const patch = await app.request("/api/users/sales-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        email: "new-sales@example.com",
+        displayName: "New Sales",
+        roles: ["Sales"],
+        temporaryPassword: "newpass123",
+      }),
+    });
+
+    expect(patch.status).toBe(200);
+    await expect(patch.json()).resolves.toMatchObject({
+      data: { id: "sales-1", email: "new-sales@example.com", displayName: "New Sales", roles: ["Sales"] },
+    });
+
+    expect(data.users.get("sales-1")?.email).toBe("new-sales@example.com");
+    expect(data.sessions.size).toBe(1);
+
+    const oldPasswordLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "new-sales@example.com", password: "secret123" }),
+    });
+    expect(oldPasswordLogin.status).toBe(401);
+
+    const newPasswordLogin = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "new-sales@example.com", password: "newpass123" }),
+    });
+    expect(newPasswordLogin.status).toBe(200);
+  });
+
+  it("rejects duplicate email edits and protects the last active Admin", async () => {
+    const data = createAuthStore();
+    await seedUser(data, { id: "admin-1", email: "admin@example.com", role: "Admin" });
+    await seedUser(data, { id: "sales-1", email: "sales@example.com", role: "Sales" });
+    const app = createRouteApp(data.authStore, data.userStore);
+    const token = await login(app, "admin@example.com");
+
+    const duplicateEmail = await app.request("/api/users/sales-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: "admin@example.com", displayName: "Sales User", roles: ["Sales"] }),
+    });
+    expect(duplicateEmail.status).toBe(409);
+    await expect(duplicateEmail.json()).resolves.toMatchObject({ error: { code: "EMAIL_ALREADY_EXISTS" } });
+
+    const demoteLastAdmin = await app.request("/api/users/admin-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ displayName: "Admin User", roles: ["Sales"] }),
+    });
+    expect(demoteLastAdmin.status).toBe(409);
+    await expect(demoteLastAdmin.json()).resolves.toMatchObject({ error: { code: "LAST_ADMIN_REQUIRED" } });
+
+    const deleteLastAdmin = await app.request("/api/users/admin-1", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(deleteLastAdmin.status).toBe(409);
+    await expect(deleteLastAdmin.json()).resolves.toMatchObject({ error: { code: "LAST_ADMIN_REQUIRED" } });
   });
 });
 

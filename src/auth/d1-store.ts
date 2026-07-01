@@ -13,6 +13,7 @@ type UserRow = {
   user_type: "employee" | "customer";
   password_hash: string | null;
   is_active: number;
+  created_at?: string;
 };
 
 type SessionRow = {
@@ -31,7 +32,7 @@ export class D1AuthStore implements AuthStore {
 
   async getUserByEmail(email: string): Promise<AuthUserRecord | null> {
     const row = await this.db
-      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active FROM users WHERE lower(email) = lower(?)`)
+      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active, created_at FROM users WHERE lower(email) = lower(?)`)
       .bind(email)
       .first<UserRow>();
     return row ? mapUser(row) : null;
@@ -39,7 +40,7 @@ export class D1AuthStore implements AuthStore {
 
   async getUserById(id: string): Promise<AuthUserRecord | null> {
     const row = await this.db
-      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active FROM users WHERE id = ?`)
+      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active, created_at FROM users WHERE id = ?`)
       .bind(id)
       .first<UserRow>();
     return row ? mapUser(row) : null;
@@ -57,7 +58,7 @@ export class D1AuthStore implements AuthStore {
 
   async listUsers(): Promise<AuthUserRecord[]> {
     const result = await this.db
-      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active FROM users ORDER BY email`)
+      .prepare(`SELECT id, email, display_name, user_type, password_hash, is_active, created_at FROM users ORDER BY email`)
       .all<UserRow>();
     return (result.results ?? []).map(mapUser);
   }
@@ -166,6 +167,7 @@ function mapUser(row: UserRow): AuthUserRecord {
     userType: row.user_type,
     passwordHash: row.password_hash,
     isActive: row.is_active === 1,
+    createdAt: row.created_at,
   };
 }
 

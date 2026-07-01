@@ -20,6 +20,7 @@ export type AuthUserRecord = {
   userType: UserType;
   passwordHash: string | null;
   isActive: boolean;
+  createdAt?: string;
 };
 
 export type CustomerAccessRecord = {
@@ -196,6 +197,7 @@ export function serializeUser(user: AuthUserRecord, roles: RoleName[] = [], cust
     displayName: user.displayName,
     userType: user.userType,
     isActive: user.isActive,
+    createdAt: user.createdAt,
     roles,
     customerAccess,
   };

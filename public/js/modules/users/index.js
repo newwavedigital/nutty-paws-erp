@@ -150,7 +150,7 @@ function backendUserToLocalUser(user) {
     email: user.email || '',
     role,
     customerId: role === 'Customer' ? (user.customerAccess?.[0]?.customerId || '') : '',
-    addedAt: new Date().toISOString().slice(0,10),
+    addedAt: (user.createdAt || '').slice(0, 10),
     isActive: user.isActive !== false
   };
 }
@@ -163,7 +163,7 @@ function upsertLocalUserFromBackend(user) {
   const mapped = backendUserToLocalUser(user);
   state.users = state.users || [];
   const existing = state.users.find(u => u._backendUserId === user.id || u.id === user.id || (u.email && u.email.toLowerCase() === (user.email || '').toLowerCase()));
-  if (existing) Object.assign(existing, mapped, { addedAt: existing.addedAt || mapped.addedAt });
+  if (existing) Object.assign(existing, mapped);
   else state.users.push(mapped);
 }
 
@@ -189,6 +189,7 @@ function canManageBackendUsers() {
 async function loadBackendUsers() {
   if (!backendAuthState.token || backendUserState.loadingUsers) return;
   if (!canManageBackendUsers()) {
+    clearProtectedBackendRows('account-management');
     backendUserState.status = 'connected';
     backendUserState.lastError = 'Customer backend session active; admin user list is hidden.';
     return;
@@ -268,15 +269,16 @@ function roleDescription(r) {
     case 'Admin': return 'Full access to all sections including user management.';
     case 'Sales': return 'Customers, Purchase Orders, Products. View Shipping.';
     case 'Supply Chain & Procurement': return 'Supply Chain, Procurement, Suppliers, Inventory.';
-    case 'Warehousing': return 'Inventory, Shipping. View Production Schedule.';
+    case 'Warehousing': return 'Inventory, Shipping, Pick & Pack, Quality, and Production Schedule workflows.';
     case 'Production': return 'Production Schedule, Food Safety. View Inventory.';
     case 'Customer': return 'External - sees only their own customer profile, their own POs (open & completed), and packaging + finished goods inventory tied to their products.';
     default: return '';
   }
 }
 function editUser(id) {
-  const u = (state.users||[]).find(x=>x.id===id) || { id: uid('u'), name:'', email:'', role:'Sales', customerId:'', addedAt: new Date().toISOString().slice(0,10) };
+  const u = (state.users||[]).find(x=>x.id===id) || { id: uid('u'), name:'', email:'', role:'Sales', customerId:'', addedAt: '' };
   const isNew = !id;
+  const passwordPlaceholder = isNew ? 'Required for new backend users' : 'Optional: set a new temporary password';
   openModal((isNew?'Add':'Edit')+' User', `
     <form onsubmit="event.preventDefault();saveUser('${u.id}', ${isNew})">
       <div class="form-grid">
@@ -287,8 +289,8 @@ function editUser(id) {
             ${USER_ROLES.map(r=>`<option ${u.role===r?'selected':''}>${escapeHtml(r)}</option>`).join('')}
           </select>
         </div>
-        <div class="form-row"><label>Added Date</label><input type="date" id="usr_added" value="${u.addedAt}" /></div>
-        <div class="form-row"><label>Temporary Password</label><input type="password" id="usr_password" minlength="8" placeholder="Required for new backend users" /></div>
+        <div class="form-row"><label>Added Date</label><input type="text" id="usr_added" value="${escapeHtml(u.addedAt || 'Pending backend save')}" readonly /></div>
+        <div class="form-row"><label>Temporary Password</label><input type="password" id="usr_password" minlength="8" placeholder="${passwordPlaceholder}" /></div>
       </div>
       <div class="form-row" id="usr_customer_row" style="margin-top:12px;display:${u.role==='Customer'?'flex':'none'}">
         <label>Linked Customer Account *</label>
@@ -334,10 +336,13 @@ async function saveUser(id, isNew) {
         body: JSON.stringify({ email: data.email, displayName: data.name, password, roles: [role], customerId: data.customerId || undefined })
       });
     } else {
+      if (password && password.length < 8) { toast('Temporary password must be at least 8 characters.'); return; }
+      const patchBody = { email: data.email, displayName: data.name, roles: [role], customerId: data.customerId || undefined, isActive: true };
+      if (password) patchBody.temporaryPassword = password;
       const backendId = existing?._backendUserId || id;
       saved = await apiRequest(`/api/users/${encodeURIComponent(backendId)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ displayName: data.name, roles: [role], customerId: data.customerId || undefined, isActive: true })
+        body: JSON.stringify(patchBody)
       });
     }
     upsertLocalUserFromBackend(saved);

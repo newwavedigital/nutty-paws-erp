@@ -82,4 +82,16 @@ describe("Sprint A9 account menu and auth-on staging markers", () => {
       expect(frontendText).not.toContain("toast('User saved locally.')");
     }
   });
+
+  test("keeps Account Management fields aligned with backend user truth", () => {
+    expect(frontendText).toContain("addedAt: (user.createdAt || '').slice(0, 10)");
+    expect(frontendText).not.toContain("addedAt: new Date().toISOString().slice(0,10)");
+    expect(frontendText).toContain("Added Date");
+    expect(frontendText).toContain("readonly");
+    expect(frontendText).toContain("temporaryPassword");
+    expect(frontendText).toContain("email: data.email");
+    expect(frontendText).toContain("clearProtectedBackendRows('account-management');");
+    expect(frontendText).toContain("Inventory, Shipping, Pick & Pack, Quality, and Production Schedule workflows.");
+    expect(frontendText).not.toContain("Inventory, Shipping. View Production Schedule.");
+  });
 });

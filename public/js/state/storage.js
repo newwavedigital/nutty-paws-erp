@@ -425,6 +425,7 @@ function setBackendAuth(data) {
     customerAccess: data?.customerAccess || data?.user?.customerAccess || []
   };
   resetBackendDataStates();
+  clearProtectedBackendRows('account-management');
   saveAuthState();
   updateTopbarAccount();
   updateSidebarNavigationForRole();
@@ -432,6 +433,7 @@ function setBackendAuth(data) {
 
 function clearBackendAuth() {
   backendAuthState = { token: '', user: null, roles: [], customerAccess: [] };
+  clearProtectedBackendRows('account-management');
   saveAuthState();
   backendUserState.status = 'local';
   resetBackendDataStates();
