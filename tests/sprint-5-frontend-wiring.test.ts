@@ -79,7 +79,8 @@ describe("Sprint 5 frontend inventory wiring", () => {
       "/api/inventory/${encodeURIComponent(backendId)}/adjustments",
       "Backend inventory adjustment response did not include the updated item.",
       "reason: reason || 'Cycle count correction'",
-      "fileId ? `/api/files/${encodeURIComponent(fileId)}/download`",
+      "Backend file unavailable",
+      "/api/files/${encodeURIComponent(fileId)}/download",
     ]) {
       expect(frontendText).toContain(marker);
     }

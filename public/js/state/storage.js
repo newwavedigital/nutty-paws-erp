@@ -293,9 +293,9 @@ function loadState() {
         if (!('onboardingId' in sp)) sp.onboardingId = null;
         if (!('onboardingData' in sp)) sp.onboardingData = null;
       });
-      // migration: Master List (source of truth for inventory item names)
+      // Master List is backend-owned; do not synthesize local Inventory setup rows.
       ensureMasterItems(s);
-      // migration: Shipping Log (auto-built from POs already shipped out)
+      // Shipping Log is backend-owned; do not synthesize local Inventory history.
       ensureShippingLog(s);
       // migration: Production Log (auto-built from POs whose production was finalized)
       ensureProductionLog(s);
@@ -338,58 +338,15 @@ function productionLogRecord(po, logId) {
     materials: (po.materialsUsed || []).map(m => ({ ingredientId: m.ingredientId, category: m.category, theoretical: m.theoretical, actual: m.actual, lot: m.lot, productId: m.productId, lineIndex: m.lineIndex }))
   };
 }
-// Ensure the Shipping Log exists and back-fill an entry for every PO already shipped out.
-// Operates on the passed-in state object only (no global lookups) so it is safe to run
-// during loadState before the global `state` is assigned.
+// Ensure the Shipping Log collection exists without creating local-only history.
+// Backend shipping logs are the authoritative source for the Inventory Shipping Log.
 function ensureShippingLog(s) {
   if (!Array.isArray(s.shippingLog)) s.shippingLog = [];
-  let maxNum = s.shippingLog.reduce((mx,l)=>{ const n=parseInt((String(l.shipId||'').match(/\d+/)||[0])[0],10); return isNaN(n)?mx:Math.max(mx,n); }, 1000);
-  (s.purchaseOrders || []).forEach(po => {
-    if (!po.shippedAt) return; // only POs actually shipped out from the Shipping page
-    if (s.shippingLog.some(l => l.poId === po.id)) return;
-    const sh = po.shipping || {};
-    const palletList = sh.palletList || [];
-    maxNum += 1;
-    s.shippingLog.push({
-      id: uid('shp'),
-      shipId: 'SHP-' + maxNum,
-      poId: po.id,
-      date: (po.shippedAt || '').slice(0,10),
-      customerId: po.customerId || '',
-      brand: po.brand || '',
-      carrier: sh.carrier || '',
-      bol: sh.bol || '',
-      proNumber: sh.proNumber || '',
-      pallets: palletList.length,
-      weight: palletList.reduce((sum,pl)=>sum+(parseFloat(pl.weight)||0),0),
-      items: (po.lines || []).map(l => ({ productId: l.productId, qty: (typeof l.actualQty==='number'?l.actualQty:l.qty), lot: l.lotNumber||'' }))
-    });
-  });
 }
-// Guess allergens from an item name (e.g. "Raw peanuts" -> Peanut). Used when seeding the Master List.
-function guessAllergens(name) {
-  const n = (name || '').toLowerCase();
-  return ALLERGENS.filter(a => n.includes(a.toLowerCase()));
-}
-// Ensure the Master List exists and, if empty, seed it from the current inventory items
-// (de-duplicated by name) so existing data maps cleanly to a Master List entry.
+// Ensure the Master List collection exists without creating local-only setup rows.
+// Backend Master List records are the authoritative source for Inventory item definitions.
 function ensureMasterItems(s) {
   if (!Array.isArray(s.masterItems)) s.masterItems = [];
-  if (s.masterItems.length === 0 && Array.isArray(s.ingredients)) {
-    const seen = {};
-    s.ingredients.forEach(i => {
-      const name = (i.name || '').trim();
-      if (!name || seen[name.toLowerCase()]) return;
-      seen[name.toLowerCase()] = true;
-      s.masterItems.push({
-        id: uid('m'),
-        name,
-        uom: (i.unit || '').toLowerCase().startsWith('lb') ? 'LBS' : 'Each',
-        allergens: guessAllergens(name),
-        customerId: i.customerId || 'general'
-      });
-    });
-  }
 }
 function saveState() {
   localStorage.setItem(LEGACY_LOCAL_STATE_KEY, JSON.stringify(state));

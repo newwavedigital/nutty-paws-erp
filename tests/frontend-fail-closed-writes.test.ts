@@ -61,6 +61,29 @@ describe("frontend fail-closed backend writes", () => {
     expect(deleteMoveBody.indexOf("archiveBackendMoveEntry")).toBeLessThan(deleteMoveBody.indexOf("state.moveLog"));
   });
 
+  test("keeps Inventory views from falling back to local rows for employee sessions", () => {
+    for (const marker of [
+      "function backendRowsReady",
+      "function backendRequiredEmptyRow",
+      "No local or preview rows are shown",
+      "return shippingBackendIsConnected() ? backendShippingState.logs : [];",
+      "Shipping Log archive requires backend support. Nothing was saved locally.",
+      "Inventory records require backend confirmation. Nothing was saved locally.",
+      "Master List requires backend records. Nothing was saved locally.",
+    ]) {
+      expect(publicApp).toContain(marker);
+    }
+
+    const inventoryCoaStart = publicApp.indexOf("function ingredientCoaSelected");
+    const inventoryCoaBody = publicApp.slice(inventoryCoaStart, publicApp.indexOf("function clearIngredientCoa", inventoryCoaStart));
+    expect(inventoryCoaStart).toBeGreaterThan(0);
+    expect(publicApp).not.toContain("const href = fileId ? `/api/files/${encodeURIComponent(fileId)}/download` : (coa.dataUrl || '#')");
+    expect(inventoryCoaBody).not.toContain("readAsDataURL");
+    expect(publicApp).not.toContain("state.shippingLog.push({");
+    expect(publicApp).not.toContain("s.masterItems.push({");
+    expect(publicApp).toContain("Master List is backend-owned; do not synthesize local Inventory setup rows.");
+  });
+
   test("keeps audited action buttons backend-confirmed or fail-closed", () => {
     const requiredMarkers = [
       "Customer delete requires backend confirmation. Nothing was saved locally.",

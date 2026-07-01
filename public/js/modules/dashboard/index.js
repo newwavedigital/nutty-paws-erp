@@ -18,9 +18,11 @@ function renderDashboard(el) {
   const inShipping = pos.filter(p => p.status === 'shipping').length;
   const backendSignals = backendInventoryState.signals || null;
   const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
-  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
   const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
   const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendSignals && backendInventoryState.status !== 'connected';
+  const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';
 
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);
@@ -35,8 +37,8 @@ function renderDashboard(el) {
     })
     .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
 
-  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
-  const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : conflicts.length;
+  const conflicts = inventoryRowsReady ? inventoryConflicts() : [];
+  const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
   const blockerRows = [
     { label: 'Supply Chain blockers', count: inSC, route: 'supply-chain', detail: 'POs awaiting ingredient/deposit readiness review.' },
     { label: 'Inventory conflicts', count: backendOverAllocationCount, route: 'inventory', detail: 'Over-allocation or Net Available issues that can block work.' },
@@ -120,7 +122,9 @@ function renderDashboard(el) {
         <button class="btn btn-secondary btn-sm" onclick="router('inventory')">Manage Inventory</button>
       </div>
       ${lowStock === 0
-        ? `<div class="empty">${protectedInventoryError ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
+        ? `<div class="empty">${protectedInventoryError || protectedInventoryUnavailable ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
+        : !inventoryRowsReady
+          ? `<div class="empty">Backend inventory signals report ${lowStock} low stock item${lowStock===1?'':'s'}. Open Inventory after backend records load to view item details.</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>Ingredient</th><th>On Hand</th><th>Reorder At</th><th>Supplier</th></tr></thead>
             <tbody>

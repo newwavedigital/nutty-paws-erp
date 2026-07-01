@@ -298,9 +298,9 @@ function loadState() {
         if (!('onboardingId' in sp)) sp.onboardingId = null;
         if (!('onboardingData' in sp)) sp.onboardingData = null;
       });
-      // migration: Master List (source of truth for inventory item names)
+      // Master List is backend-owned; do not synthesize local Inventory setup rows.
       ensureMasterItems(s);
-      // migration: Shipping Log (auto-built from POs already shipped out)
+      // Shipping Log is backend-owned; do not synthesize local Inventory history.
       ensureShippingLog(s);
       // migration: Production Log (auto-built from POs whose production was finalized)
       ensureProductionLog(s);
@@ -343,58 +343,15 @@ function productionLogRecord(po, logId) {
     materials: (po.materialsUsed || []).map(m => ({ ingredientId: m.ingredientId, category: m.category, theoretical: m.theoretical, actual: m.actual, lot: m.lot, productId: m.productId, lineIndex: m.lineIndex }))
   };
 }
-// Ensure the Shipping Log exists and back-fill an entry for every PO already shipped out.
-// Operates on the passed-in state object only (no global lookups) so it is safe to run
-// during loadState before the global `state` is assigned.
+// Ensure the Shipping Log collection exists without creating local-only history.
+// Backend shipping logs are the authoritative source for the Inventory Shipping Log.
 function ensureShippingLog(s) {
   if (!Array.isArray(s.shippingLog)) s.shippingLog = [];
-  let maxNum = s.shippingLog.reduce((mx,l)=>{ const n=parseInt((String(l.shipId||'').match(/\d+/)||[0])[0],10); return isNaN(n)?mx:Math.max(mx,n); }, 1000);
-  (s.purchaseOrders || []).forEach(po => {
-    if (!po.shippedAt) return; // only POs actually shipped out from the Shipping page
-    if (s.shippingLog.some(l => l.poId === po.id)) return;
-    const sh = po.shipping || {};
-    const palletList = sh.palletList || [];
-    maxNum += 1;
-    s.shippingLog.push({
-      id: uid('shp'),
-      shipId: 'SHP-' + maxNum,
-      poId: po.id,
-      date: (po.shippedAt || '').slice(0,10),
-      customerId: po.customerId || '',
-      brand: po.brand || '',
-      carrier: sh.carrier || '',
-      bol: sh.bol || '',
-      proNumber: sh.proNumber || '',
-      pallets: palletList.length,
-      weight: palletList.reduce((sum,pl)=>sum+(parseFloat(pl.weight)||0),0),
-      items: (po.lines || []).map(l => ({ productId: l.productId, qty: (typeof l.actualQty==='number'?l.actualQty:l.qty), lot: l.lotNumber||'' }))
-    });
-  });
 }
-// Guess allergens from an item name (e.g. "Raw peanuts" -> Peanut). Used when seeding the Master List.
-function guessAllergens(name) {
-  const n = (name || '').toLowerCase();
-  return ALLERGENS.filter(a => n.includes(a.toLowerCase()));
-}
-// Ensure the Master List exists and, if empty, seed it from the current inventory items
-// (de-duplicated by name) so existing data maps cleanly to a Master List entry.
+// Ensure the Master List collection exists without creating local-only setup rows.
+// Backend Master List records are the authoritative source for Inventory item definitions.
 function ensureMasterItems(s) {
   if (!Array.isArray(s.masterItems)) s.masterItems = [];
-  if (s.masterItems.length === 0 && Array.isArray(s.ingredients)) {
-    const seen = {};
-    s.ingredients.forEach(i => {
-      const name = (i.name || '').trim();
-      if (!name || seen[name.toLowerCase()]) return;
-      seen[name.toLowerCase()] = true;
-      s.masterItems.push({
-        id: uid('m'),
-        name,
-        uom: (i.unit || '').toLowerCase().startsWith('lb') ? 'LBS' : 'Each',
-        allergens: guessAllergens(name),
-        customerId: i.customerId || 'general'
-      });
-    });
-  }
 }
 function saveState() {
   localStorage.setItem(LEGACY_LOCAL_STATE_KEY, JSON.stringify(state));
@@ -968,14 +925,14 @@ function renderInlineFieldError(id, message = '') {
 
 function inventorySummaryHtml() {
   const signals = backendInventoryState.signals;
-  const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
-  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
-  const low = signals ? signals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
-  const over = signals ? signals.overAllocationCount : protectedInventoryError ? 0 : conflicts.length;
-  const netIssues = protectedInventoryError ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected';
+  const conflicts = protectedInventoryUnavailable ? [] : inventoryConflicts();
+  const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
+  const over = signals && !protectedInventoryUnavailable ? signals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
+  const netIssues = protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
   const today = new Date().toISOString().slice(0,10);
-  const receiptsToday = (state.receivingLog || []).filter(r => r.date === today).length;
-  const movesToday = (state.moveLog || []).filter(m => m.date === today).length;
+  const receiptsToday = protectedInventoryUnavailable ? 0 : (state.receivingLog || []).filter(r => r.date === today).length;
+  const movesToday = protectedInventoryUnavailable ? 0 : (state.moveLog || []).filter(m => m.date === today).length;
   return `<div class="ops-summary">
     ${opsMetric('Low Stock', low, low ? 'warn' : 'ok')}
     ${opsMetric('Over-allocated', over, over ? 'danger' : 'ok')}
@@ -3452,7 +3409,6 @@ const PARTIAL_LOCAL_PAGE_LIMITS = {
   slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
   'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
   machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.',
-  inventory: 'Inventory has backend-backed core records. Generated local notes may remain partial local-only.',
   assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'
 };
 let authGateSetupRequestId = 0;
@@ -3934,9 +3890,11 @@ function renderDashboard(el) {
   const inShipping = pos.filter(p => p.status === 'shipping').length;
   const backendSignals = backendInventoryState.signals || null;
   const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
-  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
   const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
   const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendSignals && backendInventoryState.status !== 'connected';
+  const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';
 
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);
@@ -3951,8 +3909,8 @@ function renderDashboard(el) {
     })
     .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
 
-  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
-  const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : conflicts.length;
+  const conflicts = inventoryRowsReady ? inventoryConflicts() : [];
+  const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
   const blockerRows = [
     { label: 'Supply Chain blockers', count: inSC, route: 'supply-chain', detail: 'POs awaiting ingredient/deposit readiness review.' },
     { label: 'Inventory conflicts', count: backendOverAllocationCount, route: 'inventory', detail: 'Over-allocation or Net Available issues that can block work.' },
@@ -4036,7 +3994,9 @@ function renderDashboard(el) {
         <button class="btn btn-secondary btn-sm" onclick="router('inventory')">Manage Inventory</button>
       </div>
       ${lowStock === 0
-        ? `<div class="empty">${protectedInventoryError ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
+        ? `<div class="empty">${protectedInventoryError || protectedInventoryUnavailable ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
+        : !inventoryRowsReady
+          ? `<div class="empty">Backend inventory signals report ${lowStock} low stock item${lowStock===1?'':'s'}. Open Inventory after backend records load to view item details.</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>Ingredient</th><th>On Hand</th><th>Reorder At</th><th>Supplier</th></tr></thead>
             <tbody>
@@ -9974,9 +9934,39 @@ function inventoryCustomer(item) {
 function inventoryCoaLinkHtml(coa) {
   if (!coa) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
   const fileId = coa.fileId || coa._backendFileId || coa.id || '';
-  const href = fileId ? `/api/files/${encodeURIComponent(fileId)}/download` : (coa.dataUrl || '#');
   const label = coa.name || coa.fileName || 'CoA';
-  return `<a href="${href}" download="${escapeHtml(label)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(label)}">&#128196; CoA</a>`;
+  if (!fileId) return '<span style="color:var(--brown-light);font-size:12px">Backend file unavailable</span>';
+  return `<a href="/api/files/${encodeURIComponent(fileId)}/download" download="${escapeHtml(label)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(label)}">&#128196; CoA</a>`;
+}
+
+function inventoryEmployeeBackendSession() {
+  return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer';
+}
+
+function backendRowsReady(dataState) {
+  return !inventoryEmployeeBackendSession() || dataState.status === 'connected';
+}
+
+function backendRequiredEmptyRow(colspan, label, dataState) {
+  const detail = dataState.loading
+    ? `Checking backend ${label}. No local or preview rows are shown while loading.`
+    : dataState.status === 'error'
+      ? `Backend ${label} could not be loaded. No local or preview rows are shown.`
+      : `Backend ${label} are required. No local or preview rows are shown.`;
+  return `<tr><td colspan="${colspan}" class="empty">${escapeHtml(detail)}</td></tr>`;
+}
+
+function backendRequiredActions(label) {
+  return `<button class="btn btn-secondary btn-sm" disabled title="Backend ${escapeHtml(label)} required">Export CSV</button>
+    <button class="btn btn-sm" disabled title="Backend ${escapeHtml(label)} required">Backend required</button>`;
+}
+
+function inventoryTabCount(t) {
+  if (t === 'Master List') return backendRowsReady(backendMasterItemState) ? (state.masterItems || []).length : 0;
+  if (t === 'Receiving Log') return backendRowsReady(backendInventoryState) ? (state.receivingLog || []).length : 0;
+  if (t === 'Move Log') return backendRowsReady(backendInventoryState) ? (state.moveLog || []).length : 0;
+  if (t === 'Shipping Log') return shippingBackendIsConnected() ? (backendShippingState.logs || []).length : 0;
+  return backendRowsReady(backendInventoryState) ? state.ingredients.filter(i => (i.category||'Ingredient') === t).length : 0;
 }
 
 // Shared inner-tab row for the Inventory page (categories + Master List)
@@ -9984,12 +9974,7 @@ function inventoryTabsHtml() {
   const tabs = ['Finished Good', 'Ingredient', 'Packaging', 'Master List', 'Receiving Log', 'Move Log', 'Shipping Log'];
   const tabLabels = { 'Ingredient': 'Ingredients', 'Finished Good': 'Finished Goods', 'Packaging': 'Packaging', 'Master List': 'Master List', 'Receiving Log': 'Receiving Log', 'Move Log': 'Move Log', 'Shipping Log': 'Shipping Log' };
   return `<div class="tabs">${tabs.map(t => {
-    let cnt;
-    if (t === 'Master List') cnt = (state.masterItems || []).length;
-    else if (t === 'Receiving Log') cnt = (state.receivingLog || []).length;
-    else if (t === 'Move Log') cnt = (state.moveLog || []).length;
-    else if (t === 'Shipping Log') cnt = (state.shippingLog || []).length;
-    else cnt = state.ingredients.filter(i => (i.category||'Ingredient') === t).length;
+    const cnt = inventoryTabCount(t);
     return `<button class="tab ${invTab===t?'active':''}" onclick="setInvTab('${t}')">${escapeHtml(tabLabels[t])} <span class="tab-count">${cnt}</span></button>`;
   }).join('')}</div>`;
 }
@@ -10003,7 +9988,8 @@ function renderInventory(el) {
   if (invTab === 'Shipping Log') { renderShippingLog(el); return; }
   // Order: Finished Good first, then Ingredients, then Packaging
   const tabLabels = { 'Ingredient': 'Ingredients', 'Finished Good': 'Finished Goods', 'Packaging': 'Packaging' };
-  const items = state.ingredients.filter(i => (i.category || 'Ingredient') === invTab);
+  const inventoryReady = backendRowsReady(backendInventoryState);
+  const items = inventoryReady ? state.ingredients.filter(i => (i.category || 'Ingredient') === invTab) : [];
   const showCustomer = true; // Customer applies to all categories now (General by default)
   const showLeadTime = (invTab === 'Ingredient' || invTab === 'Packaging');
   const showCoa = (invTab === 'Ingredient'); // CoA upload only for ingredients
@@ -10032,10 +10018,10 @@ function renderInventory(el) {
     Packaging: 'Jars, lids, labels, pouches, cases, and other production or fulfillment materials.'
   };
   const filters = `${opsSelect('Status filter', ['All statuses','OK','Reorder','Over-allocated'])}${opsSelect('Scope filter', ['All scopes','General','Customer-specific'])}`;
-  const actions = `
+  const actions = inventoryReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('inventory_${invTab.toLowerCase().replace(/\\s+/g,'_')}.csv', state.ingredients.filter(i=>(i.category||'Ingredient')==='${invTab}').map(i=>({...i,supplier:getSupplier(i.supplierId)?.name||'',customer:i.customerId?(getCustomer(i.customerId)?.name||''):''})))">Export CSV</button>
     <a class="btn btn-dark btn-sm" href="${SHAREPOINT_INVENTORY_URL}" target="_blank" rel="noopener" style="text-decoration:none">View Sheet</a>
-    <button class="btn btn-sm" onclick="editIngredient()">+ Add Item</button>`;
+    <button class="btn btn-sm" onclick="editIngredient()">+ Add Item</button>` : backendRequiredActions('inventory records');
   el.innerHTML = `
     <div class="ops-page">
       ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
@@ -10055,7 +10041,7 @@ function renderInventory(el) {
           ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
         </tr></thead>
         <tbody>
-          ${items.length === 0 ? `<tr><td colspan="${colCount}" class="empty">No ${escapeHtml(tabLabels[invTab].toLowerCase())} items yet.</td></tr>` :
+          ${!inventoryReady ? backendRequiredEmptyRow(colCount, 'inventory records', backendInventoryState) : items.length === 0 ? `<tr><td colspan="${colCount}" class="empty">No ${escapeHtml(tabLabels[invTab].toLowerCase())} items yet.</td></tr>` :
             items.map(i => {
               const allocated = allocMap[i.id] || 0;
               const net = (i.stock || 0) - allocated;
@@ -10139,11 +10125,12 @@ function renderMasterList(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendMasterItemState.loaded && !backendMasterItemState.loading) {
     loadBackendMasterItems().then(() => { if (currentPage === 'inventory' && invTab === 'Master List') router('inventory'); });
   }
-  const items = (state.masterItems || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  const masterReady = backendRowsReady(backendMasterItemState);
+  const items = masterReady ? (state.masterItems || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||'')) : [];
   const filters = `${opsSelect('Item type filter', ['All types','Ingredient','Packaging','Finished Good','Other'])}${opsSelect('Customer scope filter', ['All scopes','General','Customer-specific'])}${opsSelect('Allergen filter', ['All allergens','None','Peanut','Tree Nut','Milk','Soy','Wheat'])}`;
-  const actions = `
+  const actions = masterReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('master_list.csv', (state.masterItems||[]).map(m=>({name:m.name,type:masterTypeLabel(m),uom:m.uom,allergens:(m.allergens||[]).join('; '),customer:(!m.customerId||m.customerId==='general')?'General':(getCustomer(m.customerId)?.name||'')})))">Export CSV</button>
-    <button class="btn btn-sm" onclick="editMasterItem()">+ Add Master Item</button>`;
+    <button class="btn btn-sm" onclick="editMasterItem()">+ Add Master Item</button>` : backendRequiredActions('Master List records');
   el.innerHTML = `
     <div class="ops-page">
       ${renderBackendDataStatusBanner('master-items', backendMasterItemState)}
@@ -10162,7 +10149,7 @@ function renderMasterList(el) {
         <div class="table-wrap"><table>
           <thead><tr><th>Item Name</th><th>Type</th><th>Unit of Measure</th><th>Allergens</th><th>Customer Scope</th><th>Used In</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            ${items.length === 0 ? `<tr><td colspan="8" class="empty">No master items yet. Add item definitions before creating inventory records or product formulas.</td></tr>` :
+            ${!masterReady ? backendRequiredEmptyRow(8, 'Master List records', backendMasterItemState) : items.length === 0 ? `<tr><td colspan="8" class="empty">No master items yet. Add item definitions before creating inventory records or product formulas.</td></tr>` :
               items.map(m => `<tr>
                 <td><strong>${escapeHtml(m.name)}</strong></td>
                 <td>${escapeHtml(masterTypeLabel(m))}</td>
@@ -10183,6 +10170,10 @@ function renderMasterList(el) {
     </div>
   `;
 }function editMasterItem(id) {
+  if (!backendRowsReady(backendMasterItemState)) {
+    failBackendRequiredWrite(null, backendMasterItemState, 'Master List requires backend records. Nothing was saved locally.');
+    return;
+  }
   const m = (state.masterItems || []).find(x => x.id === id) || { id: uid('m'), name:'', uom:'LBS', allergens:[], customerId:'general' };
   const isNew = !id;
   const allergens = Array.isArray(m.allergens) ? m.allergens : [];
@@ -10299,15 +10290,16 @@ function nextReceivingId() {
   return 'RCV-' + next;
 }
 function renderReceivingLog(el) {
-  const rows = (state.receivingLog || []).slice().sort((a,b) => {
+  const inventoryReady = backendRowsReady(backendInventoryState);
+  const rows = inventoryReady ? (state.receivingLog || []).slice().sort((a,b) => {
     const ka = (a.date||'') + 'T' + (a.time||''), kb = (b.date||'') + 'T' + (b.time||'');
     return kb.localeCompare(ka); // newest first
-  });
+  }) : [];
   const headers = ['Receiving ID','Date','Time','Item Name','# Packages','Qty / Package','Total Qty','UOM','Lot #','Allergen','Received By','Carrier','Vendor',''];
   const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Item filter', ['All items', ...rows.map(r=>r.itemName).filter(Boolean).slice(0,6)])}${opsSelect('Vendor filter', ['All vendors', ...state.suppliers.map(s=>s.name).slice(0,6)])}`;
-  const actions = `
+  const actions = inventoryReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('receiving_log.csv', (state.receivingLog||[]).map(r=>({receiving_id:r.receivingId,date:r.date,time:r.time,item:r.itemName,packages:r.packages,qty_per_package:r.qtyPerPackage,total_qty:r.totalQty,uom:r.uom,lot:r.lot,allergens:(r.allergens||[]).join('; '),received_by:r.receivedBy,carrier:r.carrier,vendor:getSupplier(r.supplierId)?.name||''})))">Export CSV</button>
-    <button class="btn btn-sm" onclick="editReceiving()">+ Log Receipt</button>`;
+    <button class="btn btn-sm" onclick="editReceiving()">+ Log Receipt</button>` : backendRequiredActions('receiving records');
   el.innerHTML = `
     <div class="ops-page">
     ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
@@ -10326,7 +10318,7 @@ function renderReceivingLog(el) {
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
-          ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No receipts logged yet. Click "+ Log Receipt".</td></tr>` :
+          ${!inventoryReady ? backendRequiredEmptyRow(headers.length, 'receiving records', backendInventoryState) : rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No receipts logged yet. Click "+ Log Receipt".</td></tr>` :
             rows.map(r => `<tr>
               <td><strong>${escapeHtml(r.receivingId||'')}</strong></td>
               <td>${fmtDate(r.date)}</td>
@@ -10354,6 +10346,10 @@ function renderReceivingLog(el) {
   `;
 }
 function editReceiving(id) {
+  if (!backendRowsReady(backendInventoryState)) {
+    failBackendRequiredWrite(null, backendInventoryState, 'Receiving Log requires backend records. Nothing was saved locally.');
+    return;
+  }
   const now = new Date();
   const today = now.toISOString().slice(0,10);
   const nowTime = now.toTimeString().slice(0,5);
@@ -10536,16 +10532,17 @@ function nextMoveId() {
   return 'MV-' + next;
 }
 function renderMoveLog(el) {
-  const rows = (state.moveLog || []).slice().sort((a,b) => {
+  const inventoryReady = backendRowsReady(backendInventoryState);
+  const rows = inventoryReady ? (state.moveLog || []).slice().sort((a,b) => {
     const ka = (a.date||'') + 'T' + (a.time||''), kb = (b.date||'') + 'T' + (b.time||'');
     return kb.localeCompare(ka);
-  });
+  }) : [];
   const headers = ['Move ID','Date','Receiving ID','Item','Lot #','Case Count','Qty / Case','Qty Moved','UOM','Moved By','From Location','To Location',''];
-  const hasReceipts = (state.receivingLog || []).length > 0;
+  const hasReceipts = inventoryReady && (state.receivingLog || []).length > 0;
   const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Item filter', ['All items', ...rows.map(r=>r.itemName).filter(Boolean).slice(0,6)])}${opsSelect('Location filter', ['All locations', ...allLocations().slice(0,8)])}`;
-  const actions = `
+  const actions = inventoryReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('move_log.csv', (state.moveLog||[]).map(r=>({move_id:r.moveId,date:r.date,time:r.time,receiving_id:r.receivingId,item:r.itemName,lot:r.lot,case_count:r.caseCount,qty_per_case:r.qtyPerCase,qty_moved:r.qtyMoved,uom:r.uom,moved_by:r.movedBy,from_location:r.fromLocation,to_location:r.toLocation})))">Export CSV</button>
-    <button class="btn btn-sm" onclick="editMove()" ${hasReceipts?'':'disabled title="Log a receipt first" style="opacity:.55"'}>+ Log Move</button>`;
+    <button class="btn btn-sm" onclick="editMove()" ${hasReceipts?'':'disabled title="Log a receipt first" style="opacity:.55"'}>+ Log Move</button>` : backendRequiredActions('move records');
   el.innerHTML = `
     <div class="ops-page">
     ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
@@ -10564,7 +10561,7 @@ function renderMoveLog(el) {
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
-          ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No moves logged yet.</td></tr>` :
+          ${!inventoryReady ? backendRequiredEmptyRow(headers.length, 'move records', backendInventoryState) : rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No moves logged yet.</td></tr>` :
             rows.map(r => {
               const rec = (state.receivingLog || []).find(x => x.receivingId === r.receivingId);
               const itemName = r.itemName || rec?.itemName || '-';
@@ -10617,6 +10614,10 @@ function moveLocChanged(which) {
   else { inp.style.display = 'none'; }
 }
 function editMove(id) {
+  if (!backendRowsReady(backendInventoryState)) {
+    failBackendRequiredWrite(null, backendInventoryState, 'Move Log requires backend records. Nothing was saved locally.');
+    return;
+  }
   if ((state.receivingLog || []).length === 0) { toast('Log a receipt on the Receiving Log tab first.'); return; }
   const now = new Date();
   const today = now.toISOString().slice(0,10);
@@ -10821,12 +10822,11 @@ function buildShippingLogEntry(po) {
 }
 // Record a shipment in the Shipping Log (idempotent per PO). Called from completeShipment.
 function logShipment(po) {
-  state.shippingLog = state.shippingLog || [];
-  if (state.shippingLog.some(l => l.poId === po.id)) return;
-  state.shippingLog.push(buildShippingLogEntry(po));
+  if (shippingBackendIsConnected()) return;
+  failBackendRequiredWrite(null, backendShippingState, 'Shipping Log requires backend records. Nothing was saved locally.');
 }
 function shippingLogRowsForDisplay() {
-  return shippingBackendIsConnected() ? backendShippingState.logs : (state.shippingLog || []);
+  return shippingBackendIsConnected() ? backendShippingState.logs : [];
 }
 function shippingLogExportRows() {
   return shippingLogRowsForDisplay().map(r=>({
@@ -10847,10 +10847,13 @@ function renderShippingLog(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendShippingState.loaded && !backendShippingState.loading) {
     loadBackendShipping().then(() => { if (currentPage === 'inventory' && invTab === 'Shipping Log') router('inventory'); });
   }
+  const shippingReady = shippingBackendIsConnected();
   const rows = shippingLogRowsForDisplay().slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
   const headers = ['Shipping ID','Date','Order (PO)','Customer','Brand','Carrier','BOL #','PRO #','Pallets','Weight','Items',''];
   const filters = `${opsSelect('Date range filter', ['All dates','Today','This week','This month'])}${opsSelect('Customer filter', ['All customers', ...state.customers.map(c=>c.name).slice(0,6)])}${opsSelect('Carrier filter', ['All carriers','UPS','FedEx','USPS','LTL'])}`;
-  const actions = `<button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', shippingLogExportRows())">Export CSV</button>`;
+  const actions = shippingReady
+    ? `<button class="btn btn-secondary btn-sm" onclick="exportCsv('shipping_log.csv', shippingLogExportRows())">Export CSV</button>`
+    : `<button class="btn btn-secondary btn-sm" disabled title="Backend shipping records required">Export CSV</button>`;
   el.innerHTML = `
     <div class="ops-page">
     ${renderBackendDataStatusBanner('inventory', backendInventoryState)}
@@ -10870,7 +10873,7 @@ function renderShippingLog(el) {
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
-          ${rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No shipments logged yet. Mark a PO shipped on the Shipping page to create one.</td></tr>` :
+          ${!shippingReady ? backendRequiredEmptyRow(headers.length, 'shipping records', backendShippingState) : rows.length === 0 ? `<tr><td colspan="${headers.length}" class="empty">No shipments logged yet. Mark a PO shipped on the Shipping page to create one.</td></tr>` :
             rows.map(r => {
               const items = (r.items || []).filter(it => it.qty);
               const itemsHtml = items.length ? items.map(it => {
@@ -10890,7 +10893,7 @@ function renderShippingLog(el) {
                 <td>${r.weight?escapeHtml(String(r.weight))+' lb':'-'}</td>
                 <td>${itemsHtml}</td>
                 <td class="row-actions">
-                  ${r._backendId ? '<span style="font-size:12px;color:var(--brown-light)">Backend</span>' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteShippingLog('${r.id}')">Delete</button>`}
+                  <span style="font-size:12px;color:var(--brown-light)">Backend</span>
                 </td>
               </tr>`;
             }).join('')
@@ -10902,24 +10905,16 @@ function renderShippingLog(el) {
   `;
 }
 async function deleteShippingLog(id) {
-  const ok = await openConfirmModal({
-    title: 'Delete shipping log',
-    record: id,
-    message: 'Delete this shipping log record?',
-    risk: 'This does not affect the related PO, but removes the log row from Inventory.',
-    confirmLabel: 'Delete Shipping Log',
-    tone: 'danger'
-  });
-  if (!ok) return;
-  state.shippingLog = (state.shippingLog || []).filter(x => x.id !== id);
-  saveState();
-  router('inventory');
-  toast('Shipping record deleted.');
+  failBackendRequiredWrite(null, backendShippingState, 'Shipping Log archive requires backend support. Nothing was saved locally.');
 }
 
 let ingEditingLots = [];
 let pendingInventoryCoaFile = null;
 function editIngredient(id) {
+  if (!backendRowsReady(backendInventoryState)) {
+    failBackendRequiredWrite(null, backendInventoryState, 'Inventory records require backend confirmation. Nothing was saved locally.');
+    return;
+  }
   const defaultCat = (invTab && invTab !== 'Master List') ? invTab : 'Ingredient';
   const i = state.ingredients.find(x=>x.id===id) || { id: uid('i'), name:'', supplierId:'', stock:0, reorderLevel:0, unit:'lb', cost:0, category: defaultCat, customerId: 'general', leadTimeDays: 0, building: '', location: '', lotNumber: '', coa: null, lots: [] };
   const isNew = !id;
@@ -11046,15 +11041,11 @@ function ingredientCoaSelected(e) {
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
   pendingInventoryCoaFile = f;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
-    document.getElementById('ing_coa_data').value = JSON.stringify(data);
-    const info = document.getElementById('ing_coa_info');
-    info.innerHTML = `&#128206; ${escapeHtml(f.name)} (${Math.round(f.size/1024)} KB)`;
-    info.classList.add('has');
-  };
-  reader.readAsDataURL(f);
+  const data = { name: f.name, type: f.type, size: f.size };
+  document.getElementById('ing_coa_data').value = JSON.stringify(data);
+  const info = document.getElementById('ing_coa_info');
+  info.innerHTML = `&#128206; ${escapeHtml(f.name)} (${Math.round(f.size/1024)} KB)`;
+  info.classList.add('has');
 }
 function clearIngredientCoa() {
   pendingInventoryCoaFile = null;
@@ -11146,6 +11137,10 @@ async function saveIngredient(id, isNew) {
   toast('Inventory item saved.');
 }
 async function deleteIngredient(id) {
+  if (!backendRowsReady(backendInventoryState)) {
+    failBackendRequiredWrite(null, backendInventoryState, 'Inventory item archive requires backend confirmation. Nothing was saved locally.');
+    return;
+  }
   const item = getIngredient(id);
   const currentRoles = Array.isArray(backendAuthState.roles) && backendAuthState.roles.length
     ? backendAuthState.roles
@@ -11211,6 +11206,10 @@ async function deleteIngredient(id) {
   toast('Inventory item archived.');
 }
 function adjustStock(id) {
+  if (!backendRowsReady(backendInventoryState)) {
+    failBackendRequiredWrite(null, backendInventoryState, 'Inventory adjustment requires backend confirmation. Nothing was saved locally.');
+    return;
+  }
   const i = state.ingredients.find(x=>x.id===id);
   if (!i) return;
   const lots = Array.isArray(i.lots) && i.lots.length ? i.lots : [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }];

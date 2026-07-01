@@ -422,14 +422,14 @@ function renderInlineFieldError(id, message = '') {
 
 function inventorySummaryHtml() {
   const signals = backendInventoryState.signals;
-  const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
-  const conflicts = protectedInventoryError ? [] : inventoryConflicts();
-  const low = signals ? signals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
-  const over = signals ? signals.overAllocationCount : protectedInventoryError ? 0 : conflicts.length;
-  const netIssues = protectedInventoryError ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected';
+  const conflicts = protectedInventoryUnavailable ? [] : inventoryConflicts();
+  const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
+  const over = signals && !protectedInventoryUnavailable ? signals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
+  const netIssues = protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
   const today = new Date().toISOString().slice(0,10);
-  const receiptsToday = (state.receivingLog || []).filter(r => r.date === today).length;
-  const movesToday = (state.moveLog || []).filter(m => m.date === today).length;
+  const receiptsToday = protectedInventoryUnavailable ? 0 : (state.receivingLog || []).filter(r => r.date === today).length;
+  const movesToday = protectedInventoryUnavailable ? 0 : (state.moveLog || []).filter(m => m.date === today).length;
   return `<div class="ops-summary">
     ${opsMetric('Low Stock', low, low ? 'warn' : 'ok')}
     ${opsMetric('Over-allocated', over, over ? 'danger' : 'ok')}

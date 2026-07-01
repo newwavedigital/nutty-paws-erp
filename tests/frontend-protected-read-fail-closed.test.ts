@@ -82,9 +82,11 @@ describe("protected frontend reads fail closed", () => {
   });
 
   test("blocks inventory low-stock fallback from browser-local ingredients after backend error", () => {
-    expect(publicApp).toContain("const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';");
-    expect(publicApp).toContain("const low = signals ? signals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter");
-    expect(publicApp).toContain("const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryError ? 0 : state.ingredients.filter");
+    expect(publicApp).toContain("const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected';");
+    expect(publicApp).toContain("const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter");
+    expect(publicApp).toContain("const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';");
+    expect(publicApp).toContain("const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter");
+    expect(publicApp).toContain("Open Inventory after backend records load to view item details.");
     expect(publicApp).toContain("clearProtectedBackendRows('inventory');");
     expect(publicApp).toContain("setBackendReadFailed(backendInventoryState);");
   });
