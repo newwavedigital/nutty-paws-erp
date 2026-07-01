@@ -41,6 +41,20 @@ export class D1CustomerStore implements CustomerStore {
     return row ? mapCustomer(row) : null;
   }
 
+  async createCustomer(input: CustomerRecord): Promise<CustomerRecord> {
+    await this.db
+      .prepare(
+        `
+          INSERT INTO customers (id, name, contact_name, contact_email, phone, status)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .bind(input.id, input.name, input.contactName, input.contactEmail, input.phone, input.status)
+      .run();
+
+    return input;
+  }
+
   async updateCustomer(id: string, input: CustomerUpdateInput): Promise<CustomerRecord | null> {
     const existing = await this.getCustomer(id);
     if (!existing) return null;

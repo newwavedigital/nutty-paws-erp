@@ -7,7 +7,7 @@ import { D1AuthStore } from "../auth/d1-store";
 import { requireAuth, requireAuthWhenEnabled, requireEmployee } from "../auth/guards";
 import type { AuthStore, AuthContext } from "../auth/service";
 import { D1CustomerStore } from "./d1-store";
-import type { CustomerStatus, CustomerStore, CustomerUpdateInput } from "./service";
+import type { CustomerRecord, CustomerStatus, CustomerStore, CustomerUpdateInput } from "./service";
 
 type CustomerStoreFactory = (db: D1Database) => CustomerStore;
 type AuthStoreFactory = (db: D1Database) => AuthStore;
@@ -44,6 +44,15 @@ export function registerCustomerRoutes(
     return ok(c, customer);
   });
 
+  app.post("/api/customers", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const body = await parseJsonObject(c);
+    const customer = await createCustomerStore(db).createCustomer(asCustomerCreate(body, `customer_${crypto.randomUUID()}`));
+    return ok(c, customer, 201);
+  });
+
   app.patch("/api/customers/:customerId", async (c) => {
     const db = c.env?.DB;
     const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
@@ -71,8 +80,26 @@ function asCustomerUpdate(body: Record<string, unknown>): CustomerUpdateInput {
   };
 }
 
+function asCustomerCreate(body: Record<string, unknown>, id: string): CustomerRecord {
+  return {
+    id,
+    name: requiredString(body.name, "name"),
+    contactName: optionalNullableString(body.contactName ?? body.contact, "contactName") ?? null,
+    contactEmail: optionalNullableString(body.contactEmail ?? body.email, "contactEmail") ?? null,
+    phone: optionalNullableString(body.phone, "phone") ?? null,
+    status: optionalStatus(body.status) ?? "active",
+  };
+}
+
 function optionalString(value: unknown, field: string) {
   if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new ValidationError(`${field} must be a non-empty string`, { fields: [field] });
+  }
+  return value.trim();
+}
+
+function requiredString(value: unknown, field: string) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new ValidationError(`${field} must be a non-empty string`, { fields: [field] });
   }

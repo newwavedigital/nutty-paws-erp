@@ -44,6 +44,10 @@ function createCustomerStore() {
   const store: CustomerStore = {
     async listCustomers() { return [...customers.values()].sort((a, b) => a.name.localeCompare(b.name)); },
     async getCustomer(id) { return customers.get(id) ?? null; },
+    async createCustomer(input) {
+      customers.set(input.id, input);
+      return input;
+    },
     async updateCustomer(id, input) {
       const existing = customers.get(id);
       if (!existing) return null;
@@ -117,6 +121,37 @@ describe("customer data routes", () => {
     await expect(patch.json()).resolves.toMatchObject({
       data: { id: "customer-1", name: "Bnutty Foods", contactEmail: "new@bnutty.example", phone: "555-9999" },
     });
+  });
+
+  it("allows employee users to create customers", async () => {
+    const auth = createAuthStore();
+    const customerData = createCustomerStore();
+    await seedUser(auth, { id: "admin-user", email: "admin@example.com", role: "Admin" });
+    const app = createRouteApp(auth.store, customerData.store);
+    const token = await login(app, "admin@example.com");
+
+    const create = await app.request("/api/customers", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: "New Co-Pack Customer",
+        contactName: "Nina",
+        contactEmail: "nina@example.com",
+        phone: "555-3000",
+      }),
+    });
+
+    expect(create.status).toBe(201);
+    const body = await create.json() as { data: CustomerRecord };
+    expect(body.data).toMatchObject({
+      name: "New Co-Pack Customer",
+      contactName: "Nina",
+      contactEmail: "nina@example.com",
+      phone: "555-3000",
+      status: "active",
+    });
+    expect(body.data.id).toMatch(/^customer_/);
+    expect(customerData.customers.get(body.data.id)).toMatchObject({ name: "New Co-Pack Customer" });
   });
 
   it("lets linked customer users read only their own profile", async () => {

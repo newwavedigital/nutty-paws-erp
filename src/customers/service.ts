@@ -20,5 +20,6 @@ export type CustomerUpdateInput = Partial<{
 export type CustomerStore = {
   listCustomers(): Promise<CustomerRecord[]>;
   getCustomer(id: string): Promise<CustomerRecord | null>;
+  createCustomer(input: CustomerRecord): Promise<CustomerRecord>;
   updateCustomer(id: string, input: CustomerUpdateInput): Promise<CustomerRecord | null>;
 };

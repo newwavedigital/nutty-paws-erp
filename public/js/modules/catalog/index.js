@@ -193,23 +193,23 @@ async function saveCustomer(id, isNew) {
   });
   const existing = state.customers.find(c=>c.id===id);
   if (!requireEmployeeBackendWrite(backendCustomerState)) return;
-  if (!existing?._backendId) return failBackendRequiredWrite(null, backendCustomerState, 'This customer is not backend-backed. Nothing was saved locally.');
+  if (!isNew && !existing?._backendId) return failBackendRequiredWrite(null, backendCustomerState, 'This customer is not backend-backed. Nothing was saved locally.');
+  const payload = {
+    name: data.name,
+    contactName: data.contact || data.salesContact?.name || null,
+    contactEmail: data.email || data.salesContact?.email || null,
+    phone: data.phone || null
+  };
   try {
-    const saved = await apiRequest(`/api/customers/${encodeURIComponent(existing._backendId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        name: data.name,
-        contactName: data.contact || data.salesContact?.name || null,
-        contactEmail: data.email || data.salesContact?.email || null,
-        phone: data.phone || null
-      })
-    });
+    const saved = isNew
+      ? await apiRequest('/api/customers', { method: 'POST', body: JSON.stringify(payload) })
+      : await apiRequest(`/api/customers/${encodeURIComponent(existing?._backendId || '')}`, { method: 'PATCH', body: JSON.stringify(payload) });
     mergeBackendCustomers([saved]);
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     closeModal();
     router('customers');
-    toast('Customer saved to backend.');
+    toast(isNew ? 'Customer added to backend.' : 'Customer saved to backend.');
     return;
   } catch (error) {
     failBackendRequiredWrite(error, backendCustomerState);
