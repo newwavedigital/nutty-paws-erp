@@ -5,7 +5,51 @@ function formatSupplierPricePerLb(value) {
   return '$' + Number(value || 0).toFixed(4);
 }
 
+function ensureSupplierInventoryLoaded() {
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.loaded && !backendInventoryState.loading) {
+    loadBackendInventory()
+      .then(() => {
+        if (currentPage === 'suppliers') {
+          renderSupplierProductsList();
+        }
+      })
+      .catch(() => {});
+  }
+}
+
+function supplierEligibleInventoryItems() {
+  return (state.ingredients || [])
+    .filter(item => item.category !== 'Finished Good')
+    .filter(item => (item.category || 'Ingredient') === 'Ingredient' || item.category === 'Packaging')
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+function supplierInventoryItemLabel(item) {
+  const category = item.category || 'Ingredient';
+  const unit = item.unit ? `, ${item.unit}` : '';
+  return `${item.name || 'Unnamed item'} (${category}${unit})`;
+}
+
+function supplierLineWithInventorySnapshot(line = {}) {
+  const items = supplierEligibleInventoryItems();
+  const selected = items.find(item =>
+    item.id === line.inventoryItemId ||
+    item._backendId === line.inventoryItemId ||
+    item.name === line.product ||
+    item.name === line.itemName
+  );
+  return {
+    ...line,
+    inventoryItemId: selected ? (selected._backendId || selected.id) : (line.inventoryItemId || ''),
+    product: selected ? selected.name : (line.product || line.itemName || ''),
+    itemName: selected ? selected.name : (line.itemName || line.product || ''),
+    type: selected ? (selected.category || 'Ingredient') : (line.type || 'Ingredient')
+  };
+}
+
 function renderSuppliers(el) {
+  ensureSupplierInventoryLoaded();
   if (!a10DataRecordState.suppliers.loaded && !a10DataRecordState.suppliers.loading) {
     refreshA10DataRecordModule('suppliers').then(() => { if (currentPage === 'suppliers') router('suppliers'); }).catch(() => {});
   }
@@ -21,7 +65,7 @@ function renderSuppliers(el) {
       </div>
       <div class="table-wrap"><table>
         <thead><tr>
-          <th>Name</th><th>Products / Pricing</th><th>Contact</th><th>Email</th><th>Phone</th>
+          <th>Name</th><th>Raw Materials / Pricing</th><th>Contact</th><th>Email</th><th>Phone</th>
           <th>Website</th><th>MOQ</th><th>Documents</th><th></th>
         </tr></thead>
         <tbody>
@@ -36,7 +80,7 @@ function renderSuppliers(el) {
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
             const productsCell = lines.length
-              ? lines.map(pl => `<div style="font-size:12px"><strong>${escapeHtml(pl.product||'')}</strong> <span class="pill">${escapeHtml(pl.type||'')}</span> ${pl.pricePerLb!==''&&pl.pricePerLb!=null ? '<span style="color:var(--brown-light)">'+formatSupplierPricePerLb(pl.pricePerLb)+'/lb</span>' : ''}</div>`).join('')
+              ? lines.map(pl => `<div style="font-size:12px"><strong>${escapeHtml(pl.product||pl.itemName||'')}</strong> <span class="pill">${escapeHtml(pl.type||'')}</span> ${pl.pricePerLb!==''&&pl.pricePerLb!=null ? '<span style="color:var(--brown-light)">'+formatSupplierPricePerLb(pl.pricePerLb)+'/lb</span>' : ''}</div>`).join('')
               : (s.products ? `<div style="font-size:12px;color:var(--brown-light)">${escapeHtml(s.products)}</div>` : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>');
             return `
             <tr>
@@ -64,8 +108,9 @@ function renderSuppliers(el) {
   `;
 }
 let supplierEditingDocs = {}; // { docKey: {name,type,size,dataUrl} | null }
-let supplierEditingProducts = []; // [{ product, type, pricePerLb }]
+let supplierEditingProducts = []; // [{ inventoryItemId, product, itemName, type, pricePerLb }]
 function editSupplier(id) {
+  ensureSupplierInventoryLoaded();
   const s = state.suppliers.find(x=>x.id===id) || { id: uid('s'), name:'', contact:'', email:'', phone:'', website:'', moq:'', products:'', productLines:[], notes:'', files: [], docs: {} };
   s.docs = s.docs || {};
   s.files = s.files || [];
@@ -75,7 +120,7 @@ function editSupplier(id) {
   VENDOR_DOC_TYPES.forEach(d => {
     supplierEditingDocs[d.key] = s.docs[d.key] ? { ...s.docs[d.key] } : null;
   });
-  supplierEditingProducts = Array.isArray(s.productLines) ? s.productLines.map(p => ({ ...p })) : [];
+  supplierEditingProducts = Array.isArray(s.productLines) ? s.productLines.map(p => supplierLineWithInventorySnapshot(p)) : [];
   openModal((isNew?'Add':'Edit')+' Supplier', `
     <form onsubmit="event.preventDefault();saveSupplier('${s.id}', ${isNew})">
       <div class="form-grid">
@@ -88,8 +133,8 @@ function editSupplier(id) {
       </div>
       <div style="margin-top:18px;padding:12px;background:var(--beige-light);border-radius:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <strong style="color:var(--brown);font-size:13px">Products / Pricing</strong>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addSupplierProduct()">+ Add Product</button>
+          <strong style="color:var(--brown);font-size:13px">Raw Materials / Pricing</strong>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSupplierProduct()">+ Add Raw Material</button>
         </div>
         <div id="sup_products_list" style="margin-top:6px"></div>
       </div>
@@ -115,22 +160,30 @@ function editSupplier(id) {
 function renderSupplierProductsList() {
   const cont = document.getElementById('sup_products_list');
   if (!cont) return;
+  const inventoryItems = supplierEligibleInventoryItems();
+  if (!inventoryItems.length) {
+    cont.innerHTML = '<div style="font-size:12px;color:var(--brown-light);padding:4px 0">No raw material or packaging inventory items are available. Add them in Inventory first, then assign supplier pricing here.</div>';
+    return;
+  }
   if (!supplierEditingProducts.length) {
-    cont.innerHTML = '<div style="font-size:12px;color:var(--brown-light);padding:4px 0">No products yet. Click "+ Add Product".</div>';
+    cont.innerHTML = '<div style="font-size:12px;color:var(--brown-light);padding:4px 0">No raw materials yet. Click "+ Add Raw Material".</div>';
     return;
   }
   const grid = 'grid-template-columns:2fr 1.2fr 1fr 40px';
   cont.innerHTML = `
     <div class="po-line" style="${grid};font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">
-      <div>Product</div><div>Type</div><div>Price / lb</div><div></div>
+      <div>Raw Material</div><div>Type</div><div>Price / lb</div><div></div>
     </div>
     ${supplierEditingProducts.map((p, i) => `
       <div class="po-line" style="${grid}">
-        <input type="text" value="${escapeHtml(p.product||'')}" placeholder="Product name" onchange="supplierProductChange(${i},'product',this.value)" />
-        <select onchange="supplierProductChange(${i},'type',this.value)">
-          <option ${p.type==='Ingredient'?'selected':''}>Ingredient</option>
-          <option ${p.type==='Packaging'?'selected':''}>Packaging</option>
+        <select required onchange="supplierInventoryItemSelected(${i},this.value)">
+          <option value="">- Select raw material -</option>
+          ${inventoryItems.map(item => {
+            const value = item._backendId || item.id;
+            return `<option value="${escapeHtml(value)}" ${p.inventoryItemId===value?'selected':''}>${escapeHtml(supplierInventoryItemLabel(item))}</option>`;
+          }).join('')}
         </select>
+        <div style="font-size:13px;color:var(--brown);font-weight:600">${escapeHtml(p.type || '-')}</div>
         <input type="number" step="0.0001" min="0" value="${p.pricePerLb!=null?p.pricePerLb:''}" placeholder="0.0000" onchange="supplierProductChange(${i},'pricePerLb',this.value)" />
         <button type="button" onclick="removeSupplierProduct(${i})">&times;</button>
       </div>
@@ -138,7 +191,7 @@ function renderSupplierProductsList() {
   `;
 }
 function addSupplierProduct() {
-  supplierEditingProducts.push({ product:'', type:'Ingredient', pricePerLb:'' });
+  supplierEditingProducts.push({ inventoryItemId:'', product:'', itemName:'', type:'Ingredient', pricePerLb:'' });
   renderSupplierProductsList();
 }
 function removeSupplierProduct(i) {
@@ -148,6 +201,17 @@ function removeSupplierProduct(i) {
 function supplierProductChange(i, field, value) {
   if (field === 'pricePerLb') value = (value === '' ? '' : (parseFloat(value) || 0));
   supplierEditingProducts[i][field] = value;
+}
+function supplierInventoryItemSelected(i, inventoryItemId) {
+  const item = supplierEligibleInventoryItems().find(row => row.id === inventoryItemId || row._backendId === inventoryItemId);
+  supplierEditingProducts[i] = {
+    ...supplierEditingProducts[i],
+    inventoryItemId,
+    product: item?.name || '',
+    itemName: item?.name || '',
+    type: item?.category || 'Ingredient'
+  };
+  renderSupplierProductsList();
 }
 
 function renderSupplierDocsList() {
@@ -196,7 +260,11 @@ async function saveSupplier(id, isNew) {
     }
   });
   const existing = state.suppliers.find(s=>s.id===id);
-  const productLines = supplierEditingProducts.filter(p => (p.product||'').trim());
+  const productLines = supplierEditingProducts.map(p => supplierLineWithInventorySnapshot(p)).filter(p => p.inventoryItemId);
+  if (supplierEditingProducts.length && productLines.length !== supplierEditingProducts.length) {
+    toast('Choose an existing raw material or packaging inventory item for each supplier line.');
+    return;
+  }
   const data = {
     id,
     name: document.getElementById('sup_name').value,

@@ -5,6 +5,7 @@ import { publicApp } from "./frontend-assets";
 
 const rootHtml = readFileSync(resolve(__dirname, "..", "index.html"), "utf8");
 const publicHtml = readFileSync(resolve(__dirname, "..", "public", "index.html"), "utf8");
+const supplierModule = readFileSync(resolve(__dirname, "..", "public", "js", "modules", "suppliers", "index.js"), "utf8");
 
 describe("Sprint A10 frontend authority cleanup", () => {
   test("keeps source and deployed frontend shells aligned to the split assets", () => {
@@ -78,5 +79,20 @@ describe("Sprint A10 frontend authority cleanup", () => {
     expect(publicApp).toContain('step="0.0001"');
     expect(publicApp).toContain('placeholder="0.0000"');
     expect(publicApp).toContain("supplierProductChange(${i},'pricePerLb',this.value)");
+  });
+
+  test("supplier pricing assigns raw materials from existing inventory instead of free-text products", () => {
+    expect(publicApp).toContain("Raw Materials / Pricing");
+    expect(publicApp).toContain("+ Add Raw Material");
+    expect(publicApp).toContain("<div>Raw Material</div><div>Type</div><div>Price / lb</div><div></div>");
+    expect(publicApp).toContain("supplierEligibleInventoryItems()");
+    expect(publicApp).toContain("state.ingredients.filter");
+    expect(publicApp).toContain("item.category !== 'Finished Good'");
+    expect(publicApp).toContain("item.category === 'Packaging'");
+    expect(publicApp).toContain("inventoryItemId");
+    expect(publicApp).toContain("supplierInventoryItemSelected(${i},this.value)");
+    expect(supplierModule).not.toContain("Product name");
+    expect(supplierModule).not.toContain("+ Add Product");
+    expect(supplierModule).not.toContain("Products / Pricing");
   });
 });
