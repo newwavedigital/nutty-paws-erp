@@ -150,6 +150,11 @@ function createStore(overrides: Partial<PickPackStore> = {}) {
       order = { ...order, status: "shipped", shippedAt: input.shippedAt };
       return order;
     },
+    async cancelOrder(input) {
+      calls.push(`cancelOrder:${input.orderId}`);
+      order = { ...order, status: "cancelled" };
+      return order;
+    },
     async upsertShippingDetails(input) {
       calls.push(`upsertShippingDetails:${input.orderId}`);
       order = {

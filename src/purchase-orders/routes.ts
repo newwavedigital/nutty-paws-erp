@@ -19,6 +19,7 @@ import {
 import { D1PurchaseOrderStore } from "./d1-store";
 import {
   approvePurchaseOrderForProduction,
+  cancelPurchaseOrder,
   createPurchaseOrder,
   listPurchaseOrders,
   readPurchaseOrder,
@@ -158,6 +159,18 @@ export function registerPurchaseOrderRoutes(
       actorUserId: actorUserId(auth, body),
     });
 
+    return ok(c, po);
+  });
+
+  app.post("/api/purchase-orders/:purchaseOrderId/cancel", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireAnyRole(auth, ["Admin", "Sales", "Supply Chain & Procurement"]);
+    const body = await optionalJsonObject(c);
+    const po = await cancelPurchaseOrder(createPOStore(db), {
+      purchaseOrderId: c.req.param("purchaseOrderId"),
+      actorUserId: actorUserId(auth, body),
+    });
     return ok(c, po);
   });
 

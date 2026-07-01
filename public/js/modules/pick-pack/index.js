@@ -147,6 +147,10 @@ function prFgOptions(selectedFgId) {
   sel.onchange();
 }
 function saveProductionRequest(id, isNew) {
+  if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendPickPackState, 'Requested production requests are not backend-supported yet. Nothing was saved locally.');
+    return;
+  }
   const customerId = document.getElementById('pr_customer').value;
   const ingredientId = document.getElementById('pr_fg').value;
   const qty = parseInt(document.getElementById('pr_qty').value, 10) || 0;
@@ -171,6 +175,10 @@ function saveProductionRequest(id, isNew) {
   toast(isNew ? 'Production request submitted.' : 'Request updated.');
 }
 function updateProductionRequestStatus(id, status) {
+  if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendPickPackState, 'Production request status changes are not backend-supported yet. Nothing was saved locally.');
+    return;
+  }
   const r = (state.productionRequests||[]).find(x=>x.id===id);
   if (!r) return;
   r.status = status;
@@ -178,6 +186,9 @@ function updateProductionRequestStatus(id, status) {
   toast('Status updated.');
 }
 async function deleteProductionRequest(id) {
+  if (employeeBackendSessionActive()) {
+    return failBackendRequiredWrite(null, backendPickPackState, 'Production request delete is not backend-supported yet. Nothing was saved locally.');
+  }
   const ok = await openConfirmModal({
     title: 'Delete production request',
     record: id,
@@ -713,18 +724,29 @@ async function markPickPackShipped(id) {
 }
 
 async function deletePickPackPO(id) {
+  const p = state.pickPackOrders.find(x => x.id === id);
+  if (!p) return;
   const ok = await openConfirmModal({
-    title: 'Delete Pick & Pack PO',
+    title: 'Cancel Pick & Pack PO',
     record: id,
-    message: 'Delete this Pick & Pack PO?',
-    risk: 'This removes the order from the Pick & Pack workflow.',
-    confirmLabel: 'Delete PO',
+    message: 'Cancel this Pick & Pack PO in the backend?',
+    risk: 'Shipped Pick & Pack POs cannot be cancelled here.',
+    confirmLabel: 'Cancel PO',
     tone: 'danger'
   });
   if (!ok) return;
-  state.pickPackOrders = state.pickPackOrders.filter(p => p.id !== id);
-  saveState();
-  router('pick-pack');
+  if (!requireEmployeeBackendWrite(backendPickPackState)) return;
+  if (!p._backendId) return failBackendRequiredWrite(null, backendPickPackState, 'Pick & Pack PO cancellation requires backend confirmation. Nothing was saved locally.');
+  try {
+    await cancelBackendPickPackOrder(p);
+    backendPickPackState.status = 'connected';
+    backendPickPackState.lastError = '';
+    saveState();
+    router('pick-pack');
+    toast(`${id} cancelled in backend.`);
+  } catch (error) {
+    failBackendRequiredWrite(error, backendPickPackState);
+  }
 }
 
 function viewPickPackPoFile(id) {

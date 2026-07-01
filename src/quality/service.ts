@@ -63,6 +63,10 @@ export type QualityStore = {
     purchaseOrderId: string;
     fileId: string;
   }): Promise<QualityPurchaseOrderRecord | null>;
+  updatePurchaseOrderQualityNotes(input: {
+    purchaseOrderId: string;
+    notes: string | null;
+  }): Promise<QualityPurchaseOrderRecord | null>;
   createStatusEvent(input: {
     purchaseOrderId: string;
     fromStatus: string | null;
@@ -239,6 +243,33 @@ export async function attachPostShipmentCoa(
     },
   });
 
+  return updated;
+}
+
+export async function updateQualityNotes(
+  store: QualityStore,
+  input: {
+    purchaseOrderId: string;
+    notes?: string | null;
+    actorUserId?: string;
+  },
+) {
+  const po = await requireQualityPurchaseOrder(store, input.purchaseOrderId);
+  ensureQualityReviewStatus(po);
+  const updated = await store.updatePurchaseOrderQualityNotes({
+    purchaseOrderId: po.id,
+    notes: input.notes ?? null,
+  });
+  if (!updated) {
+    throw new QualityError("QUALITY_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+  }
+  await store.createAuditEvent({
+    actorUserId: input.actorUserId,
+    entityType: "purchase_order",
+    entityId: po.id,
+    action: "purchase_order.qa_notes_updated",
+    metadata: { notes: input.notes ?? null },
+  });
   return updated;
 }
 

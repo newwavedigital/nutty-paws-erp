@@ -324,19 +324,29 @@ async function savePO(isNew, oldId) {
 }
 
 async function deletePO(id) {
+  const po = state.purchaseOrders.find(p => p.id === id);
+  if (!po) return;
   const ok = await openConfirmModal({
-    title: 'Delete purchase order',
+    title: 'Cancel purchase order',
     record: id,
-    message: 'Delete this purchase order from the current workspace?',
-    risk: 'This removes the PO from the visible workflow. Approved, production, shipping, and completed POs should not be removed through ordinary entry.',
-    confirmLabel: 'Delete PO',
+    message: 'Cancel this purchase order in the backend?',
+    risk: 'Production, QA, shipping, and completed POs cannot be cancelled here.',
+    confirmLabel: 'Cancel PO',
     tone: 'danger'
   });
   if (!ok) return;
-  state.purchaseOrders = state.purchaseOrders.filter(p => p.id !== id);
-  saveState();
-  router(currentPage);
-  toast(`${id} deleted.`);
+  if (!requireBackendWriteSession(backendApiState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendApiState, 'Purchase order cancellation requires backend confirmation. Nothing was saved locally.');
+  try {
+    await cancelBackendPurchaseOrder(po);
+    backendApiState.status = 'connected';
+    backendApiState.lastError = '';
+    router(currentPage);
+    toast(`${id} cancelled in backend.`);
+  } catch (error) {
+    markBackendUnavailable(error);
+    failBackendRequiredWrite(error, backendApiState);
+  }
 }
 async function viewPO(id) {
   let po = state.purchaseOrders.find(p => p.id === id);

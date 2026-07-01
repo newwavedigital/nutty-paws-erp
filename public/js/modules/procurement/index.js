@@ -490,19 +490,28 @@ async function saveProc(id, isNew) {
   toast('Procurement PO saved to backend.');
 }
 async function deleteProc(id) {
+  const p = state.procurementOrders.find(x => x.id === id);
+  if (!p) return;
   const ok = await openConfirmModal({
-    title: 'Delete procurement PO',
+    title: 'Cancel procurement PO',
     record: id,
-    message: 'Delete this procurement PO?',
-    risk: 'This removes the supplier PO from the current procurement view.',
-    confirmLabel: 'Delete PO',
+    message: 'Cancel this procurement PO in the backend?',
+    risk: 'Received procurement POs cannot be cancelled here.',
+    confirmLabel: 'Cancel PO',
     tone: 'danger'
   });
   if (!ok) return;
-  state.procurementOrders = state.procurementOrders.filter(p=>p.id!==id);
-  saveState();
-  router('procurement');
-  toast('Procurement PO deleted.');
+  if (!requireEmployeeBackendWrite(backendProcurementState)) return;
+  if (!p._backendId) return failBackendRequiredWrite(null, backendProcurementState, 'Procurement PO cancellation requires backend confirmation. Nothing was saved locally.');
+  try {
+    await cancelBackendProcurementOrder(p._backendId);
+    backendProcurementState.status = 'connected';
+    backendProcurementState.lastError = '';
+    router('procurement');
+    toast('Procurement PO cancelled in backend.');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProcurementState);
+  }
 }
 async function receiveProc(id) {
   const p = state.procurementOrders.find(x=>x.id===id);

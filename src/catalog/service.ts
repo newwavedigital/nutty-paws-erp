@@ -82,6 +82,7 @@ export type CatalogStore = {
   getProduct(id: string): Promise<ProductRecord | null>;
   createProduct?(input: ProductInput): Promise<ProductRecord>;
   updateProduct?(id: string, input: ProductInput): Promise<ProductRecord | null>;
+  archiveProduct?(id: string): Promise<ProductRecord | null>;
   replaceProductBomItems?(productId: string, bomItems: ProductBomInput[]): Promise<ProductRecord | null>;
   listMasterItems(): Promise<MasterItemRecord[]>;
   getMasterItem(id: string): Promise<MasterItemRecord | null>;

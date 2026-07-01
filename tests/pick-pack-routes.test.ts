@@ -100,6 +100,10 @@ function createStore(): PickPackStore {
       order = { ...order, status: "shipped", shippedAt: input.shippedAt };
       return order;
     },
+    async cancelOrder() {
+      order = { ...order, status: "cancelled" };
+      return order;
+    },
     async upsertShippingDetails(input) {
       order = {
         ...order,
@@ -187,5 +191,14 @@ describe("pick pack routes", () => {
     expect(shipping.status).toBe(200);
     expect(shipped.status).toBe(200);
     await expect(shipped.json()).resolves.toMatchObject({ ok: true, data: { status: "shipped" } });
+  });
+
+  it("cancels open Pick & Pack orders through backend status", async () => {
+    const app = createRouteApp();
+
+    const cancelled = await app.request("/api/pick-pack/orders/pp-1/cancel", { method: "POST" });
+
+    expect(cancelled.status).toBe(200);
+    await expect(cancelled.json()).resolves.toMatchObject({ ok: true, data: { status: "cancelled" } });
   });
 });

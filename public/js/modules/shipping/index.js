@@ -277,13 +277,22 @@ function warehouseStockCardHtml(p) {
     </div>
   `;
 }
-function saveWarehouseNotes(id) {
+async function saveWarehouseNotes(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
   po.shipping = po.shipping || {};
   po.shipping.notes = document.getElementById('sh_notes_'+id).value;
-  saveState();
-  toast('Notes saved.');
+  if (!requireEmployeeBackendWrite(backendShippingState)) return;
+  if (!po._backendId) return failBackendRequiredWrite(null, backendShippingState, 'Warehouse notes require backend confirmation. Nothing was saved locally.');
+  try {
+    await saveBackendShippingDetails(po);
+    backendShippingState.status = 'connected';
+    backendShippingState.lastError = '';
+    saveState();
+    toast('Warehouse notes saved to backend.');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendShippingState);
+  }
 }
 async function confirmStocked(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);

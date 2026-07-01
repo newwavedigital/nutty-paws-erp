@@ -44,6 +44,7 @@ function createPickPackStore(): PickPackStore {
     async updateOrder() { throw new Error("not used"); },
     async completePickPackPick() { throw new Error("not used"); },
     async markOrderShipped() { throw new Error("not used"); },
+    async cancelOrder() { throw new Error("not used"); },
     async upsertShippingDetails() { throw new Error("not used"); },
     async createStatusEvent() {},
     async createAuditEvent() {},

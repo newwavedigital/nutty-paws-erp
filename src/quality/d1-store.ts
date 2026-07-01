@@ -198,6 +198,24 @@ export class D1QualityStore implements QualityStore {
     return this.getPurchaseOrder(input.purchaseOrderId);
   }
 
+  async updatePurchaseOrderQualityNotes(input: {
+    purchaseOrderId: string;
+    notes: string | null;
+  }): Promise<QualityPurchaseOrderRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE purchase_orders
+          SET qa_notes = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+      )
+      .bind(input.notes, input.purchaseOrderId)
+      .run();
+    return this.getPurchaseOrder(input.purchaseOrderId);
+  }
+
   async createStatusEvent(input: {
     purchaseOrderId: string;
     fromStatus: string | null;

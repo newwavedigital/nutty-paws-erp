@@ -60,6 +60,7 @@ export class D1CatalogStore implements CatalogStore {
                  unit_price_cents, kosher, allergen, allergen_details,
                  daily_production_rate, notes
           FROM products
+          WHERE status = 'active'
           ORDER BY name
         `,
       )
@@ -170,6 +171,21 @@ export class D1CatalogStore implements CatalogStore {
       )
       .run();
     await this.replaceProductBomItems(id, input.bomItems);
+    return this.getProduct(id);
+  }
+
+  async archiveProduct(id: string): Promise<ProductRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE products
+          SET status = 'inactive',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+      )
+      .bind(id)
+      .run();
     return this.getProduct(id);
   }
 

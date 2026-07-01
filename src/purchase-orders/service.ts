@@ -324,6 +324,19 @@ export async function updatePurchaseOrderDepositStatus(
   return requirePO(store, input.purchaseOrderId);
 }
 
+export async function cancelPurchaseOrder(store: PurchaseOrderStore, input: {
+  purchaseOrderId: string;
+  actorUserId?: string;
+}) {
+  const po = await requirePO(store, input.purchaseOrderId);
+  if (po.status === "cancelled") return po;
+  if (["in_production", "qa_review", "completed"].includes(po.status)) {
+    throw new POError("PURCHASE_ORDER_CANCEL_LOCKED", "Purchase orders already in production, QA, or completed cannot be cancelled here");
+  }
+  await transitionPO(store, po, "cancelled", "purchase_order.cancelled", input.actorUserId);
+  return requirePO(store, input.purchaseOrderId);
+}
+
 export async function approvePurchaseOrderForProduction(
   store: PurchaseOrderStore,
   inventoryStore: InventoryStore,

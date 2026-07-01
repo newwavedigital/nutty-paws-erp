@@ -158,12 +158,22 @@ async function qualityPostShipmentCoaSelected(e, poId) {
   }
 }
 
-function qualitySaveNotes(poId) {
+async function qualitySaveNotes(poId) {
   const po = state.purchaseOrders.find(x => x.id === poId);
   if (!po) return;
-  po.qaNotes = getQualityNotesValue(poId);
-  saveState();
-  toast('QA notes saved.');
+  if (!qualityBackendIsConnected() || !qualityPurchaseOrderBackendId(po)) {
+    failBackendRequiredWrite(null, backendQualityState, 'QA notes require backend confirmation. Nothing was saved locally.');
+    return;
+  }
+  try {
+    await saveBackendQualityNotes(po, getQualityNotesValue(poId));
+    backendQualityState.status = 'connected';
+    backendQualityState.lastError = '';
+    toast('QA notes saved to backend.');
+    router('quality-assurance');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendQualityState);
+  }
 }
 
 async function qualityReleasePo(poId) {

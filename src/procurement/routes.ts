@@ -8,6 +8,7 @@ import { requireAuthWhenEnabled, requireEmployee } from "../auth/guards";
 import type { AuthContext, AuthStore } from "../auth/service";
 import { D1ProcurementStore } from "./d1-store";
 import {
+  cancelProcurementOrder,
   createDraftProcurementOrder,
   listNeedToOrderRows,
   listProcurementOrders,
@@ -83,6 +84,18 @@ export function registerProcurementRoutes(
     if (auth) requireEmployee(auth);
     const body = await optionalJsonObject(c);
     const order = await submitProcurementOrder(createStore(db), {
+      procurementOrderId: c.req.param("procurementOrderId"),
+      actorUserId: actorUserId(auth, body),
+    });
+    return ok(c, order);
+  });
+
+  app.post("/api/procurement/orders/:procurementOrderId/cancel", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const body = await optionalJsonObject(c);
+    const order = await cancelProcurementOrder(createStore(db), {
       procurementOrderId: c.req.param("procurementOrderId"),
       actorUserId: actorUserId(auth, body),
     });

@@ -78,6 +78,10 @@ function createQualityStore(): QualityStore {
       po = { ...po, postShipmentCoaFileId: input.fileId };
       return po;
     },
+    async updatePurchaseOrderQualityNotes(input) {
+      po = { ...po, qaNotes: input.notes };
+      return po;
+    },
     async createStatusEvent() {},
     async createAuditEvent() {},
   };
@@ -130,6 +134,22 @@ describe("quality routes", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
       error: { code: "VALIDATION_ERROR" },
+    });
+  });
+
+  it("saves standalone QA notes through a backend note endpoint", async () => {
+    const app = createRouteApp("Production");
+
+    const response = await app.request("/api/quality/purchase-orders/po-1/notes", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: "Bearer production-token" },
+      body: JSON.stringify({ notes: "hold for lab review" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: { qaNotes: "hold for lab review" },
     });
   });
 });

@@ -179,15 +179,15 @@ describe("purchase order routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ depositStatus: "received" }),
     });
-    const approve = await app.request("/api/purchase-orders/po-1/approve-for-production", { method: "POST" });
+    const cancel = await app.request("/api/purchase-orders/po-1/cancel", { method: "POST" });
 
     expect(submit.status).toBe(200);
     expect(review.status).toBe(200);
     expect(deposit.status).toBe(200);
-    expect(approve.status).toBe(200);
-    await expect(approve.json()).resolves.toMatchObject({
+    expect(cancel.status).toBe(200);
+    await expect(cancel.json()).resolves.toMatchObject({
       ok: true,
-      data: { status: "approved_for_production" },
+      data: { status: "cancelled" },
     });
   });
 

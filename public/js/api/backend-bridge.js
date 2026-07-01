@@ -642,6 +642,25 @@ async function skipBackendQualityPo(po, reason, notes) {
   return updated;
 }
 
+async function saveBackendQualityNotes(po, notes) {
+  const purchaseOrderId = qualityPurchaseOrderBackendId(po);
+  if (!purchaseOrderId) throw new Error('Backend QA notes are unavailable for this PO.');
+  const updated = await apiRequest(`/api/quality/purchase-orders/${encodeURIComponent(purchaseOrderId)}/notes`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      notes: notes || null,
+      actorUserId: BACKEND_ACTOR_USER_ID
+    })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  backendQualityState.loaded = false;
+  return updated;
+}
+
+function employeeBackendSessionActive() {
+  return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer';
+}
+
 async function attachBackendPostShipmentCoa(purchaseOrderId, file) {
   if (!file) return null;
   const uploaded = await uploadBackendQualityCoa(purchaseOrderId, file, 'coa');
@@ -1091,6 +1110,18 @@ async function markBackendPickPackShipped(order) {
   return updated;
 }
 
+async function cancelBackendPickPackOrder(order) {
+  const orderId = pickPackOrderBackendId(order);
+  if (!orderId) throw new Error('Backend Pick & Pack cancellation is unavailable for this PO.');
+  const updated = await apiRequest(`/api/pick-pack/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  state.pickPackOrders = (state.pickPackOrders || []).filter(p => p._backendId !== orderId && p.id !== orderId);
+  backendPickPackState.loaded = false;
+  return updated;
+}
+
 function isBackendShortStockWarning(error) {
   const code = String(error?.envelope?.error?.code || error?.code || '').toLowerCase();
   const message = String(error?.message || error?.envelope?.error?.message || '').toLowerCase();
@@ -1380,6 +1411,7 @@ function backendProcurementStatusToLocal(status) {
   if (status === 'completed') return 'Received';
   if (status === 'partially_received') return 'Partial Receipt';
   if (status === 'draft') return 'Draft';
+  if (status === 'cancelled') return 'Cancelled';
   return 'In Order';
 }
 
@@ -1387,6 +1419,7 @@ function localProcurementStatusToBackend(status) {
   if (status === 'Received') return 'completed';
   if (status === 'Partial Receipt') return 'partially_received';
   if (status === 'Draft') return 'draft';
+  if (status === 'Cancelled') return 'cancelled';
   return 'ordered';
 }
 
@@ -1749,6 +1782,16 @@ async function receiveBackendProcurementOrder(id, lines) {
   return order;
 }
 
+async function cancelBackendProcurementOrder(id) {
+  const order = await apiRequest(`/api/procurement/orders/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendProcurementOrders([order]);
+  backendProcurementState.loaded = false;
+  return order;
+}
+
 async function loadBackendCustomers() {
   if (!backendAuthState.token || backendCustomerState.loading || backendCustomerState.loaded) return;
   backendCustomerState.loading = true;
@@ -1764,6 +1807,13 @@ async function loadBackendCustomers() {
   } finally {
     backendCustomerState.loading = false;
   }
+}
+
+async function archiveBackendCustomer(id) {
+  const customer = await apiRequest(`/api/customers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  state.customers = (state.customers || []).filter(c => c._backendId !== id && c.id !== id);
+  backendCustomerState.loaded = false;
+  return customer;
 }
 
 async function loadBackendCustomerProfile() {
@@ -1800,6 +1850,13 @@ async function loadBackendProducts() {
   } finally {
     backendProductState.loading = false;
   }
+}
+
+async function archiveBackendProduct(id) {
+  const product = await apiRequest(`/api/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  state.products = (state.products || []).filter(p => p._backendId !== id && p.id !== id);
+  backendProductState.loaded = false;
+  return product;
 }
 
 async function loadBackendMasterItems() {
@@ -2064,6 +2121,8 @@ function mapBackendPurchaseOrderToPrototype(po) {
       ? 'in_production'
       : backendStatus === 'qa_review'
         ? 'qa_review'
+    : backendStatus === 'cancelled'
+      ? 'cancelled'
     : backendStatus === 'shipping'
       ? 'shipping'
     : backendStatus === 'completed'
@@ -2293,6 +2352,18 @@ async function updateBackendDepositStatus(po, status) {
     body: JSON.stringify({ depositStatus: mapPrototypeDepositToBackend(status), actorUserId: BACKEND_ACTOR_USER_ID })
   });
   mergeBackendPurchaseOrders([updated]);
+  return updated;
+}
+
+async function cancelBackendPurchaseOrder(po) {
+  const purchaseOrderId = backendPurchaseOrderId(po);
+  if (!purchaseOrderId) throw new Error('Backend purchase order cancellation is unavailable for this PO.');
+  const updated = await apiRequest(`/api/purchase-orders/${encodeURIComponent(purchaseOrderId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ actorUserId: BACKEND_ACTOR_USER_ID })
+  });
+  mergeBackendPurchaseOrders([updated]);
+  backendApiState.loadedPurchaseOrders = false;
   return updated;
 }
 

@@ -154,6 +154,23 @@ describe("customer data routes", () => {
     expect(customerData.customers.get(body.data.id)).toMatchObject({ name: "New Co-Pack Customer" });
   });
 
+  it("archives customers through DELETE instead of hard-deleting", async () => {
+    const auth = createAuthStore();
+    const customerData = createCustomerStore();
+    await seedUser(auth, { id: "sales-user", email: "sales@example.com", role: "Sales" });
+    const app = createRouteApp(auth.store, customerData.store);
+    const token = await login(app, "sales@example.com");
+
+    const response = await app.request("/api/customers/customer-1", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: { id: "customer-1", status: "inactive" } });
+    expect(customerData.customers.get("customer-1")).toMatchObject({ status: "inactive" });
+  });
+
   it("lets linked customer users read only their own profile", async () => {
     const auth = createAuthStore();
     const customerData = createCustomerStore();

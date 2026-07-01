@@ -68,6 +68,19 @@ export function registerCatalogRoutes(
     return ok(c, product);
   });
 
+  app.delete("/api/products/:productId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const store = createCatalogStore(db);
+    if (!store.archiveProduct) throw new ApiError("CATALOG_WRITE_UNAVAILABLE", "Catalog writes are unavailable", 501);
+    const existing = await store.getProduct(c.req.param("productId"));
+    if (!existing) throw new ApiError("PRODUCT_NOT_FOUND", "Product not found", 404);
+    const product = await store.archiveProduct(existing.id);
+    if (!product) throw new ApiError("PRODUCT_NOT_FOUND", "Product not found", 404);
+    return ok(c, product);
+  });
+
   app.get("/api/master-items", async (c) => {
     const db = c.env?.DB;
     const auth = await requireAuthWhenEnabled(c, createAuthStore(db));

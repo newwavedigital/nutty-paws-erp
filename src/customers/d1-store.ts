@@ -18,6 +18,7 @@ export class D1CustomerStore implements CustomerStore {
         `
           SELECT id, name, contact_name, contact_email, phone, status
           FROM customers
+          WHERE status = 'active'
           ORDER BY name
         `,
       )

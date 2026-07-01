@@ -99,6 +99,11 @@ function createStore(overrides: Partial<QualityStore> = {}) {
       po = { ...po, postShipmentCoaFileId: input.fileId };
       return po;
     },
+    async updatePurchaseOrderQualityNotes(input) {
+      calls.push(`updatePurchaseOrderQualityNotes:${input.notes ?? ""}`);
+      po = { ...po, qaNotes: input.notes };
+      return po;
+    },
     async createStatusEvent(input) {
       calls.push(`createStatusEvent:${input.fromStatus}->${input.toStatus}:${input.eventType}`);
     },

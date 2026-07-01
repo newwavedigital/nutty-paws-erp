@@ -140,6 +140,10 @@ export type PickPackStore = {
     shippedByUserId?: string;
     actorUserId?: string;
   }): Promise<PickPackOrderRecord | null>;
+  cancelOrder(input: {
+    orderId: string;
+    actorUserId?: string;
+  }): Promise<PickPackOrderRecord | null>;
   upsertShippingDetails(input: {
     orderId: string;
     shippingMode: PickPackShippingMode;
@@ -369,6 +373,42 @@ export async function updatePickPackShippingDetails(
     notes: cleanOptional(input.notes),
     actorUserId: input.actorUserId,
   });
+}
+
+export async function cancelPickPackOrder(
+  store: PickPackStore,
+  input: {
+    orderId: string;
+    actorUserId?: string;
+  },
+) {
+  const order = await requireOrder(store, input.orderId);
+  if (order.status === "cancelled") return order;
+  if (order.status === "shipped") {
+    throw new PickPackError("PICK_PACK_ORDER_LOCKED", "Shipped Pick & Pack orders cannot be cancelled here");
+  }
+  const updated = await store.cancelOrder({
+    orderId: order.id,
+    actorUserId: input.actorUserId,
+  });
+  if (!updated) {
+    throw new PickPackError("PICK_PACK_ORDER_NOT_FOUND", "Pick & Pack order not found");
+  }
+  await store.createStatusEvent({
+    orderId: order.id,
+    fromStatus: order.status,
+    toStatus: "cancelled",
+    eventType: "pick_pack_order.cancelled",
+    actorUserId: input.actorUserId,
+  });
+  await store.createAuditEvent({
+    actorUserId: input.actorUserId,
+    entityType: "pick_pack_order",
+    entityId: order.id,
+    action: "pick_pack_order.cancelled",
+    metadata: { fromStatus: order.status, toStatus: "cancelled" },
+  });
+  return updated;
 }
 
 export async function markPickPackShipped(

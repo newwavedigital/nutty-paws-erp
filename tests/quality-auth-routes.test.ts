@@ -41,6 +41,7 @@ function createQualityStore(): QualityStore {
     async updatePurchaseOrderQualityRelease() { return null; },
     async updatePurchaseOrderQualitySkip() { return null; },
     async attachPostShipmentCoaFile() { return null; },
+    async updatePurchaseOrderQualityNotes() { return null; },
     async createStatusEvent() {},
     async createAuditEvent() {},
   };

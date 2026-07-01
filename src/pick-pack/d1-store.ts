@@ -387,6 +387,25 @@ export class D1PickPackStore implements PickPackStore {
     return this.getOrder(input.orderId);
   }
 
+  async cancelOrder(input: {
+    orderId: string;
+    actorUserId?: string;
+  }): Promise<PickPackOrderRecord | null> {
+    await this.db
+      .prepare(
+        `
+          UPDATE pick_pack_orders
+          SET status = 'cancelled',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status <> 'shipped'
+        `,
+      )
+      .bind(input.orderId)
+      .run();
+    return this.getOrder(input.orderId);
+  }
+
   async upsertShippingDetails(input: {
     orderId: string;
     shippingMode: PickPackShippingMode;

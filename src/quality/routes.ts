@@ -12,6 +12,7 @@ import {
   listQualityQueue,
   releaseQualityPurchaseOrder,
   skipQualityPurchaseOrder,
+  updateQualityNotes,
   type QualityStore,
 } from "./service";
 
@@ -58,6 +59,17 @@ export function registerQualityRoutes(
     const po = await attachPostShipmentCoa(createStore(c.env?.DB), {
       purchaseOrderId: c.req.param("purchaseOrderId"),
       coaFileId: asString(body.coaFileId, "coaFileId"),
+      actorUserId: actorUserId(auth, body),
+    });
+    return ok(c, po);
+  });
+
+  app.patch("/api/quality/purchase-orders/:purchaseOrderId/notes", async (c) => {
+    const auth = await requireQualityAccess(c, createAuthStore);
+    const body = await parseJsonObject(c);
+    const po = await updateQualityNotes(createStore(c.env?.DB), {
+      purchaseOrderId: c.req.param("purchaseOrderId"),
+      notes: optionalString(body.notes, "notes") ?? null,
       actorUserId: actorUserId(auth, body),
     });
     return ok(c, po);

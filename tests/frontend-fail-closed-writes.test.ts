@@ -60,4 +60,31 @@ describe("frontend fail-closed backend writes", () => {
     expect(deleteMoveBody).toContain("archiveBackendMoveEntry");
     expect(deleteMoveBody.indexOf("archiveBackendMoveEntry")).toBeLessThan(deleteMoveBody.indexOf("state.moveLog"));
   });
+
+  test("keeps audited action buttons backend-confirmed or fail-closed", () => {
+    const requiredMarkers = [
+      "Customer delete requires backend confirmation. Nothing was saved locally.",
+      "Product delete requires backend confirmation. Nothing was saved locally.",
+      "Inventory adjustment requires backend confirmation. Nothing was saved locally.",
+      "Purchase order cancellation requires backend confirmation. Nothing was saved locally.",
+      "Procurement PO cancellation requires backend confirmation. Nothing was saved locally.",
+      "Production value edits require backend correction support. Nothing was saved locally.",
+      "Requested production requests are not backend-supported yet. Nothing was saved locally.",
+      "QA notes require backend confirmation. Nothing was saved locally.",
+      "Warehouse notes require backend confirmation. Nothing was saved locally.",
+      "Pick & Pack PO cancellation requires backend confirmation. Nothing was saved locally.",
+    ];
+
+    for (const marker of requiredMarkers) {
+      expect(publicApp).toContain(marker);
+    }
+
+    expect(publicApp).toContain("archiveBackendCustomer");
+    expect(publicApp).toContain("archiveBackendProduct");
+    expect(publicApp).toContain("cancelBackendPurchaseOrder");
+    expect(publicApp).toContain("cancelBackendProcurementOrder");
+    expect(publicApp).toContain("saveBackendQualityNotes");
+    expect(publicApp).toContain("saveBackendShippingDetails(po)");
+    expect(publicApp).toContain("cancelBackendPickPackOrder");
+  });
 });

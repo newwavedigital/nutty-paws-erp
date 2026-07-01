@@ -8,6 +8,7 @@ import { requireAnyRole, requireAuthWhenEnabled } from "../auth/guards";
 import type { AuthContext, AuthStore } from "../auth/service";
 import { D1PickPackStore } from "./d1-store";
 import {
+  cancelPickPackOrder,
   createPickPackOrder,
   listPickPackOrders,
   markPickPackPicked,
@@ -63,6 +64,18 @@ export function registerPickPackRoutes(
         poFileId: optionalString(body.poFileId, "poFileId"),
         notes: optionalString(body.notes, "notes"),
         lines: parseLines(body.lines),
+        actorUserId: actorUserId(auth, body),
+      }),
+    );
+  });
+
+  app.post("/api/pick-pack/orders/:orderId/cancel", async (c) => {
+    const auth = await requirePickPackAccess(c, createAuthStore);
+    const body = await optionalJsonObject(c);
+    return ok(
+      c,
+      await cancelPickPackOrder(createStore(c.env?.DB), {
+        orderId: c.req.param("orderId"),
         actorUserId: actorUserId(auth, body),
       }),
     );
@@ -130,6 +143,14 @@ async function requirePickPackAccess(c: Context<AppBindings>, createAuthStore: A
 
 function actorUserId(auth: AuthContext | null, body: Record<string, unknown>) {
   return auth?.user.id ?? optionalString(body.actorUserId, "actorUserId");
+}
+
+async function optionalJsonObject(c: Context<AppBindings>) {
+  try {
+    return await parseJsonObject(c);
+  } catch {
+    return {};
+  }
 }
 
 function parseLines(value: unknown) {

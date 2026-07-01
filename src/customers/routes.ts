@@ -62,6 +62,15 @@ export function registerCustomerRoutes(
     if (!customer) throw new ApiError("CUSTOMER_NOT_FOUND", "Customer not found", 404);
     return ok(c, customer);
   });
+
+  app.delete("/api/customers/:customerId", async (c) => {
+    const db = c.env?.DB;
+    const auth = await requireAuthWhenEnabled(c, createAuthStore(db));
+    if (auth) requireEmployee(auth);
+    const customer = await createCustomerStore(db).updateCustomer(c.req.param("customerId"), { status: "inactive" });
+    if (!customer) throw new ApiError("CUSTOMER_NOT_FOUND", "Customer not found", 404);
+    return ok(c, customer);
+  });
 }
 
 function firstLinkedCustomerId(auth: AuthContext) {

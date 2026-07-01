@@ -186,11 +186,12 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
           SET status = ?,
               submitted_at = CASE WHEN ? = 'submitted' THEN CURRENT_TIMESTAMP ELSE submitted_at END,
               approved_for_production_at = CASE WHEN ? = 'approved_for_production' THEN CURRENT_TIMESTAMP ELSE approved_for_production_at END,
+              cancelled_at = CASE WHEN ? = 'cancelled' THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `,
       )
-      .bind(status, status, status, id)
+      .bind(status, status, status, status, id)
       .run();
   }
 

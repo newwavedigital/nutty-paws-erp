@@ -229,10 +229,18 @@ async function deleteCustomer(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.customers = state.customers.filter(c => c.id !== id);
-  saveState();
-  router('customers');
-  toast('Customer deleted.');
+  if (!requireEmployeeBackendWrite(backendCustomerState)) return;
+  if (!customer?._backendId) return failBackendRequiredWrite(null, backendCustomerState, 'Customer delete requires backend confirmation. Nothing was saved locally.');
+  try {
+    await archiveBackendCustomer(customer._backendId);
+    backendCustomerState.status = 'connected';
+    backendCustomerState.lastError = '';
+    saveState();
+    router('customers');
+    toast('Customer archived in backend.');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendCustomerState);
+  }
 }
 let editingFormula = []; // [{ingredientId, qty, pct}]
 const pendingProductMediaFiles = { product: null, nfp: null };
@@ -591,10 +599,18 @@ async function deleteProduct(id) {
     tone: 'danger'
   });
   if (!ok) return;
-  state.products = state.products.filter(p => p.id !== id);
-  saveState();
-  router(currentPage);
-  toast('Product deleted.');
+  if (!requireEmployeeBackendWrite(backendProductState)) return;
+  if (!product?._backendId) return failBackendRequiredWrite(null, backendProductState, 'Product delete requires backend confirmation. Nothing was saved locally.');
+  try {
+    await archiveBackendProduct(product._backendId);
+    backendProductState.status = 'connected';
+    backendProductState.lastError = '';
+    saveState();
+    router(currentPage);
+    toast('Product archived in backend.');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendProductState);
+  }
 }
 
 /* =========================================================================

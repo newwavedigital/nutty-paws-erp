@@ -49,6 +49,12 @@ function createCatalogStore() {
   const store: CatalogStore = {
     async listProducts() { return products; },
     async getProduct(id) { return products.find((product) => product.id === id) ?? null; },
+    async archiveProduct(id) {
+      const product = products.find((candidate) => candidate.id === id);
+      if (!product) return null;
+      product.status = "inactive";
+      return product;
+    },
     async listMasterItems() { return masterItems; },
     async getMasterItem(id) { return masterItems.find((item) => item.id === id) ?? null; },
   };
@@ -138,5 +144,22 @@ describe("catalog routes", () => {
 
     const masterItem = await app.request("/api/master-items/master-1", { headers: { authorization: `Bearer ${token}` } });
     expect(masterItem.status).toBe(403);
+  });
+
+  it("archives products through DELETE instead of hard-deleting", async () => {
+    const auth = createAuthStore();
+    const catalog = createCatalogStore();
+    await seedUser(auth, { id: "admin-user", email: "admin@example.com", role: "Admin" });
+    const app = createRouteApp(auth.store, catalog);
+    const token = await login(app, "admin@example.com");
+
+    const response = await app.request("/api/products/product-1", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: { id: "product-1", status: "inactive" } });
+    await expect(catalog.getProduct("product-1")).resolves.toMatchObject({ status: "inactive" });
   });
 });

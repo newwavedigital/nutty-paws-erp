@@ -140,4 +140,20 @@ describe("Sprint 6 procurement routes", () => {
       "increaseInventory:inv-1:80",
     ]));
   });
+
+  it("cancels procurement orders through backend status", async () => {
+    const { store, calls } = createStore();
+    await store.updateOrder({ id: "proc-1", status: "ordered" });
+    calls.length = 0;
+    const app = createRouteApp(store);
+
+    const cancel = await app.request("/api/procurement/orders/proc-1/cancel", { method: "POST" });
+
+    expect(cancel.status).toBe(200);
+    await expect(cancel.json()).resolves.toMatchObject({ data: { status: "cancelled" } });
+    expect(calls).toEqual(expect.arrayContaining([
+      "updateOrder:proc-1:cancelled",
+      "audit:procurement_order.cancelled",
+    ]));
+  });
 });

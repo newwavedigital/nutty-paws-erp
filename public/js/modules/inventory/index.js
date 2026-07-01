@@ -313,6 +313,9 @@ async function saveMasterItem(id, isNew) {
 async function deleteMasterItem(id) {
   const m = (state.masterItems || []).find(x => x.id === id);
   if (!m) return;
+  if (employeeBackendSessionActive()) {
+    return failBackendRequiredWrite(null, backendMasterItemState, 'Master item delete requires backend archive support. Nothing was saved locally.');
+  }
   const inUse = state.ingredients.some(i => (i.name||'').toLowerCase() === (m.name||'').toLowerCase());
   const ok = await openConfirmModal({
     title: 'Delete master item',
@@ -1191,6 +1194,9 @@ async function saveIngredient(id, isNew) {
 }
 async function deleteIngredient(id) {
   const item = getIngredient(id);
+  if (employeeBackendSessionActive()) {
+    return failBackendRequiredWrite(null, backendInventoryState, 'Inventory item delete requires backend archive support. Nothing was saved locally.');
+  }
   const ok = await openConfirmModal({
     title: 'Delete inventory item',
     record: item?.name || id,
@@ -1236,9 +1242,11 @@ function adjustStock(id) {
     </div>
   `);
 }
-function doAdjust(id) {
+async function doAdjust(id) {
   const i = state.ingredients.find(x=>x.id===id);
   if (!i) return;
+  if (!requireEmployeeBackendWrite(backendInventoryState)) return;
+  if (!i._backendId) return failBackendRequiredWrite(null, backendInventoryState, 'Inventory adjustment requires backend confirmation. Nothing was saved locally.');
   if (!Array.isArray(i.lots) || !i.lots.length) {
     i.lots = [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }];
   }
@@ -1247,9 +1255,18 @@ function doAdjust(id) {
     if (inp) l.qty = parseFloat(inp.value) || 0;
   });
   syncItemLots(i);
-  saveState();
-  closeModal();
-  router('inventory');
-  toast('Stock updated.');
+  try {
+    const saved = await saveBackendInventoryItem(id, false, i);
+    Object.assign(i, backendInventoryItemToLocalIngredient(saved, i));
+    backendInventoryState.status = 'connected';
+    backendInventoryState.loaded = false;
+    backendInventoryState.lastError = '';
+    saveState();
+    closeModal();
+    router('inventory');
+    toast('Stock updated in backend.');
+  } catch (error) {
+    failBackendRequiredWrite(error, backendInventoryState);
+  }
 }
 

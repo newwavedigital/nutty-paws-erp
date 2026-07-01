@@ -235,6 +235,9 @@ async function reopenProductionForCorrection(poId) {
       toast(error.message || backendProductionState.lastError);
       return;
     }
+  } else if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendProductionState, 'Production correction reopen requires backend confirmation. Nothing was saved locally.');
+    return;
   }
   po.productionFinalized = false;
   po.status = 'in_production';
@@ -245,6 +248,9 @@ async function reopenProductionForCorrection(poId) {
   router('production');
 }
 async function deleteProductionLog(id) {
+  if (employeeBackendSessionActive()) {
+    return failBackendRequiredWrite(null, backendProductionState, 'Production log delete requires backend archive support. Nothing was saved locally.');
+  }
   const ok = await openConfirmModal({
     title: 'Delete production log',
     record: id,
@@ -967,6 +973,10 @@ function editProductionValues(id) {
 function saveProductionValues(id) {
   const po = state.purchaseOrders.find(p => p.id === id);
   if (!po) return;
+  if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendProductionState, 'Production value edits require backend correction support. Nothing was saved locally.');
+    return;
+  }
   state.lots = state.lots || [];
   let changed = 0;
   po.lines.forEach((l, i) => {

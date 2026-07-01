@@ -286,6 +286,26 @@ export async function submitProcurementOrder(store: ProcurementStore, input: {
   return { ...order, status: "ordered" as const };
 }
 
+export async function cancelProcurementOrder(store: ProcurementStore, input: {
+  procurementOrderId: string;
+  actorUserId?: string;
+}) {
+  const order = await requireOrder(store, input.procurementOrderId);
+  if (order.status === "cancelled") return order;
+  if (order.status === "completed" || order.status === "partially_received") {
+    throw new ProcurementError("INVALID_PROCUREMENT_STATUS", "Received procurement orders cannot be cancelled here");
+  }
+  await store.updateOrder({ id: order.id, status: "cancelled" });
+  await store.createAuditEvent({
+    actorUserId: input.actorUserId,
+    entityType: "procurement_order",
+    entityId: order.id,
+    action: "procurement_order.cancelled",
+    metadata: { fromStatus: order.status, toStatus: "cancelled" },
+  });
+  return { ...order, status: "cancelled" as const };
+}
+
 export async function receiveProcurementOrder(store: ProcurementStore, input: {
   procurementOrderId: string;
   receiptDate: string;
