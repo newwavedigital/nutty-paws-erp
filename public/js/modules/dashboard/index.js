@@ -18,11 +18,11 @@ function renderDashboard(el) {
   const inShipping = pos.filter(p => p.status === 'shipping').length;
   const backendSignals = backendInventoryState.signals || null;
   const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendSignals && backendInventoryState.status !== 'connected';
+  const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';
   const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
   const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
   const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
-  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendSignals && backendInventoryState.status !== 'connected';
-  const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';
 
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);

@@ -89,6 +89,12 @@ describe("protected frontend reads fail closed", () => {
     expect(publicApp).toContain("Open Inventory after backend records load to view item details.");
     expect(publicApp).toContain("clearProtectedBackendRows('inventory');");
     expect(publicApp).toContain("setBackendReadFailed(backendInventoryState);");
+
+    const dashboardStart = publicApp.indexOf("function renderDashboard");
+    const dashboardEnd = publicApp.indexOf("/* ----- KPI card helper", dashboardStart);
+    const dashboardBody = publicApp.slice(dashboardStart, dashboardEnd);
+    expect(dashboardBody.indexOf("const protectedInventoryUnavailable")).toBeGreaterThan(0);
+    expect(dashboardBody.indexOf("const protectedInventoryUnavailable")).toBeLessThan(dashboardBody.indexOf("const lowStock"));
   });
 
   test("keeps backend writes fail-closed instead of local-saving", () => {
