@@ -51,10 +51,10 @@ export function stripJsonComments(input) {
 export function validateDeployConfig(config) {
   const errors = [];
   const rootVars = config?.vars ?? {};
-  const environments = [{ name: "top-level", vars: rootVars }];
+  const environments = [{ name: "top-level", vars: rootVars, config, topLevel: true }];
 
   for (const [name, envConfig] of Object.entries(config?.env ?? {})) {
-    environments.push({ name, vars: envConfig?.vars ?? {} });
+    environments.push({ name, vars: envConfig?.vars ?? {}, config: envConfig, topLevel: false });
   }
 
   for (const environment of environments) {
@@ -67,6 +67,7 @@ export function validateDeployConfig(config) {
       environment.name === "prod";
 
     validateSubmittedPONotifications(environment, errors);
+    validateKnownWorkerBindings(environment, environmentName, errors);
 
     if (!productionLike) continue;
 
@@ -78,6 +79,49 @@ export function validateDeployConfig(config) {
   }
 
   return errors;
+}
+
+function validateKnownWorkerBindings(environment, environmentName, errors) {
+  const workerName = String(environment.config?.name ?? "");
+
+  if (environment.topLevel && workerName === "nut-house-portal-staging") {
+    errors.push("top-level deploy target must not be the staging Worker");
+  }
+
+  if (workerName === "nut-house-portal") {
+    validateExpectedBinding(environment, environmentName, "production", "nut-house-portal-db", "2fe7ce2c-5699-4594-8a63-a111e118f443", "nut-house-files", errors);
+  }
+
+  if (workerName === "nut-house-portal-staging") {
+    validateExpectedBinding(environment, environmentName, "staging", "nut-house-portal-staging-db", "57fd07a6-97d1-42c8-9f7f-e62b6e1f78b1", "nut-house-staging-files", errors);
+  }
+}
+
+function validateExpectedBinding(environment, environmentName, expectedEnvironment, expectedDatabaseName, expectedDatabaseId, expectedBucketName, errors) {
+  const label = environment.name;
+  const db = findBinding(environment.config?.d1_databases, "DB");
+  const bucket = findBinding(environment.config?.r2_buckets, "FILES");
+
+  if (environmentName !== expectedEnvironment) {
+    errors.push(`${label} Worker binding ENVIRONMENT must be "${expectedEnvironment}"`);
+  }
+
+  if (db?.database_name !== expectedDatabaseName) {
+    errors.push(`${label} Worker DB binding must be ${expectedDatabaseName}`);
+  }
+
+  if (db?.database_id !== expectedDatabaseId) {
+    errors.push(`${label} Worker DB id must be ${expectedDatabaseId}`);
+  }
+
+  if (bucket?.bucket_name !== expectedBucketName) {
+    errors.push(`${label} Worker R2 binding must be ${expectedBucketName}`);
+  }
+}
+
+function findBinding(bindings, bindingName) {
+  if (!Array.isArray(bindings)) return null;
+  return bindings.find((binding) => binding?.binding === bindingName) ?? null;
 }
 
 function validateSubmittedPONotifications(environment, errors) {

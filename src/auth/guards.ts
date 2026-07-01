@@ -23,6 +23,35 @@ export function assertSafeAuthConfig(env: Partial<{ ENVIRONMENT: string; AUTH_RE
   );
 }
 
+const productionHosts = new Set(["nuthouseportal.com", "www.nuthouseportal.com", "nut-house-portal.henry-b22.workers.dev"]);
+const stagingHosts = new Set(["nut-house-portal-staging.henry-b22.workers.dev"]);
+
+export function assertSafeHostEnvironment(
+  env: Partial<{ ENVIRONMENT: string }> | undefined,
+  requestUrl: string | URL,
+) {
+  const host = new URL(requestUrl).hostname.toLowerCase();
+  const environment = normalizeEnvironment(env?.ENVIRONMENT);
+
+  if (productionHosts.has(host) && environment !== "production") {
+    throw new ApiError(
+      "INVALID_DEPLOYMENT_CONFIG",
+      "Production host is not running with production bindings",
+      503,
+      { host, environment },
+    );
+  }
+
+  if (stagingHosts.has(host) && environment === "production") {
+    throw new ApiError(
+      "INVALID_DEPLOYMENT_CONFIG",
+      "Staging host is running with production bindings",
+      503,
+      { host, environment },
+    );
+  }
+}
+
 export async function getAuthContext(c: Context<AppBindings>, store: AuthStore) {
   const existing = c.get("auth");
   if (existing) return existing;

@@ -20,7 +20,7 @@ import { registerTeamChatRoutes } from "./team-chat/routes";
 import { registerFoodSafetyRoutes } from "./food-safety/routes";
 import { registerMachineryRoutes } from "./machinery/routes";
 import { registerFeedbackRoutes } from "./feedback/routes";
-import { assertSafeAuthConfig } from "./auth/guards";
+import { assertSafeAuthConfig, assertSafeHostEnvironment } from "./auth/guards";
 import type { AuthContext } from "./auth/service";
 
 export type AppBindings = { Bindings: Env; Variables: { requestId?: string; auth?: AuthContext } };
@@ -49,6 +49,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
     }
 
     assertSafeAuthConfig(c.env);
+    assertSafeHostEnvironment(c.env, c.req.url);
 
     await next();
   });

@@ -36,6 +36,8 @@ function d1Execute(persistDir: string, args: string[]) {
       "d1",
       "execute",
       stagingDatabaseName,
+      "--env",
+      "staging",
       "--local",
       "--persist-to",
       persistDir,

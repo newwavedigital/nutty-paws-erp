@@ -82,7 +82,7 @@ jobs:
 
       - name: Dry-run staging deploy
         if: ${{ inputs.target == 'staging' }}
-        run: npx wrangler deploy --dry-run --env=""
+        run: npx wrangler deploy --dry-run --env staging
 
       - name: Dry-run production deploy
         if: ${{ inputs.target == 'production' }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Deploy staging
         if: ${{ inputs.target == 'staging' }}
-        run: npx wrangler deploy --env=""
+        run: npx wrangler deploy --env staging
 
       - name: Deploy production
         if: ${{ inputs.target == 'production' }}
