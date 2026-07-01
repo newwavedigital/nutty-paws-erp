@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { publicApp, publicStyles } from "./frontend-assets";
 
@@ -9,6 +9,7 @@ const rootIndex = readFileSync(resolve(repoRoot, "index.html"), "utf8");
 const publicIndex = readFileSync(resolve(repoRoot, "public", "index.html"), "utf8");
 const publicFaviconIco = readFileSync(resolve(repoRoot, "public", "favicon.ico"));
 const publicFaviconSvg = readFileSync(resolve(repoRoot, "public", "favicon.svg"), "utf8");
+const publicHeaders = readFileSync(resolve(repoRoot, "public", "_headers"), "utf8");
 
 function stripJsonComments(input: string) {
   let output = "";
@@ -66,11 +67,13 @@ describe("Worker staging frontend assets", () => {
     });
   });
 
-  test("serves a split frontend shell with static CSS and JavaScript assets", () => {
-    expect(rootIndex).toContain('href="public/styles.css"');
-    expect(rootIndex).toContain('src="public/app.js"');
-    expect(publicIndex).toContain('href="styles.css"');
-    expect(publicIndex).toContain('src="app.js"');
+  test("serves a bundled frontend shell from fingerprinted static CSS and JavaScript assets", () => {
+    expect(rootIndex).toMatch(/href="public\/dist\/styles\.[a-f0-9]{12}\.css"/);
+    expect(rootIndex).toMatch(/<script src="public\/dist\/app\.[a-f0-9]{12}\.js"><\/script>/);
+    expect(publicIndex).toMatch(/href="dist\/styles\.[a-f0-9]{12}\.css"/);
+    expect(publicIndex).toMatch(/<script src="dist\/app\.[a-f0-9]{12}\.js"><\/script>/);
+    expect(rootIndex).not.toContain('type="module"');
+    expect(publicIndex).not.toContain('type="module"');
     expect(rootIndex).toContain('<body class="auth-pending">');
     expect(publicIndex).toContain('<body class="auth-pending">');
     expect(rootIndex).not.toContain("<style>");
@@ -117,6 +120,14 @@ describe("Worker staging frontend assets", () => {
     expect(publicApp).not.toContain("Some portal actions may be unavailable.");
     expect(publicStyles).not.toContain(".portal-status");
     expect(publicStyles).not.toContain("portal-status");
+  });
+
+  test("keeps generated dist assets fingerprinted and browser-cacheable", () => {
+    const distFiles = readdirSync(resolve(repoRoot, "public", "dist")).sort();
+    expect(distFiles.filter((file) => /^app\.[a-f0-9]{12}\.js$/.test(file))).toHaveLength(1);
+    expect(distFiles.filter((file) => /^styles\.[a-f0-9]{12}\.css$/.test(file))).toHaveLength(1);
+    expect(publicHeaders).toContain("/dist/*");
+    expect(publicHeaders).toContain("Cache-Control: public, max-age=31536000, immutable");
   });
 
   test("serves Nut House favicon assets for browser and preview fallback paths", () => {

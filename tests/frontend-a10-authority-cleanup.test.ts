@@ -9,10 +9,10 @@ const supplierModule = readFileSync(resolve(__dirname, "..", "public", "js", "mo
 
 describe("Sprint A10 frontend authority cleanup", () => {
   test("keeps source and deployed frontend shells aligned to the split assets", () => {
-    expect(rootHtml).toContain('href="public/styles.css"');
-    expect(rootHtml).toContain('src="public/app.js"');
-    expect(publicHtml).toContain('href="styles.css"');
-    expect(publicHtml).toContain('src="app.js"');
+    expect(rootHtml).toMatch(/href="public\/dist\/styles\.[a-f0-9]{12}\.css"/);
+    expect(rootHtml).toMatch(/<script src="public\/dist\/app\.[a-f0-9]{12}\.js"><\/script>/);
+    expect(publicHtml).toMatch(/href="dist\/styles\.[a-f0-9]{12}\.css"/);
+    expect(publicHtml).toMatch(/<script src="dist\/app\.[a-f0-9]{12}\.js"><\/script>/);
     expect(publicApp).toContain("function createEmptyAppState");
   });
 
