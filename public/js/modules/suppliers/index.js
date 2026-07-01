@@ -1,6 +1,10 @@
 /* =========================================================================
    SUPPLIERS
    ========================================================================= */
+function formatSupplierPricePerLb(value) {
+  return '$' + Number(value || 0).toFixed(4);
+}
+
 function renderSuppliers(el) {
   if (!a10DataRecordState.suppliers.loaded && !a10DataRecordState.suppliers.loading) {
     refreshA10DataRecordModule('suppliers').then(() => { if (currentPage === 'suppliers') router('suppliers'); }).catch(() => {});
@@ -32,7 +36,7 @@ function renderSuppliers(el) {
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
             const productsCell = lines.length
-              ? lines.map(pl => `<div style="font-size:12px"><strong>${escapeHtml(pl.product||'')}</strong> <span class="pill">${escapeHtml(pl.type||'')}</span> ${pl.pricePerLb!==''&&pl.pricePerLb!=null ? '<span style="color:var(--brown-light)">'+fmtMoney(pl.pricePerLb)+'/lb</span>' : ''}</div>`).join('')
+              ? lines.map(pl => `<div style="font-size:12px"><strong>${escapeHtml(pl.product||'')}</strong> <span class="pill">${escapeHtml(pl.type||'')}</span> ${pl.pricePerLb!==''&&pl.pricePerLb!=null ? '<span style="color:var(--brown-light)">'+formatSupplierPricePerLb(pl.pricePerLb)+'/lb</span>' : ''}</div>`).join('')
               : (s.products ? `<div style="font-size:12px;color:var(--brown-light)">${escapeHtml(s.products)}</div>` : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>');
             return `
             <tr>
@@ -127,7 +131,7 @@ function renderSupplierProductsList() {
           <option ${p.type==='Ingredient'?'selected':''}>Ingredient</option>
           <option ${p.type==='Packaging'?'selected':''}>Packaging</option>
         </select>
-        <input type="number" step="0.01" min="0" value="${p.pricePerLb!=null?p.pricePerLb:''}" placeholder="0.00" onchange="supplierProductChange(${i},'pricePerLb',this.value)" />
+        <input type="number" step="0.0001" min="0" value="${p.pricePerLb!=null?p.pricePerLb:''}" placeholder="0.0000" onchange="supplierProductChange(${i},'pricePerLb',this.value)" />
         <button type="button" onclick="removeSupplierProduct(${i})">&times;</button>
       </div>
     `).join('')}

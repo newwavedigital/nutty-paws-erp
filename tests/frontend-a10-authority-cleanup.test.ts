@@ -70,4 +70,13 @@ describe("Sprint A10 frontend authority cleanup", () => {
       expect(publicApp).toContain(marker);
     }
   });
+
+  test("allows supplier product pricing to four decimal places", () => {
+    expect(publicApp).toContain("function formatSupplierPricePerLb");
+    expect(publicApp).toContain("Number(value || 0).toFixed(4)");
+    expect(publicApp).toContain("formatSupplierPricePerLb(pl.pricePerLb)");
+    expect(publicApp).toContain('step="0.0001"');
+    expect(publicApp).toContain('placeholder="0.0000"');
+    expect(publicApp).toContain("supplierProductChange(${i},'pricePerLb',this.value)");
+  });
 });
