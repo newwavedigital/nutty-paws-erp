@@ -20,6 +20,7 @@ const migrationPaths = [
   "migrations/0013_customer_po_hardening.sql",
   "migrations/0014_inventory_receiving_move_corrections.sql",
   "migrations/0015_inventory_archive_adjustment_hardening.sql",
+  "migrations/0016_supplier_product_line_inventory_link.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 const stagingDatabaseName = "nut-house-portal-staging-db";
@@ -594,7 +595,19 @@ describe("Phase 2A D1 baseline schema migration", () => {
       expect(supplierLineColumns).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: "supplier_id", notnull: 1 }),
+          expect.objectContaining({ name: "inventory_item_id" }),
           expect.objectContaining({ name: "product_name", notnull: 1 }),
+        ]),
+      );
+
+      const supplierLineIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('supplier_product_lines');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(supplierLineIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_supplier_product_lines_inventory_item_id" }),
         ]),
       );
 

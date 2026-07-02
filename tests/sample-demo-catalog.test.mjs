@@ -42,6 +42,7 @@ describe("staging demo catalog seed generator", () => {
     expect(sql).toContain("INSERT OR IGNORE INTO customers");
     expect(sql).toContain("INSERT OR IGNORE INTO suppliers");
     expect(sql).toContain("INSERT OR IGNORE INTO supplier_product_lines");
+    expect(sql).toContain("inventory_item_id");
     expect(sql).toContain("INSERT OR IGNORE INTO master_items");
     expect(sql).toContain("INSERT OR IGNORE INTO inventory_items");
     expect(sql).toContain("INSERT OR IGNORE INTO products");

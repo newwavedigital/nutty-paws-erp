@@ -25,7 +25,7 @@ const ALLOWED_TABLES = new Set([
 
 export class D1DataRecordStore implements DataRecordStore {
   constructor(
-    private readonly db: D1Database,
+    protected readonly db: D1Database,
     private readonly tableName: string,
     private readonly moduleName: string,
   ) {

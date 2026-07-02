@@ -61,7 +61,7 @@ const A10_DATA_RECORD_MODULES = {
     path: '/api/suppliers',
     cacheKey: 'a10_suppliers',
     stateKeys: ['suppliers'],
-    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
+    toLocal: record => ({ ...(record.payload || {}), productLines: Array.isArray(record.payload?.productLines) ? record.payload.productLines : [], id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
     apply(records) { state.suppliers = records.map(this.toLocal); }
   },
   contentLibrary: {
@@ -217,14 +217,18 @@ function renderA10DataRecordBanner(moduleName) {
       ? 'loading'
       : moduleState.status === 'stale'
         ? 'local'
-        : 'auth';
+        : moduleState.status === 'error'
+          ? 'error'
+          : 'auth';
   const detail = moduleState.status === 'connected'
     ? 'This screen is reading D1 records.'
     : moduleState.status === 'stale'
       ? 'Backend data is unavailable. Showing stale backend-confirmed cache only.'
       : moduleState.status === 'loading'
         ? 'Loading protected backend records.'
-        : 'Sign in as an employee/admin to load and save backend records.';
+        : moduleState.status === 'error'
+          ? (moduleState.lastError || 'Backend unavailable. No supplier records are shown.')
+          : 'Sign in as an employee/admin to load and save backend records.';
   return renderDataStateBanner({ kind: moduleName, state: stateKind, detail });
 }
 

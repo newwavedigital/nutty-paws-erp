@@ -132,24 +132,24 @@ const SUPPLIERS = [
 ];
 
 const SUPPLIER_LINES = [
-  line("preferred_peanuts_organic", "supplier_preferred_peanuts", "Organic Runner Peanuts", "Ingredient", 186, "lb", "8 pallets", "Healthy stock baseline."),
-  line("preferred_peanuts_roasted", "supplier_preferred_peanuts", "Roasted Split Peanuts", "Ingredient", 203, "lb", "2 pallets", "Common production item."),
-  line("backup_roaster_peanut", "supplier_backup_roaster", "Backup Roasted Peanut", "Ingredient", 218, "lb", "2,000 lb", "Backup supply example."),
-  line("backup_roaster_cashew", "supplier_backup_roaster", "Backup Cashew Pieces", "Ingredient", 512, "lb", "1 pallet", "Alternative supplier option."),
-  line("long_lead_cacao_nibs", "supplier_long_lead_cacao", "Cacao Nibs", "Ingredient", 645, "lb", "full container", "Long lead time risk."),
-  line("long_lead_cacao_powder", "supplier_long_lead_cacao", "Cocoa Powder", "Ingredient", 590, "lb", "full container", "Long lead time risk."),
-  line("packaging_labels", "supplier_packaging_only", "Pressure-Sensitive Labels", "Packaging", 3, "each", "25,000 labels", "High MOQ labels."),
-  line("packaging_lids", "supplier_packaging_only", "Tamper-Evident Lids", "Packaging", 18, "each", "10,000 lids", "Packaging-only vendor."),
-  line("missing_contact_almond", "supplier_missing_contact", "Almond Paste", "Ingredient", 460, "lb", null, "Missing contact info example."),
-  line("allergen_sesame", "supplier_allergen_sensitive", "Toasted Sesame Seeds", "Ingredient", 275, "lb", "40 cases", "Allergen note example."),
-  line("archived_broker_spot", "supplier_archived_broker", "Spot Market Peanut Butter Base", "Ingredient", 320, "lb", "spot buy", "Archived supplier line."),
-  line("cold_chain_almonds", "supplier_cold_chain", "Chilled Almond Butter", "Ingredient", 675, "lb", "1 refrigerated truck", "Cold-chain item."),
-  line("domestic_jars_12oz", "supplier_domestic_jars", "12 oz PET Jar", "Packaging", 42, "each", "12 pallets", "Fast packaging replenishment."),
-  line("domestic_jars_24oz", "supplier_domestic_jars", "24 oz PET Jar", "Packaging", 59, "each", "12 pallets", "Larger jar option."),
-  line("high_moq_pretzel", "supplier_moq_specialty", "Pretzel Crunch Pieces", "Ingredient", 255, "lb", "10,000 lb", "High MOQ mix-in."),
-  line("local_honey_pails", "supplier_local_honey", "Wildflower Honey Pails", "Ingredient", 395, "lb", "10 pails", "Seasonal small supplier."),
-  line("freight_watch_cashews", "supplier_freight_watch", "Cashew Pieces", "Ingredient", 498, "lb", "5 pallets", "Freight watch item."),
-  line("freight_watch_sea_salt", "supplier_freight_watch", "Fine Sea Salt", "Ingredient", 82, "lb", "1 pallet", "Freight risk contrast."),
+  line("preferred_peanuts_organic", "supplier_preferred_peanuts", "inventory_low_stock_peanuts", "Organic Runner Peanuts", "Ingredient", 186, "lb", "8 pallets", "Healthy stock baseline."),
+  line("preferred_peanuts_roasted", "supplier_preferred_peanuts", "inventory_low_stock_peanuts", "Roasted Split Peanuts", "Ingredient", 203, "lb", "2 pallets", "Common production item."),
+  line("backup_roaster_peanut", "supplier_backup_roaster", "inventory_healthy_base", "Backup Roasted Peanut", "Ingredient", 218, "lb", "2,000 lb", "Backup supply example."),
+  line("backup_roaster_cashew", "supplier_backup_roaster", "inventory_cashew_freight", "Backup Cashew Pieces", "Ingredient", 512, "lb", "1 pallet", "Alternative supplier option."),
+  line("long_lead_cacao_nibs", "supplier_long_lead_cacao", "inventory_long_lead_cacao", "Cacao Nibs", "Ingredient", 645, "lb", "full container", "Long lead time risk."),
+  line("long_lead_cacao_powder", "supplier_long_lead_cacao", null, "Cocoa Powder", "Ingredient", 590, "lb", "full container", "Long lead time risk."),
+  line("packaging_labels", "supplier_packaging_only", "inventory_zero_stock_labels", "Pressure-Sensitive Labels", "Packaging", 3, "each", "25,000 labels", "High MOQ labels."),
+  line("packaging_lids", "supplier_packaging_only", "inventory_tamper_lids", "Tamper-Evident Lids", "Packaging", 18, "each", "10,000 lids", "Packaging-only vendor."),
+  line("missing_contact_almond", "supplier_missing_contact", "inventory_almond_cold_chain", "Almond Paste", "Ingredient", 460, "lb", null, "Missing contact info example."),
+  line("allergen_sesame", "supplier_allergen_sensitive", "inventory_sesame_allergen", "Toasted Sesame Seeds", "Ingredient", 275, "lb", "40 cases", "Allergen note example."),
+  line("archived_broker_spot", "supplier_archived_broker", null, "Spot Market Peanut Butter Base", "Ingredient", 320, "lb", "spot buy", "Archived supplier line."),
+  line("cold_chain_almonds", "supplier_cold_chain", "inventory_almond_cold_chain", "Chilled Almond Butter", "Ingredient", 675, "lb", "1 refrigerated truck", "Cold-chain item."),
+  line("domestic_jars_12oz", "supplier_domestic_jars", "inventory_fully_allocated_jars", "12 oz PET Jar", "Packaging", 42, "each", "12 pallets", "Fast packaging replenishment."),
+  line("domestic_jars_24oz", "supplier_domestic_jars", "inventory_24oz_jars", "24 oz PET Jar", "Packaging", 59, "each", "12 pallets", "Larger jar option."),
+  line("high_moq_pretzel", "supplier_moq_specialty", "inventory_pretzel_high_moq", "Pretzel Crunch Pieces", "Ingredient", 255, "lb", "10,000 lb", "High MOQ mix-in."),
+  line("local_honey_pails", "supplier_local_honey", "inventory_honey_local", "Wildflower Honey Pails", "Ingredient", 395, "lb", "10 pails", "Seasonal small supplier."),
+  line("freight_watch_cashews", "supplier_freight_watch", "inventory_cashew_freight", "Cashew Pieces", "Ingredient", 498, "lb", "5 pallets", "Freight watch item."),
+  line("freight_watch_sea_salt", "supplier_freight_watch", "inventory_sea_salt", "Fine Sea Salt", "Ingredient", 82, "lb", "1 pallet", "Freight risk contrast."),
 ];
 
 const MASTER_ITEMS = [
@@ -419,10 +419,11 @@ function supplier(id, title, status, payload) {
   return { id: prefixed(id), title, status, payload: { demo: true, stagingOnly: true, ...payload } };
 }
 
-function line(id, supplierId, productName, productType, pricePerUnitCents, unitOfMeasure, moq, notes) {
+function line(id, supplierId, inventoryItemId, productName, productType, pricePerUnitCents, unitOfMeasure, moq, notes) {
   return {
     id: prefixed(`supplier_line_${id}`),
     supplier_id: prefixed(supplierId),
+    inventory_item_id: inventoryItemId ? prefixed(inventoryItemId) : null,
     product_name: productName,
     product_type: productType,
     price_per_unit_cents: pricePerUnitCents,

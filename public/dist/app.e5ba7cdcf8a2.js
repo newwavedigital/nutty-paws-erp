@@ -564,7 +564,7 @@ const A10_DATA_RECORD_MODULES = {
     path: '/api/suppliers',
     cacheKey: 'a10_suppliers',
     stateKeys: ['suppliers'],
-    toLocal: record => ({ ...(record.payload || {}), id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
+    toLocal: record => ({ ...(record.payload || {}), productLines: Array.isArray(record.payload?.productLines) ? record.payload.productLines : [], id: record.id, _backendId: record.id, name: record.payload?.name || record.title || '' }),
     apply(records) { state.suppliers = records.map(this.toLocal); }
   },
   contentLibrary: {
@@ -720,14 +720,18 @@ function renderA10DataRecordBanner(moduleName) {
       ? 'loading'
       : moduleState.status === 'stale'
         ? 'local'
-        : 'auth';
+        : moduleState.status === 'error'
+          ? 'error'
+          : 'auth';
   const detail = moduleState.status === 'connected'
     ? 'This screen is reading D1 records.'
     : moduleState.status === 'stale'
       ? 'Backend data is unavailable. Showing stale backend-confirmed cache only.'
       : moduleState.status === 'loading'
         ? 'Loading protected backend records.'
-        : 'Sign in as an employee/admin to load and save backend records.';
+        : moduleState.status === 'error'
+          ? (moduleState.lastError || 'Backend unavailable. No supplier records are shown.')
+          : 'Sign in as an employee/admin to load and save backend records.';
   return renderDataStateBanner({ kind: moduleName, state: stateKind, detail });
 }
 
@@ -7241,8 +7245,7 @@ function ensureSupplierInventoryLoaded() {
         if (currentPage === 'suppliers') {
           renderSupplierProductsList();
         }
-      })
-      .catch(() => {});
+      });
   }
 }
 
@@ -7254,33 +7257,82 @@ function supplierEligibleInventoryItems() {
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
+function supplierHasEligibleInventoryItems() {
+  return supplierEligibleInventoryItems().length > 0;
+}
+
 function supplierInventoryItemLabel(item) {
   const category = item.category || 'Ingredient';
   const unit = item.unit ? `, ${item.unit}` : '';
   return `${item.name || 'Unnamed item'} (${category}${unit})`;
 }
 
-function supplierLineWithInventorySnapshot(line = {}) {
+function supplierLineResolution(line = {}) {
   const items = supplierEligibleInventoryItems();
   const selected = items.find(item =>
     item.id === line.inventoryItemId ||
-    item._backendId === line.inventoryItemId ||
-    item.name === line.product ||
-    item.name === line.itemName
+    item._backendId === line.inventoryItemId
   );
+  const inventoryItemId = selected ? (selected._backendId || selected.id) : (line.inventoryItemId || '');
+  const product = selected ? selected.name : (line.product || line.itemName || '');
+  const legacyUnlinked = Boolean(!inventoryItemId && product);
   return {
-    ...line,
-    inventoryItemId: selected ? (selected._backendId || selected.id) : (line.inventoryItemId || ''),
-    product: selected ? selected.name : (line.product || line.itemName || ''),
-    itemName: selected ? selected.name : (line.itemName || line.product || ''),
-    type: selected ? (selected.category || 'Ingredient') : (line.type || 'Ingredient')
+    selected,
+    missing: Boolean(inventoryItemId && !selected),
+    legacyUnlinked,
+    line: {
+      ...line,
+      inventoryItemId,
+      product,
+      itemName: product,
+      type: selected ? (selected.category || 'Ingredient') : (line.type || 'Ingredient'),
+      unit: selected ? (selected.unit || '') : (line.unit || '')
+    }
   };
+}
+
+function supplierLineWithInventorySnapshot(line = {}) {
+  return supplierLineResolution(line).line;
+}
+
+function supplierInventoryUnavailableMessage() {
+  if (backendInventoryState.loading) {
+    return 'Loading Ingredient and Packaging inventory before supplier pricing can be edited.';
+  }
+  if (backendInventoryState.status === 'error') {
+    return backendInventoryState.lastError || 'Backend unavailable. Supplier pricing cannot be linked to current inventory right now.';
+  }
+  return 'No raw material or packaging inventory items are available. Add them in Inventory first, then assign supplier pricing here.';
+}
+
+function supplierWebsiteHref(website) {
+  const value = (website || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function supplierDocumentLinkHtml(file, label = '') {
+  if (!file) return '';
+  if (file.fileId) {
+    const href = `/api/files/${encodeURIComponent(file.fileId)}/download`;
+    return `<a href="${href}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
+  }
+  if (file.dataUrl) {
+    return `<a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
+  }
+  return `<span style="color:var(--brown);font-size:12px">&#128206; ${escapeHtml(file.name || label || 'Selected file')}</span> <span class="pill">Pending upload</span>`;
 }
 
 function renderSuppliers(el) {
   ensureSupplierInventoryLoaded();
   if (!a10DataRecordState.suppliers.loaded && !a10DataRecordState.suppliers.loading) {
-    refreshA10DataRecordModule('suppliers').then(() => { if (currentPage === 'suppliers') router('suppliers'); }).catch(() => {});
+    refreshA10DataRecordModule('suppliers')
+      .then(() => { if (currentPage === 'suppliers') router('suppliers'); })
+      .catch(err => {
+        toast(err.message || 'Suppliers could not be loaded from the backend.');
+        if (currentPage === 'suppliers') router('suppliers');
+      });
   }
   el.innerHTML = `
     ${renderA10DataRecordBanner('suppliers')}
@@ -7303,7 +7355,8 @@ function renderSuppliers(el) {
             const docs = s.docs || {};
             const docPills = VENDOR_DOC_TYPES.filter(d => docs[d.key]).map(d => {
               const f = docs[d.key];
-              const href = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f.dataUrl || '#');
+              if (!f.fileId && !f.dataUrl) return `<span class="pill" title="${escapeHtml(d.label)}: pending upload">&#128206; ${escapeHtml(d.label.split(' ')[0])} pending</span>`;
+              const href = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : f.dataUrl;
               return `<a href="${href}" download="${escapeHtml(f.name)}" class="pill" style="cursor:pointer;text-decoration:none" title="${escapeHtml(d.label)}: ${escapeHtml(f.name)}">&#128206; ${escapeHtml(d.label.split(' ')[0])}</a>`;
             }).join('');
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
@@ -7318,7 +7371,7 @@ function renderSuppliers(el) {
               <td>${escapeHtml(s.contact||'')}</td>
               <td><a href="mailto:${escapeHtml(s.email||'')}" style="color:var(--orange)">${escapeHtml(s.email||'')}</a></td>
               <td>${escapeHtml(s.phone||'')}</td>
-              <td>${s.website ? `<a href="https://${escapeHtml(s.website)}" target="_blank" style="color:var(--orange)">${escapeHtml(s.website)}</a>` : ''}</td>
+              <td>${s.website ? `<a href="${escapeHtml(supplierWebsiteHref(s.website))}" target="_blank" style="color:var(--orange)">${escapeHtml(s.website)}</a>` : ''}</td>
               <td>${s.moq||'-'}</td>
               <td>${docCount === 0
                 ? '<span style="font-size:12px;color:var(--brown-light)">-</span>'
@@ -7363,7 +7416,7 @@ function editSupplier(id) {
       <div style="margin-top:18px;padding:12px;background:var(--beige-light);border-radius:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <strong style="color:var(--brown);font-size:13px">Raw Materials / Pricing</strong>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addSupplierProduct()">+ Add Raw Material</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSupplierProduct()" ${supplierHasEligibleInventoryItems() ? '' : 'disabled title="Add Ingredient or Packaging inventory first"'}>+ Add Raw Material</button>
         </div>
         <div id="sup_products_list" style="margin-top:6px"></div>
       </div>
@@ -7390,36 +7443,43 @@ function renderSupplierProductsList() {
   const cont = document.getElementById('sup_products_list');
   if (!cont) return;
   const inventoryItems = supplierEligibleInventoryItems();
-  if (!inventoryItems.length) {
-    cont.innerHTML = '<div style="font-size:12px;color:var(--brown-light);padding:4px 0">No raw material or packaging inventory items are available. Add them in Inventory first, then assign supplier pricing here.</div>';
-    return;
-  }
   if (!supplierEditingProducts.length) {
-    cont.innerHTML = '<div style="font-size:12px;color:var(--brown-light);padding:4px 0">No raw materials yet. Click "+ Add Raw Material".</div>';
+    cont.innerHTML = `<div style="font-size:12px;color:var(--brown-light);padding:4px 0">${inventoryItems.length ? 'No raw materials yet. Click "+ Add Raw Material".' : escapeHtml(supplierInventoryUnavailableMessage())}</div>`;
     return;
   }
   const grid = 'grid-template-columns:2fr 1.2fr 1fr 40px';
   cont.innerHTML = `
+    ${!inventoryItems.length ? `<div style="font-size:12px;color:var(--danger);margin-bottom:8px">${escapeHtml(supplierInventoryUnavailableMessage())}</div>` : ''}
     <div class="po-line" style="${grid};font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600">
       <div>Raw Material</div><div>Type</div><div>Price / lb</div><div></div>
     </div>
-    ${supplierEditingProducts.map((p, i) => `
+    ${supplierEditingProducts.map((raw, i) => {
+      const resolution = supplierLineResolution(raw);
+      const p = resolution.line;
+      const missingLabel = p.product || p.itemName || p.inventoryItemId || 'Previously linked inventory item';
+      return `
       <div class="po-line" style="${grid}">
-        <select required onchange="supplierInventoryItemSelected(${i},this.value)">
+        <select ${resolution.legacyUnlinked ? '' : 'required'} onchange="supplierInventoryItemSelected(${i},this.value)">
           <option value="">- Select raw material -</option>
+          ${resolution.legacyUnlinked ? `<option value="" selected disabled>Legacy unlinked item: ${escapeHtml(missingLabel)}</option>` : ''}
+          ${resolution.missing ? `<option value="${escapeHtml(p.inventoryItemId)}" selected disabled>Missing inventory: ${escapeHtml(missingLabel)}</option>` : ''}
           ${inventoryItems.map(item => {
             const value = item._backendId || item.id;
             return `<option value="${escapeHtml(value)}" ${p.inventoryItemId===value?'selected':''}>${escapeHtml(supplierInventoryItemLabel(item))}</option>`;
           }).join('')}
         </select>
-        <div style="font-size:13px;color:var(--brown);font-weight:600">${escapeHtml(p.type || '-')}</div>
+        <div style="font-size:13px;color:${resolution.missing ? 'var(--danger)' : 'var(--brown)'};font-weight:600">${escapeHtml(resolution.missing ? 'Missing link' : (resolution.legacyUnlinked ? 'Legacy unlinked' : (p.type || '-')))}</div>
         <input type="number" step="0.0001" min="0" value="${p.pricePerLb!=null?p.pricePerLb:''}" placeholder="0.0000" onchange="supplierProductChange(${i},'pricePerLb',this.value)" />
         <button type="button" onclick="removeSupplierProduct(${i})">&times;</button>
       </div>
-    `).join('')}
+    `;}).join('')}
   `;
 }
 function addSupplierProduct() {
+  if (!supplierHasEligibleInventoryItems()) {
+    toast(supplierInventoryUnavailableMessage());
+    return;
+  }
   supplierEditingProducts.push({ inventoryItemId:'', product:'', itemName:'', type:'Ingredient', pricePerLb:'' });
   renderSupplierProductsList();
 }
@@ -7448,13 +7508,12 @@ function renderSupplierDocsList() {
   if (!cont) return;
   cont.innerHTML = VENDOR_DOC_TYPES.map(d => {
     const f = supplierEditingDocs[d.key];
-    const href = f?.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f?.dataUrl || '#');
     return `
       <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--grey-light);border-radius:6px;margin-bottom:6px;background:var(--white)">
         <div>
           <div style="font-weight:600;color:var(--brown);font-size:13px">${escapeHtml(d.label)}</div>
           ${f
-            ? `<div style="margin-top:3px"><a href="${href}" download="${escapeHtml(f.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(f.name)}</a> <span style="color:var(--brown-light);font-size:11px">(${formatBytes(f.size)})</span></div>`
+            ? `<div style="margin-top:3px">${supplierDocumentLinkHtml(f, d.label)} <span style="color:var(--brown-light);font-size:11px">(${formatBytes(f.size)})</span></div>`
             : `<div style="font-size:12px;color:var(--brown-light);margin-top:3px">Not uploaded</div>`
           }
         </div>
@@ -7489,11 +7548,13 @@ async function saveSupplier(id, isNew) {
     }
   });
   const existing = state.suppliers.find(s=>s.id===id);
-  const productLines = supplierEditingProducts.map(p => supplierLineWithInventorySnapshot(p)).filter(p => p.inventoryItemId);
-  if (supplierEditingProducts.length && productLines.length !== supplierEditingProducts.length) {
+  const resolvedProductLines = supplierEditingProducts.map(p => supplierLineWithInventorySnapshot(p));
+  const hasBlankNewLine = resolvedProductLines.some(p => !p.inventoryItemId && !(p.product || p.itemName));
+  if (hasBlankNewLine) {
     toast('Choose an existing raw material or packaging inventory item for each supplier line.');
     return;
   }
+  const productLines = resolvedProductLines.filter(p => p.inventoryItemId || p.product || p.itemName);
   const data = {
     id,
     name: document.getElementById('sup_name').value,

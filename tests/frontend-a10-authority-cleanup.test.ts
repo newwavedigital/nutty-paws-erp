@@ -95,4 +95,24 @@ describe("Sprint A10 frontend authority cleanup", () => {
     expect(supplierModule).not.toContain("+ Add Product");
     expect(supplierModule).not.toContain("Products / Pricing");
   });
+
+  test("supplier module exposes inventory and backend failures instead of dead-click fallbacks", () => {
+    expect(supplierModule).toContain("function supplierInventoryUnavailableMessage");
+    expect(supplierModule).toContain("backendInventoryState.status === 'error'");
+    expect(supplierModule).toContain("Suppliers could not be loaded from the backend.");
+    expect(supplierModule).toContain("disabled title=\"Add Ingredient or Packaging inventory first\"");
+    expect(supplierModule).toContain("Missing inventory:");
+    expect(supplierModule).toContain("Legacy unlinked item:");
+    expect(supplierModule).toContain("Legacy unlinked");
+    expect(supplierModule).toContain("Choose an existing raw material or packaging inventory item for each supplier line.");
+    expect(supplierModule).not.toContain(".catch(() => {})");
+    expect(supplierModule).not.toContain("f?.dataUrl || '#'");
+  });
+
+  test("supplier document links do not render inert hash downloads for pending files", () => {
+    expect(supplierModule).toContain("function supplierDocumentLinkHtml");
+    expect(supplierModule).toContain("Pending upload");
+    expect(supplierModule).toContain("/api/files/${encodeURIComponent(file.fileId)}/download");
+    expect(supplierModule).not.toContain("href=\"#\"");
+  });
 });
