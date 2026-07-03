@@ -1092,9 +1092,15 @@ async function loadBackendQualityQueue() {
   try {
     const records = await apiRequest('/api/quality/queue');
     const queue = mergeBackendQualityQueue(records || []);
-    await attachBackendQualityFiles(state.purchaseOrders.filter(po =>
-      po.status === 'qa_review' || po.status === 'shipping' || po.status === 'completed'
-    ));
+    const recent = state.purchaseOrders
+      .filter(po => po.qaSkippedAt || po.qaReleasedAt || po.coa || po.postShipmentCoa || po.status === 'shipping' || po.status === 'completed')
+      .slice()
+      .sort((a, b) => (qualityActionTimestamp(b) || '').localeCompare(qualityActionTimestamp(a) || ''))
+      .slice(0, 10);
+    const visible = [...queue, ...recent].filter((po, index, list) =>
+      index === list.findIndex(item => qualityPurchaseOrderBackendId(item) === qualityPurchaseOrderBackendId(po))
+    );
+    await attachBackendQualityFiles(visible);
     backendQualityState.status = 'connected';
     backendQualityState.lastError = '';
     backendQualityState.loaded = true;
