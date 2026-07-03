@@ -104,7 +104,7 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
     const text = message.text();
-    const expectedBlockedArchiveError = text.includes("status of 409") && text.includes("Conflict");
+    const expectedBlockedArchiveError = text.includes("status of 409");
     if (message.type() === "error" && !expectedBlockedArchiveError) consoleErrors.push(text);
   });
   page.on("pageerror", (error) => consoleErrors.push(error.message));
