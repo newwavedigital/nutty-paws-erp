@@ -32,7 +32,8 @@ describe("Login-first ERP shell and role access cleanup", () => {
     expect(publicApp).toContain("const USER_ROLES = ['Admin', 'Sales', 'Supply Chain & Procurement', 'Warehousing', 'Production', 'Customer'];");
     expect(publicApp).toContain("const CUSTOMER_ALLOWED_PAGES = new Set(['customer-portal', 'profile-settings']);");
     expect(publicApp).toContain("Admin: EMPLOYEE_NAV_PAGES");
-    expect(publicApp).toContain("Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'shipping', 'feedback'])");
+    expect(publicApp).toContain("Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'feedback'])");
+    expect(publicApp).not.toContain("Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'shipping', 'feedback'])");
     expect(publicApp).toContain("Supply Chain & Procurement': new Set(['dashboard', 'supply-chain', 'procurement', 'suppliers', 'inventory', 'rd', 'feedback'])");
     expect(publicApp).toContain("Warehousing: new Set(['dashboard', 'inventory', 'shipping', 'pick-pack', 'quality-assurance', 'production', 'feedback'])");
     expect(publicApp).toContain("Production: new Set(['dashboard', 'production', 'food-safety', 'quality-assurance', 'pick-pack', 'inventory', 'feedback'])");

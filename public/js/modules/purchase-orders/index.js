@@ -46,7 +46,7 @@ function renderPurchaseOrders(el) {
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
                 <td>${poFileLinkHtml(p)}</td>
-                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
+                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
                   <button class="btn btn-icon btn-sm" onclick="printPO('${p.id}')">Print</button>

@@ -97,9 +97,11 @@ describe("frontend truth hardening", () => {
   });
 
   test("stale local purchase orders and Pick & Pack rows are visibly local-only in signed-in sessions", () => {
-    expect(purchaseOrdersModule).toContain("Local-only");
+    expect(purchaseOrdersModule).toContain("Local draft");
+    expect(purchaseOrdersModule).toContain("Not saved to backend");
     expect(purchaseOrdersModule).toContain("p._localOnlyBackendStale");
-    expect(pickPackModule).toContain("Local-only");
+    expect(pickPackModule).toContain("Local draft");
+    expect(pickPackModule).toContain("Not saved to backend");
     expect(pickPackModule).toContain("Backend required");
     expect(pickPackModule).toContain("This shipping draft is local-only and cannot be saved to the backend");
     expect(pickPackModule).toContain("This shipping draft is local-only and cannot be marked shipped");

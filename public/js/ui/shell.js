@@ -56,7 +56,7 @@ const CUSTOMER_ALLOWED_PAGES = new Set(['customer-portal', 'profile-settings']);
 const EMPLOYEE_NAV_PAGES = new Set(ALL_NAV_PAGES.filter(page => page !== 'customer-portal'));
 const ROLE_ALLOWED_PAGES = {
   Admin: EMPLOYEE_NAV_PAGES,
-  Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'shipping', 'feedback']),
+  Sales: new Set(['dashboard', 'customers', 'purchase-orders', 'products', 'feedback']),
   'Supply Chain & Procurement': new Set(['dashboard', 'supply-chain', 'procurement', 'suppliers', 'inventory', 'rd', 'feedback']),
   Warehousing: new Set(['dashboard', 'inventory', 'shipping', 'pick-pack', 'quality-assurance', 'production', 'feedback']),
   Production: new Set(['dashboard', 'production', 'food-safety', 'quality-assurance', 'pick-pack', 'inventory', 'feedback']),

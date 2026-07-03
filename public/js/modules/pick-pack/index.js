@@ -253,7 +253,7 @@ function renderPickPackPOs(el, pos) {
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
-                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
+                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
                       className: 'btn btn-icon btn-sm',
@@ -302,7 +302,7 @@ function pickPackShippingCardHtml(p) {
           <h3 style="margin:0">${escapeHtml(p.id)} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'-')} &middot; Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} &middot; Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
-        ${localOnly ? '<span class="badge badge-low">Local only</span>' : ''}
+        ${localOnly ? '<span class="badge badge-low" title="Not saved to backend">Local draft</span>' : ''}
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
@@ -325,7 +325,7 @@ function pickPackShippingCardHtml(p) {
           </label>
         </div>
       </div>
-      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local-only row.</strong> This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
+      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local draft.</strong> Not saved to backend. This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
       <fieldset ${localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
         <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
         <div class="form-row" style="margin-top:10px">
