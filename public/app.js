@@ -2736,9 +2736,17 @@ function backendPurchaseOrderId(po) {
   return po?._backendId || po?.id || '';
 }
 
+function markLocalOnlyPurchaseOrdersForBackendSession() {
+  if (!employeeBackendSessionActive()) return;
+  state.purchaseOrders = (state.purchaseOrders || []).map(po =>
+    !po._backendId ? { ...po, _localOnlyBackendStale: true } : po
+  );
+}
+
 function mergeBackendPurchaseOrders(records) {
   const backendPos = (records || []).map(mapBackendPurchaseOrderToPrototype);
   const backendIds = new Set(backendPos.map(po => po._backendId));
+  markLocalOnlyPurchaseOrdersForBackendSession();
   state.purchaseOrders = [
     ...backendPos,
     ...state.purchaseOrders
