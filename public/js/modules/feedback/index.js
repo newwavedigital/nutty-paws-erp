@@ -1,6 +1,18 @@
 const FEEDBACK_TYPES = ['Bug / Error', 'Feature Request', 'General Feedback', 'Question'];
 const FEEDBACK_STATUSES = ['Open', 'Reviewed', 'In Progress', 'Resolved', "Won't Do"];
 let pendingFeedbackFile = null;
+function feedbackAttachmentLinkHtml(attachment, options = {}) {
+  if (!attachment) return options.emptyHtml || '<span style="font-size:12px;color:var(--brown-light)">-</span>';
+  const name = attachment.name || 'attachment';
+  return backendFileActionHtml(attachment, {
+    className: options.className,
+    style: options.style,
+    label: options.label || name,
+    htmlLabel: options.htmlLabel,
+    mode: options.mode,
+    unavailableHtml: options.unavailableHtml || `<span style="font-size:12px;color:var(--brown-light)">${escapeHtml(name)} unavailable</span>`
+  });
+}
 function feedbackStatusClass(s) {
   switch(s) {
     case 'Open': return 'badge-low';
@@ -79,7 +91,10 @@ function renderFeedback(el) {
                   <td><span class="pill">${escapeHtml(f.type||'')}</span></td>
                   <td><strong>${escapeHtml(f.title||'')}</strong></td>
                   <td>${f.attachment
-                    ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" style="color:var(--orange);font-size:12px;text-decoration:none">&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}</a>`
+                    ? feedbackAttachmentLinkHtml(f.attachment, {
+                        style: 'color:var(--orange);font-size:12px;text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+                        htmlLabel: `&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}`
+                      })
                     : '<span style="font-size:12px;color:var(--brown-light)">-</span>'
                   }</td>
                   <td>
@@ -143,12 +158,17 @@ async function submitFeedback() {
   try {
     let saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), data);
     if (pendingFeedbackFile) {
-      const uploaded = await uploadA10FileReference('feedback', saved.id, 'feedback_attachment', pendingFeedbackFile);
-      saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), {
-        ...data,
-        attachment: { name: pendingFeedbackFile.name, type: pendingFeedbackFile.type, size: pendingFeedbackFile.size, fileId: uploaded.id },
-        fileIds: [uploaded.id]
-      }, { recordId: saved.id });
+      try {
+        const uploaded = await uploadA10FileReference('feedback', saved.id, 'feedback_attachment', pendingFeedbackFile);
+        saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), {
+          ...data,
+          attachment: { name: pendingFeedbackFile.name, type: pendingFeedbackFile.type, size: pendingFeedbackFile.size, fileId: uploaded.id },
+          fileIds: [uploaded.id]
+        }, { recordId: saved.id });
+      } catch (err) {
+        try { await archiveA10DataRecord('feedback', saved.id); } catch (cleanupErr) {}
+        throw err;
+      }
       pendingFeedbackFile = null;
     }
     router('feedback');
@@ -214,8 +234,24 @@ function viewFeedback(id) {
       <div style="margin-top:14px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:6px">Attachment</div>
         ${f.attachment.type && f.attachment.type.startsWith('image/')
-          ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" target="_blank" style="display:inline-block">${f.attachment.dataUrl ? `<img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" />` : '&#128206; '+escapeHtml(f.attachment.name)}</a><div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px"><a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#11015; Download</a></div>`
-          : `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</a>`
+          ? `${f.attachment.dataUrl && !backendFileId(f.attachment)
+              ? `<a href="${f.attachment.dataUrl}" target="_blank" rel="noopener" style="display:inline-block"><img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" /></a>`
+              : feedbackAttachmentLinkHtml(f.attachment, {
+                  mode: 'preview',
+                  className: 'btn btn-icon btn-sm',
+                  style: 'text-decoration:none',
+                  htmlLabel: `&#128206; ${escapeHtml(f.attachment.name)}`
+                })}<div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px">${feedbackAttachmentLinkHtml(f.attachment, {
+                  className: 'btn btn-icon btn-sm',
+                  style: 'text-decoration:none',
+                  htmlLabel: '&#11015; Download',
+                  label: 'Download'
+                })}</div>`
+          : feedbackAttachmentLinkHtml(f.attachment, {
+              className: 'btn btn-icon btn-sm',
+              style: 'text-decoration:none',
+              htmlLabel: `&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)`
+            })
         }
       </div>
     ` : ''}

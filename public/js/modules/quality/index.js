@@ -42,8 +42,8 @@ function renderQualityAssurance(el) {
                   <td>${escapeHtml(getCustomer(p.customerId)?.name||'')}</td>
                   <td><div><span class="pill">${escapeHtml(qualityActionLabel(p))}</span></div><div style="font-size:11px;color:var(--brown-light);margin-top:3px">${escapeHtml(qualityReleaseStatusText(p))}</div></td>
                   <td>
-                    ${p.coa ? `<div><a href="${p.coa.dataUrl}" download="${escapeHtml(p.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(p.coa.name)}</a></div>` : '<div style="color:var(--brown-light);font-size:12px">No COA on file</div>'}
-                    ${p.postShipmentCoa ? `<div style="margin-top:4px"><a href="${p.postShipmentCoa.dataUrl}" download="${escapeHtml(p.postShipmentCoa.name)}" style="color:var(--brown);text-decoration:none">&#128196; ${escapeHtml(p.postShipmentCoa.name)}</a></div>` : ((p.status === 'shipping' || p.status === 'completed') ? `<div class="file-upload" style="margin-top:6px;padding:8px"><input type="file" accept=".pdf,application/pdf,image/*" onchange="qualityPostShipmentCoaSelected(event,'${p.id}')" /><div class="file-info">Optional post-shipment COA upload.</div></div>` : '<div style="color:var(--brown-light);font-size:12px;margin-top:4px">Post-shipment COA can be attached later.</div>')}
+                    ${p.coa ? `<div>${qualityFileLinkHtml(p.coa, 'var(--orange)')}</div>` : '<div style="color:var(--brown-light);font-size:12px">No COA on file</div>'}
+                    ${p.postShipmentCoa ? `<div style="margin-top:4px">${qualityFileLinkHtml(p.postShipmentCoa, 'var(--brown)')}</div>` : ((p.status === 'shipping' || p.status === 'completed') ? `<div class="file-upload" style="margin-top:6px;padding:8px"><input type="file" accept=".pdf,application/pdf,image/*" onchange="qualityPostShipmentCoaSelected(event,'${p.id}')" /><div class="file-info">Optional post-shipment COA upload.</div></div>` : '<div style="color:var(--brown-light);font-size:12px;margin-top:4px">Post-shipment COA can be attached later.</div>')}
                   </td>
                   <td>${fmtDate(qualityActionTimestamp(p)?.slice(0,10)||'')}</td>
                   <td>${escapeHtml(qualityActionActor(p))}</td>
@@ -56,6 +56,15 @@ function renderQualityAssurance(el) {
       }
     </div>
   `;
+}
+
+function qualityFileLinkHtml(file, color = 'var(--orange)', label = '') {
+  const name = file?.name || file?.fileName || label || 'file';
+  return backendFileActionHtml(file, {
+    style: `color:${color};text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer`,
+    htmlLabel: `&#128206; ${escapeHtml(name)}`,
+    unavailableHtml: `<span style="color:var(--brown-light);font-size:12px">&#128206; ${escapeHtml(name)} unavailable</span>`
+  });
 }
 
 function qaCardHtml(po) {
@@ -91,7 +100,7 @@ function qaCardHtml(po) {
         <div style="font-size:13px;font-weight:600;color:var(--brown);margin-bottom:6px">Certificate of Analysis (COA)</div>
         ${po.coa
           ? `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-              <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none;font-size:13px">&#128206; ${escapeHtml(po.coa.name)} (${Math.round((po.coa.size||0)/1024)} KB)</a>
+              <span style="font-size:13px">${qualityFileLinkHtml(po.coa, 'var(--orange)')} <span style="color:var(--brown-light)">(${Math.round((po.coa.size||0)/1024)} KB)</span></span>
               <div style="font-size:11px;color:var(--brown-light)">Uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</div>
             </div>`
           : `<div class="file-upload">

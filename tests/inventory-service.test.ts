@@ -60,9 +60,11 @@ function createStore(overrides: Partial<InventoryStore> = {}) {
     },
     async releaseReservationRecord(id) {
       calls.push(`releaseReservationRecord:${id}`);
+      return true;
     },
     async releaseInventoryItemAllocation(id, quantity) {
       calls.push(`releaseInventoryItemAllocation:${id}:${quantity}`);
+      return true;
     },
     ...overrides,
   };
@@ -158,10 +160,32 @@ describe("inventory reservation service", () => {
     });
     expect(store.calls).toEqual([
       "getActiveReservation:reservation-1",
-      "releaseReservationRecord:reservation-1",
       "releaseInventoryItemAllocation:inv-1:30",
+      "releaseReservationRecord:reservation-1",
       "createMovement:released:-30",
       "createAuditEvent:inventory.released",
+    ]);
+  });
+
+  it("does not release the reservation or write ledger rows when allocation release fails", async () => {
+    const store = createStore({
+      async releaseInventoryItemAllocation(id, quantity) {
+        store.calls.push(`releaseInventoryItemAllocation:${id}:${quantity}`);
+        return false;
+      },
+    });
+
+    await expect(
+      releaseInventoryReservation(store, {
+        reservationId: "reservation-1",
+        actorUserId: "user-1",
+      }),
+    ).rejects.toEqual(
+      new InventoryError("RESERVATION_RELEASE_FAILED", "Reserved inventory allocation could not be released"),
+    );
+    expect(store.calls).toEqual([
+      "getActiveReservation:reservation-1",
+      "releaseInventoryItemAllocation:inv-1:30",
     ]);
   });
 });
@@ -239,8 +263,8 @@ function createCorrectionStore(overrides: Partial<InventoryStore> = {}) {
       calls.push(`createAuditEvent:${input.action}`);
     },
     async getActiveReservation() { return null; },
-    async releaseReservationRecord() {},
-    async releaseInventoryItemAllocation() {},
+    async releaseReservationRecord() { return true; },
+    async releaseInventoryItemAllocation() { return true; },
     async masterItemExists(masterItemId) {
       calls.push(`masterItemExists:${masterItemId}`);
       return masterItemId === "master-1";

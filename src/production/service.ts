@@ -223,7 +223,7 @@ export async function finalizeProductionRun(
     actorUserId?: string;
     lines: Array<{
       purchaseOrderLineId: string;
-      productId: string;
+      productId?: string | null;
       quantityProduced: number;
       casesProduced: number;
       lotNumber: string;
@@ -344,7 +344,7 @@ export function listProductionRuns(store: ProductionStore) {
 function buildRunLines(
   run: ProductionRunRecord,
   po: ProductionPurchaseOrder,
-  lines: Array<{ purchaseOrderLineId: string; productId: string; quantityProduced: number; casesProduced: number; lotNumber: string }>,
+  lines: Array<{ purchaseOrderLineId: string; productId?: string | null; quantityProduced: number; casesProduced: number; lotNumber: string }>,
 ): ProductionRunLineRecord[] {
   return lines.map((line) => {
     assertNonNegative(line.quantityProduced, "quantityProduced");
@@ -352,11 +352,14 @@ function buildRunLines(
     if (!line.lotNumber.trim()) throw new ProductionError("LOT_NUMBER_REQUIRED", "Finished goods require lot numbers");
     const poLine = po.lines.find((candidate) => candidate.id === line.purchaseOrderLineId);
     if (!poLine) throw new ProductionError("PURCHASE_ORDER_LINE_NOT_FOUND", "Purchase order line not found");
+    if (line.productId && line.productId !== poLine.productId) {
+      throw new ProductionError("PURCHASE_ORDER_LINE_PRODUCT_MISMATCH", "Production line product does not match the purchase order line");
+    }
     return {
       id: `production_run_line_${crypto.randomUUID()}`,
       productionRunId: run.id,
       purchaseOrderLineId: line.purchaseOrderLineId,
-      productId: line.productId,
+      productId: poLine.productId,
       orderedQuantity: poLine.quantity,
       quantityProduced: round2(line.quantityProduced),
       casesProduced: round2(line.casesProduced),
@@ -384,8 +387,12 @@ async function buildRunMaterials(
   for (const line of runLines) {
     if (!line.productId) continue;
     const bomItems = await store.listProductBomItems(line.productId);
+    const seenBomItems = new Set<string>();
     for (const bomItem of bomItems) {
       const materialType = bomItem.itemType === "packaging" ? "packaging" : "ingredient";
+      const bomIdentity = `${line.productId}:${materialType}:${bomItem.masterItemId}:${bomItem.quantityPerUnit}`;
+      if (seenBomItems.has(bomIdentity)) continue;
+      seenBomItems.add(bomIdentity);
       const key = materialType === "packaging"
         ? `${line.purchaseOrderLineId}:${line.productId}:${bomItem.masterItemId}`
         : `ingredient:${bomItem.masterItemId}`;

@@ -112,7 +112,7 @@ describe("Sprint A10 frontend authority cleanup", () => {
   test("supplier document links do not render inert hash downloads for pending files", () => {
     expect(supplierModule).toContain("function supplierDocumentLinkHtml");
     expect(supplierModule).toContain("Pending upload");
-    expect(supplierModule).toContain("/api/files/${encodeURIComponent(file.fileId)}/download");
+    expect(supplierModule).toContain("backendFileActionHtml(file");
     expect(supplierModule).not.toContain("href=\"#\"");
   });
 });

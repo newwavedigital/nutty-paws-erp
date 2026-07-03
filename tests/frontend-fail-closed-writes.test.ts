@@ -94,7 +94,7 @@ describe("frontend fail-closed backend writes", () => {
       "Purchase order cancellation requires backend confirmation. Nothing was saved locally.",
       "Procurement PO cancellation requires backend confirmation. Nothing was saved locally.",
       "Production value edits require backend correction support. Nothing was saved locally.",
-      "Requested production requests are not backend-supported yet. Nothing was saved locally.",
+      "Requested PO's are not included in the backend automations yet. Nothing was saved locally.",
       "QA notes require backend confirmation. Nothing was saved locally.",
       "Warehouse notes require backend confirmation. Nothing was saved locally.",
       "Pick & Pack PO cancellation requires backend confirmation. Nothing was saved locally.",

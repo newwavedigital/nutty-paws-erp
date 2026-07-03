@@ -180,8 +180,8 @@ export type InventoryStore = {
   createMovement(input: InventoryMovementInput): Promise<void>;
   createAuditEvent(input: InventoryAuditInput): Promise<void>;
   getActiveReservation(id: string): Promise<InventoryReservationRecord | null>;
-  releaseReservationRecord(id: string): Promise<void>;
-  releaseInventoryItemAllocation(id: string, quantity: number): Promise<void>;
+  releaseReservationRecord(id: string): Promise<boolean>;
+  releaseInventoryItemAllocation(id: string, quantity: number): Promise<boolean>;
   listInventoryItems?(): Promise<InventoryItemSetupRecord[]>;
   createInventoryItem?(input: InventoryItemInput): Promise<InventoryItemSetupRecord>;
   updateInventoryItem?(id: string, input: InventoryItemInput): Promise<InventoryItemSetupRecord | null>;
@@ -654,8 +654,15 @@ export async function releaseInventoryReservation(
     throw new InventoryError("RESERVATION_NOT_FOUND", "Active reservation not found");
   }
 
-  await store.releaseReservationRecord(input.reservationId);
-  await store.releaseInventoryItemAllocation(reservation.inventoryItemId, reservation.quantity);
+  const allocationReleased = await store.releaseInventoryItemAllocation(reservation.inventoryItemId, reservation.quantity);
+  if (!allocationReleased) {
+    throw new InventoryError("RESERVATION_RELEASE_FAILED", "Reserved inventory allocation could not be released");
+  }
+
+  const reservationReleased = await store.releaseReservationRecord(input.reservationId);
+  if (!reservationReleased) {
+    throw new InventoryError("RESERVATION_RELEASE_FAILED", "Reservation could not be released");
+  }
   await store.createMovement({
     inventoryItemId: reservation.inventoryItemId,
     movementType: "released",

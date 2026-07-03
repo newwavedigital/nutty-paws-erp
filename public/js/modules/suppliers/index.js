@@ -81,14 +81,14 @@ function supplierWebsiteHref(website) {
 
 function supplierDocumentLinkHtml(file, label = '') {
   if (!file) return '';
-  if (file.fileId) {
-    const href = `/api/files/${encodeURIComponent(file.fileId)}/download`;
-    return `<a href="${href}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
+  const name = file.name || label || 'Selected file';
+  if (!file.fileId && !file._backendFileId && !file.dataUrl) {
+    return `<span style="color:var(--brown);font-size:12px">&#128206; ${escapeHtml(name)}</span> <span class="pill">Pending upload</span>`;
   }
-  if (file.dataUrl) {
-    return `<a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
-  }
-  return `<span style="color:var(--brown);font-size:12px">&#128206; ${escapeHtml(file.name || label || 'Selected file')}</span> <span class="pill">Pending upload</span>`;
+  return backendFileActionHtml(file, {
+    style: 'color:var(--orange);text-decoration:none;font-size:12px;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+    htmlLabel: `&#128206; ${escapeHtml(name)}`
+  });
 }
 
 function renderSuppliers(el) {
@@ -123,8 +123,12 @@ function renderSuppliers(el) {
             const docPills = VENDOR_DOC_TYPES.filter(d => docs[d.key]).map(d => {
               const f = docs[d.key];
               if (!f.fileId && !f.dataUrl) return `<span class="pill" title="${escapeHtml(d.label)}: pending upload">&#128206; ${escapeHtml(d.label.split(' ')[0])} pending</span>`;
-              const href = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : f.dataUrl;
-              return `<a href="${href}" download="${escapeHtml(f.name)}" class="pill" style="cursor:pointer;text-decoration:none" title="${escapeHtml(d.label)}: ${escapeHtml(f.name)}">&#128206; ${escapeHtml(d.label.split(' ')[0])}</a>`;
+              return backendFileActionHtml(f, {
+                className: 'pill',
+                style: 'cursor:pointer;text-decoration:none;background:none;border:none',
+                title: `${d.label}: ${f.name}`,
+                htmlLabel: `&#128206; ${escapeHtml(d.label.split(' ')[0])}`
+              });
             }).join('');
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
@@ -309,7 +313,7 @@ function removeSupplierDoc(docKey) {
 async function saveSupplier(id, isNew) {
   const docs = {};
   VENDOR_DOC_TYPES.forEach(d => {
-    if (supplierEditingDocs[d.key]) {
+    if (supplierEditingDocs[d.key] && !supplierEditingDocs[d.key].file) {
       const { file, ...docMeta } = supplierEditingDocs[d.key];
       docs[d.key] = docMeta;
     }
@@ -337,17 +341,24 @@ async function saveSupplier(id, isNew) {
   };
   try {
     let saved = await saveA10DataRecord('suppliers', 'supplier', data, { recordId: isNew ? null : (existing?._backendId || id) });
-    const uploadedDocs = { ...docs };
-    let uploadedAny = false;
-    for (const d of VENDOR_DOC_TYPES) {
-      const pending = supplierEditingDocs[d.key];
-      if (!pending?.file) continue;
-      const uploaded = await uploadA10FileReference('supplier', saved.id, 'supplier_document', pending.file);
-      uploadedDocs[d.key] = { name: pending.name, type: pending.type, size: pending.size, fileId: uploaded.id };
-      uploadedAny = true;
-    }
-    if (uploadedAny) {
-      saved = await saveA10DataRecord('suppliers', 'supplier', { ...data, docs: uploadedDocs, fileIds: Object.values(uploadedDocs).map(doc => doc.fileId).filter(Boolean) }, { recordId: saved.id });
+    try {
+      const uploadedDocs = { ...docs };
+      let uploadedAny = false;
+      for (const d of VENDOR_DOC_TYPES) {
+        const pending = supplierEditingDocs[d.key];
+        if (!pending?.file) continue;
+        const uploaded = await uploadA10FileReference('supplier', saved.id, 'supplier_document', pending.file);
+        uploadedDocs[d.key] = { name: pending.name, type: pending.type, size: pending.size, fileId: uploaded.id };
+        uploadedAny = true;
+      }
+      if (uploadedAny) {
+        saved = await saveA10DataRecord('suppliers', 'supplier', { ...data, docs: uploadedDocs, fileIds: Object.values(uploadedDocs).map(doc => doc.fileId).filter(Boolean) }, { recordId: saved.id });
+      }
+    } catch (err) {
+      if (isNew && saved?.id) {
+        try { await archiveA10DataRecord('suppliers', saved.id); } catch (cleanupErr) {}
+      }
+      throw err;
     }
     closeModal();
     router('suppliers');

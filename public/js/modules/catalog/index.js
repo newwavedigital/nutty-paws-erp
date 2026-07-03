@@ -1,6 +1,43 @@
 /* =========================================================================
    CUSTOMERS & PRODUCTS
    ========================================================================= */
+const pendingCustomerFiles = { spec: null, agree: null };
+
+function catalogFileLinkHtml(file, fallbackLabel) {
+  if (!file) return '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>';
+  const name = file.name || file.fileName || fallbackLabel || 'file';
+  if (file._backendFileId || file.fileId) {
+    return backendFileActionHtml(file, {
+      className: 'btn btn-icon btn-sm',
+      style: 'text-decoration:none',
+      htmlLabel: `&#128196; ${escapeHtml(name.slice(0,18))}`
+    });
+  }
+  if (file.dataUrl) {
+    return `<a href="${file.dataUrl}" download="${escapeHtml(name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml(name.slice(0,18))}</a>`;
+  }
+  return `<span class="pill" title="${escapeHtml(name)}">${escapeHtml(name.slice(0,18))}</span>`;
+}
+
+function catalogProductMediaDownloadHtml(img, kind) {
+  if (!img) return '';
+  const name = img.name || img.fileName || `${kind}-image`;
+  if (!img._backendFileId && !img.fileId && !img.dataUrl) return `<span class="pill" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
+  return backendFileActionHtml(img, {
+    className: 'btn btn-secondary',
+    style: 'text-decoration:none',
+    label: 'Download'
+  });
+}
+
+function catalogProductMediaThumbHtml(img, alt, onClick) {
+  if (!img) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
+  if (img.dataUrl && !img._backendFile) {
+    return `<img src="${img.dataUrl}" alt="${escapeHtml(alt)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="${onClick}" />`;
+  }
+  return `<button class="btn btn-icon btn-sm" onclick="${onClick}" title="${escapeHtml(img.name||img.fileName||alt)}">&#128196; File</button>`;
+}
+
 function renderCustomers(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendCustomerState.loaded && !backendCustomerState.loading) {
     loadBackendCustomers().then(() => { if (currentPage === 'customers') router('customers'); });
@@ -55,11 +92,11 @@ function renderCustomers(el) {
                 <td>${contactCell('billingContact')}</td>
                 <td>${contactCell('foodSafetyContact')}</td>
                 <td>${sheet
-                  ? `<a href="${sheet.dataUrl}" download="${escapeHtml(sheet.name||sheet.fileName||'spec-sheet')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((sheet.name||sheet.fileName||'spec').slice(0,18))}</a>`
+                  ? catalogFileLinkHtml(sheet, 'spec-sheet')
                   : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>'
                 }</td>
                 <td>${agreement
-                  ? `<a href="${agreement.dataUrl}" download="${escapeHtml(agreement.name||agreement.fileName||'agreement')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((agreement.name||agreement.fileName||'agreement').slice(0,18))}</a>`
+                  ? catalogFileLinkHtml(agreement, 'agreement')
                   : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>'
                 }</td>
                 <td class="customer-actions-cell">
@@ -122,7 +159,7 @@ function editCustomer(id) {
           <div class="file-info ${c.specSheet?'has':''}" id="cust_spec_info">
             ${c.specSheet ? `&#128206; ${escapeHtml(c.specSheet.name||c.specSheet.fileName||'file')} (${Math.round((c.specSheet.size||0)/1024)} KB)` : 'No spec sheet uploaded.'}
           </div>
-          ${c.specSheet ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('spec')">Remove</button>` : ''}
+          ${c.specSheet && !c.specSheet._backendFile ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('spec')">Remove</button>` : ''}
         </div>
         <input type="hidden" id="cust_spec_data" value='${c.specSheet ? JSON.stringify(c.specSheet).replace(/'/g, "&#039;") : ""}' />
       </div>
@@ -132,7 +169,7 @@ function editCustomer(id) {
           <div class="file-info ${c.copackingAgreement?'has':''}" id="cust_agree_info">
             ${c.copackingAgreement ? `&#128206; ${escapeHtml(c.copackingAgreement.name||c.copackingAgreement.fileName||'file')} (${Math.round((c.copackingAgreement.size||0)/1024)} KB)` : 'No co-packing agreement uploaded.'}
           </div>
-          ${c.copackingAgreement ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('agree')">Remove</button>` : ''}
+          ${c.copackingAgreement && !c.copackingAgreement._backendFile ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('agree')">Remove</button>` : ''}
         </div>
         <input type="hidden" id="cust_agree_data" value='${c.copackingAgreement ? JSON.stringify(c.copackingAgreement).replace(/'/g, "&#039;") : ""}' />
       </div>
@@ -150,6 +187,7 @@ function customerFileSelected(e, kind) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
+  pendingCustomerFiles[kind] = f;
   const reader = new FileReader();
   reader.onload = () => {
     const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
@@ -161,6 +199,7 @@ function customerFileSelected(e, kind) {
   reader.readAsDataURL(f);
 }
 function clearCustomerFile(kind) {
+  pendingCustomerFiles[kind] = null;
   document.getElementById('cust_'+kind+'_data').value = '';
   document.getElementById('cust_'+kind+'_input').value = '';
   const info = document.getElementById('cust_'+kind+'_info');
@@ -205,6 +244,12 @@ async function saveCustomer(id, isNew) {
       ? await apiRequest('/api/customers', { method: 'POST', body: JSON.stringify(payload) })
       : await apiRequest(`/api/customers/${encodeURIComponent(existing?._backendId || '')}`, { method: 'PATCH', body: JSON.stringify(payload) });
     mergeBackendCustomers([saved]);
+    const customer = (state.customers || []).find(c => c._backendId === saved.id || c.id === saved.id);
+    if (pendingCustomerFiles.spec) customer.specSheet = mapBackendFileToPrototype(await uploadBackendCustomerFile(saved.id, pendingCustomerFiles.spec, 'customer_spec_sheet'));
+    if (pendingCustomerFiles.agree) customer.copackingAgreement = mapBackendFileToPrototype(await uploadBackendCustomerFile(saved.id, pendingCustomerFiles.agree, 'co_packing_agreement'));
+    pendingCustomerFiles.spec = null;
+    pendingCustomerFiles.agree = null;
+    await hydrateBackendCustomerFiles(customer ? [customer] : state.customers.filter(c => c._backendId === saved.id));
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     closeModal();
@@ -369,7 +414,7 @@ function editProduct(id) {
 }
 function productImagePreviewHtml(img, kind) {
   const inputId = kind === 'nfp' ? 'prod_nfp_input' : 'prod_image_input';
-  if (img && img.dataUrl) {
+  if (img && img.dataUrl && !img._backendFile) {
     return `
       <div style="border:1px solid var(--grey-light);border-radius:6px;padding:8px;background:var(--white);text-align:center">
         <img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:140px;border-radius:4px" />
@@ -377,6 +422,19 @@ function productImagePreviewHtml(img, kind) {
         <div style="margin-top:6px;display:flex;gap:6px;justify-content:center">
           <button type="button" class="btn btn-icon btn-sm" onclick="document.getElementById('${inputId}').click()">Replace</button>
           <button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearProductImage('${kind}')">Remove</button>
+        </div>
+      </div>
+    `;
+  }
+  if (img) {
+    const name = img.name || img.fileName || `${kind}-image`;
+    return `
+      <div style="border:1px solid var(--grey-light);border-radius:6px;padding:8px;background:var(--white);text-align:center">
+        <div style="font-size:28px;color:var(--brown)">&#128196;</div>
+        <div style="font-size:11px;color:var(--brown-light);margin-top:4px">${escapeHtml(name)} (${Math.round((img.size||0)/1024)} KB)</div>
+        <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+          ${catalogProductMediaDownloadHtml(img, kind)}
+          <button type="button" class="btn btn-icon btn-sm" onclick="document.getElementById('${inputId}').click()">Replace</button>
         </div>
       </div>
     `;
@@ -556,8 +614,8 @@ async function saveProduct(id, isNew) {
   if (!requireEmployeeBackendWrite(backendProductState)) return;
   try {
     backendProduct = await saveBackendProduct(id, isNew, { ...data, _backendId: existing?._backendId }, cleanFormula);
-    if (pendingProductMediaFiles.product) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image');
-    if (pendingProductMediaFiles.nfp) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts');
+    if (pendingProductMediaFiles.product) data.productImage = mapBackendFileToPrototype(await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image'));
+    if (pendingProductMediaFiles.nfp) data.nfpImage = mapBackendFileToPrototype(await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts'));
     pendingProductMediaFiles.product = null;
     pendingProductMediaFiles.nfp = null;
     backendProductState.status = 'connected';
@@ -566,6 +624,7 @@ async function saveProduct(id, isNew) {
     data.id = backendProduct.id;
     data._backendId = backendProduct.id;
     id = backendProduct.id;
+    await hydrateBackendProductFiles([{ ...data, _backendId: backendProduct.id }]);
   } catch (error) {
     failBackendRequiredWrite(error, backendProductState);
     return;
@@ -646,13 +705,16 @@ function viewProductImage(productId, kind) {
   const img = kind === 'nfp' ? p.nfpImage : p.productImage;
   if (!img) return;
   const title = kind === 'nfp' ? 'Nutrition Facts Panel' : 'Product Image';
+  const imageHtml = img.dataUrl && !img._backendFile
+    ? `<img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:60vh;border-radius:6px;border:1px solid var(--grey-light)" />`
+    : `<div style="padding:30px;border:1px solid var(--grey-light);border-radius:6px;color:var(--brown);font-size:32px">&#128196;</div>`;
   openModal(`${title} - ${escapeHtml(p.name)}`, `
     <div style="text-align:center">
-      <img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:60vh;border-radius:6px;border:1px solid var(--grey-light)" />
+      ${imageHtml}
       <div style="font-size:12px;color:var(--brown-light);margin-top:8px">${escapeHtml(img.name||'')} (${Math.round((img.size||0)/1024)} KB)</div>
     </div>
     <div class="form-actions">
-      <a href="${img.dataUrl}" download="${escapeHtml(img.name||(kind+'-image'))}" class="btn btn-secondary" style="text-decoration:none">Download</a>
+      ${catalogProductMediaDownloadHtml(img, kind)}
       <button class="btn" onclick="closeModal()">Close</button>
     </div>
   `);
@@ -794,7 +856,7 @@ function renderProductList(el) {
             const bom = state.boms[p.id] || [];
             return `
             <tr>
-              <td>${p.productImage ? `<img src="${p.productImage.dataUrl}" alt="${escapeHtml(p.name)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','product')" />` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
+              <td>${catalogProductMediaThumbHtml(p.productImage, p.name, `viewProductImage('${p.id}','product')`)}</td>
               <td><strong>${escapeHtml(p.sku)}</strong></td>
               <td>${escapeHtml(p.name)}</td>
               <td>${escapeHtml(getCustomer(p.customerId)?.name||'-')}</td>
@@ -805,7 +867,7 @@ function renderProductList(el) {
               <td>${p.dailyProductionRate ? p.dailyProductionRate + ' / day' : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
               <td>${p.kosher ? '<span class="badge badge-prod" title="Kosher Certified">&#10003; Kosher</span>' : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
               <td>${p.allergen ? `<span class="badge badge-low" title="${escapeHtml(p.allergenDetails||'Allergen')}">&#9888; ${escapeHtml(p.allergenDetails||'Yes')}</span>` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
-              <td>${p.nfpImage ? `<img src="${p.nfpImage.dataUrl}" alt="NFP" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','nfp')" />` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
+              <td>${catalogProductMediaThumbHtml(p.nfpImage, 'NFP', `viewProductImage('${p.id}','nfp')`)}</td>
               <td>${formulaPillHtml(p, bom)}</td>
               <td>${fmtMoney(p.price)}</td>
               <td class="row-actions">

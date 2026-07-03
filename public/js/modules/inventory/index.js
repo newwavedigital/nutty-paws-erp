@@ -37,10 +37,14 @@ function inventoryCustomer(item) {
 
 function inventoryCoaLinkHtml(coa) {
   if (!coa) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
-  const fileId = coa.fileId || coa._backendFileId || coa.id || '';
   const label = coa.name || coa.fileName || 'CoA';
-  if (!fileId) return '<span style="color:var(--brown-light);font-size:12px">Backend file unavailable</span>';
-  return `<a href="/api/files/${encodeURIComponent(fileId)}/download" download="${escapeHtml(label)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(label)}">&#128196; CoA</a>`;
+  return backendFileActionHtml(coa, {
+    className: 'btn btn-icon btn-sm',
+    style: 'text-decoration:none',
+    htmlLabel: '&#128196; CoA',
+    title: label,
+    unavailableHtml: '<span style="color:var(--brown-light);font-size:12px">Backend file unavailable</span>'
+  });
 }
 
 function inventoryEmployeeBackendSession() {

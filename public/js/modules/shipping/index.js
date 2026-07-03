@@ -162,7 +162,7 @@ function shippingCardHtml(p) {
           <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
             ${hasDocs ? `&#128206; ${escapeHtml(s.documents.name)} (${Math.round((s.documents.size||0)/1024)} KB)` : 'No documents uploaded. Required before marking shipped.'}
           </div>
-          ${hasDocs ? `<a href="${s.documents.dataUrl}" download="${escapeHtml(s.documents.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a><button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}
+          ${hasDocs ? `${shippingFileDownloadHtml(s.documents)}${!s.documents._backendFile ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}` : ''}
         </div>
       </div>
       <div class="form-row" style="margin-top:10px">
@@ -293,6 +293,16 @@ async function saveWarehouseNotes(id) {
   } catch (error) {
     failBackendRequiredWrite(error, backendShippingState);
   }
+}
+
+function shippingFileDownloadHtml(file) {
+  const name = file?.name || file?.fileName || 'shipment-document';
+  return backendFileActionHtml(file, {
+    className: 'btn btn-icon btn-sm',
+    style: 'text-decoration:none',
+    label: 'Download',
+    unavailableHtml: `<span class="pill" title="Backend file unavailable">${escapeHtml(name)}</span>`
+  });
 }
 async function confirmStocked(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);

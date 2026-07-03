@@ -28,8 +28,8 @@ function createRouteStore(overrides: Partial<InventoryStore> = {}) {
         status: "active",
       };
     },
-    async releaseReservationRecord() {},
-    async releaseInventoryItemAllocation() {},
+    async releaseReservationRecord() { return true; },
+    async releaseInventoryItemAllocation() { return true; },
     ...overrides,
   };
 

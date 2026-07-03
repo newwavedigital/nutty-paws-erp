@@ -88,17 +88,27 @@ function renderContentLibrary(el) {
             }).join('')}
             ${files.map(f => {
               const ext = (f.name.split('.').pop()||'').toLowerCase();
-              const downloadHref = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f.dataUrl || '#');
+              const nameButton = backendFileActionHtml(f, {
+                style: 'color:var(--brown);font-weight:600;text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+                label: f.name,
+                unavailableHtml: `<span style="color:var(--brown);font-weight:600">${escapeHtml(f.name)}</span>`
+              });
+              const downloadButton = backendFileActionHtml(f, {
+                className: 'btn btn-icon btn-sm',
+                style: 'text-decoration:none',
+                label: 'Download',
+                unavailableHtml: '<span class="pill">Unavailable</span>'
+              });
               return `<tr class="lib-row" data-file-id="${f.id}"
                   draggable="true"
                   ondragstart="libDragStart(event,'file','${f.id}')">
                 <td style="text-align:center;font-size:18px;color:var(--orange)">${fileIcon(f.type, f.name)}</td>
-                <td><a href="${downloadHref}" download="${escapeHtml(f.name)}" style="color:var(--brown);font-weight:600;text-decoration:none">${escapeHtml(f.name)}</a></td>
+                <td>${nameButton}</td>
                 <td style="font-size:12px;color:var(--brown-light);text-transform:uppercase">${escapeHtml(ext||'file')}</td>
                 <td style="font-size:12px">${formatBytes(f.size)}</td>
                 <td style="font-size:12px">${fmtDate(f.uploadedAt)}</td>
                 <td class="row-actions">
-                  <a href="${downloadHref}" download="${escapeHtml(f.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a>
+                  ${downloadButton}
                   <button class="btn btn-icon btn-sm" onclick="moveFile('${f.id}')">Move</button>
                   <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLibraryFile('${f.id}')">Delete</button>
                 </td>
@@ -271,10 +281,10 @@ async function libraryUpload(e) {
   if (files.length === 0) return;
   try {
     for (const f of files) {
-    if (f.size > 5 * 1024 * 1024) {
-      toast(`Skipped "${f.name}" - over 5 MB.`);
-      continue;
-    }
+      if (f.size > 5 * 1024 * 1024) {
+        toast(`Skipped "${f.name}" - over 5 MB.`);
+        continue;
+      }
       const recordPayload = {
         id: uid('lf'),
         kind: 'file',
@@ -285,9 +295,17 @@ async function libraryUpload(e) {
         uploadedAt: new Date().toISOString().slice(0,10),
         fileIds: []
       };
-      const saved = await saveA10DataRecord('contentLibrary', 'file', recordPayload);
-      const uploaded = await uploadA10FileReference('content_library', saved.id, 'content_library_file', f);
-      await saveA10DataRecord('contentLibrary', 'file', { ...recordPayload, fileId: uploaded.id, fileIds: [uploaded.id] }, { recordId: saved.id });
+      let saved = null;
+      try {
+        saved = await saveA10DataRecord('contentLibrary', 'file', recordPayload);
+        const uploaded = await uploadA10FileReference('content_library', saved.id, 'content_library_file', f);
+        await saveA10DataRecord('contentLibrary', 'file', { ...recordPayload, fileId: uploaded.id, fileIds: [uploaded.id] }, { recordId: saved.id });
+      } catch (err) {
+        if (saved?.id) {
+          try { await archiveA10DataRecord('contentLibrary', saved.id); } catch (cleanupErr) {}
+        }
+        throw err;
+      }
     }
     e.target.value = '';
     router('content-library');

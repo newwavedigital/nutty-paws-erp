@@ -261,8 +261,8 @@ export class D1InventoryStore implements InventoryStore {
     };
   }
 
-  async releaseReservationRecord(id: string): Promise<void> {
-    await this.db
+  async releaseReservationRecord(id: string): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `
           UPDATE inventory_reservations
@@ -275,10 +275,11 @@ export class D1InventoryStore implements InventoryStore {
       )
       .bind(id)
       .run();
+    return (result.meta?.changes ?? 0) > 0;
   }
 
-  async releaseInventoryItemAllocation(id: string, quantity: number): Promise<void> {
-    await this.db
+  async releaseInventoryItemAllocation(id: string, quantity: number): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `
           UPDATE inventory_items
@@ -290,6 +291,7 @@ export class D1InventoryStore implements InventoryStore {
       )
       .bind(quantity, id, quantity)
       .run();
+    return (result.meta?.changes ?? 0) > 0;
   }
 
   async listInventoryItems(): Promise<InventoryItemSetupRecord[]> {

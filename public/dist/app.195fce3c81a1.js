@@ -1768,8 +1768,8 @@ function backendCustomerToLocalCustomer(customer, existing = {}) {
     address: existing.address || '',
     notes: existing.notes || '',
     status: customer.status || existing.status || 'active',
-    specSheet: existing.specSheet || null,
-    copackingAgreement: existing.copackingAgreement || null
+    specSheet: customer.specSheet || existing.specSheet || null,
+    copackingAgreement: customer.copackingAgreement || existing.copackingAgreement || null
   };
 }
 
@@ -1794,8 +1794,8 @@ function backendProductToLocalProduct(product, existing = {}) {
     allergen: !!(product.allergen ?? existing.allergen),
     allergenDetails: product.allergenDetails || existing.allergenDetails || '',
     finishedGoodId: existing.finishedGoodId || '',
-    productImage: existing.productImage || null,
-    nfpImage: existing.nfpImage || null,
+    productImage: product.productImage || existing.productImage || null,
+    nfpImage: product.nfpImage || existing.nfpImage || null,
     status: product.status || existing.status || 'active'
   };
 }
@@ -2309,6 +2309,7 @@ async function loadBackendCustomers() {
   try {
     const customers = await apiRequest('/api/customers');
     mergeBackendCustomers(customers);
+    await hydrateBackendCustomerFiles(state.customers);
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     backendCustomerState.loaded = true;
@@ -2333,6 +2334,7 @@ async function loadBackendCustomerProfile() {
   try {
     const customer = await apiRequest('/api/customers/me');
     mergeBackendCustomers([customer]);
+    await hydrateBackendCustomerFiles(state.customers.filter(c => c._backendId === customer.id));
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     backendCustomerState.loaded = true;
@@ -2352,6 +2354,7 @@ async function loadBackendProducts() {
   try {
     const products = await apiRequest('/api/products');
     mergeBackendProducts(products);
+    await hydrateBackendProductFiles(state.products);
     backendProductState.status = 'connected';
     backendProductState.lastError = '';
     backendProductState.loaded = true;
@@ -2653,6 +2656,52 @@ async function uploadBackendProductMedia(productId, file, fileCategory) {
   return apiFormRequest('/api/files', form);
 }
 
+async function uploadBackendCustomerFile(customerId, file, fileCategory) {
+  if (!file || !(file instanceof File)) return null;
+  const form = new FormData();
+  form.append('ownerType', 'customer');
+  form.append('ownerId', customerId);
+  form.append('fileCategory', fileCategory);
+  form.append('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+async function loadBackendFilesForOwner(ownerType, ownerId) {
+  return apiRequest(`/api/files?ownerType=${encodeURIComponent(ownerType)}&ownerId=${encodeURIComponent(ownerId)}`);
+}
+
+async function hydrateBackendCustomerFiles(customers) {
+  if (!backendAuthState.token) return;
+  await Promise.all((customers || []).filter(c => c._backendId).map(async customer => {
+    try {
+      const files = await loadBackendFilesForOwner('customer', customer._backendId);
+      customer._backendFiles = files || [];
+      const spec = (files || []).find(file => file.fileCategory === 'customer_spec_sheet') || null;
+      const agreement = (files || []).find(file => file.fileCategory === 'co_packing_agreement') || null;
+      customer.specSheet = spec ? mapBackendFileToPrototype(spec) : null;
+      customer.copackingAgreement = agreement ? mapBackendFileToPrototype(agreement) : null;
+    } catch (error) {
+      customer._backendFileError = error?.message || 'Customer files unavailable';
+    }
+  }));
+}
+
+async function hydrateBackendProductFiles(products) {
+  if (!backendAuthState.token) return;
+  await Promise.all((products || []).filter(p => p._backendId).map(async product => {
+    try {
+      const files = await loadBackendFilesForOwner('product', product._backendId);
+      product._backendFiles = files || [];
+      const productImage = (files || []).find(file => file.fileCategory === 'product_image') || null;
+      const nfpImage = (files || []).find(file => file.fileCategory === 'nutrition_facts') || null;
+      product.productImage = productImage ? mapBackendFileToPrototype(productImage) : null;
+      product.nfpImage = nfpImage ? mapBackendFileToPrototype(nfpImage) : null;
+    } catch (error) {
+      product._backendFileError = error?.message || 'Product files unavailable';
+    }
+  }));
+}
+
 async function uploadBackendInventoryCoa(inventoryItemId, file) {
   if (!file || !(file instanceof File)) return null;
   const form = new FormData();
@@ -2813,6 +2862,7 @@ async function hydrateBackendPurchaseOrderFiles(localPos) {
 }
 
 function mapBackendFileToPrototype(file) {
+  const downloadUrl = backendFileHref(file);
   return {
     _backendFileId: file.id,
     _backendOwnerId: file.ownerId,
@@ -2823,11 +2873,25 @@ function mapBackendFileToPrototype(file) {
     size: file.sizeBytes || 0,
     uploadedAt: file.createdAt,
     fileCategory: file.fileCategory,
-    dataUrl: ''
+    dataUrl: downloadUrl,
+    downloadUrl
   };
 }
 
-async function downloadBackendFile(fileId, fileName) {
+function backendFileId(file) {
+  return typeof file === 'string' ? file : file?.fileId || file?._backendFileId || file?.id || '';
+}
+
+function backendFileName(file, fallback = 'file') {
+  return file?.name || file?.fileName || fallback;
+}
+
+function backendFileHref(file) {
+  const fileId = backendFileId(file);
+  return fileId ? `/api/files/${encodeURIComponent(fileId)}/download` : '';
+}
+
+async function fetchBackendFileBlob(fileId) {
   const response = await fetch(`/api/files/${encodeURIComponent(fileId)}/download`, {
     headers: {
       ...authHeaders()
@@ -2836,7 +2900,11 @@ async function downloadBackendFile(fileId, fileName) {
   if (!response.ok) {
     throw new Error(`File download failed (${response.status})`);
   }
-  const blob = await response.blob();
+  return response.blob();
+}
+
+async function downloadBackendFile(fileId, fileName) {
+  const blob = await fetchBackendFileBlob(fileId);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -2845,6 +2913,55 @@ async function downloadBackendFile(fileId, fileName) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function previewBackendFile(fileId, fileName, contentType = '') {
+  const blob = await fetchBackendFileBlob(fileId);
+  const previewBlob = contentType && blob.type !== contentType
+    ? blob.slice(0, blob.size, contentType)
+    : blob;
+  const url = URL.createObjectURL(previewBlob);
+  const preview = window.open(url, '_blank');
+  if (!preview) {
+    URL.revokeObjectURL(url);
+    throw new Error('Popup blocked. Allow popups to preview this file.');
+  }
+  preview.addEventListener('beforeunload', () => URL.revokeObjectURL(url), { once: true });
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return preview;
+}
+
+function backendFileActionHtml(file, options = {}) {
+  if (!file) return options.emptyHtml || '';
+  const fileId = backendFileId(file);
+  const name = backendFileName(file, options.fallbackLabel || 'file');
+  const text = options.htmlLabel || escapeHtml(options.label || name);
+  const className = options.className ? ` class="${escapeHtml(options.className)}"` : '';
+  const style = options.style ? ` style="${escapeHtml(options.style)}"` : '';
+  const title = escapeHtml(options.title || name);
+  if (fileId) {
+    const mode = options.mode === 'preview' ? 'preview' : 'download';
+    return `<button type="button"${className}${style} title="${title}" data-backend-file-id="${escapeHtml(fileId)}" data-backend-file-name="${escapeHtml(name)}" data-backend-file-type="${escapeHtml(file.type || '')}" data-backend-file-mode="${mode}" onclick="handleBackendFileAction(this)">${text}</button>`;
+  }
+  if (file.dataUrl) {
+    const target = options.mode === 'preview' ? ' target="_blank" rel="noopener"' : '';
+    const download = options.mode === 'preview' ? '' : ` download="${escapeHtml(name)}"`;
+    return `<a${className}${style} href="${file.dataUrl}"${download} title="${title}"${target}>${text}</a>`;
+  }
+  return options.unavailableHtml || `<span style="color:var(--brown-light);font-size:12px">${escapeHtml(name)} unavailable</span>`;
+}
+
+async function handleBackendFileAction(button) {
+  const fileId = button?.dataset?.backendFileId || '';
+  const fileName = button?.dataset?.backendFileName || 'download';
+  const contentType = button?.dataset?.backendFileType || '';
+  const mode = button?.dataset?.backendFileMode || 'download';
+  try {
+    if (mode === 'preview') await previewBackendFile(fileId, fileName, contentType);
+    else await downloadBackendFile(fileId, fileName);
+  } catch (error) {
+    toast(error?.message || 'File action failed.');
+  }
 }
 
 async function ensureBackendPurchaseOrdersLoaded() {
@@ -4136,20 +4253,37 @@ function exportPOs() {
 function poFileLinkHtml(po) {
   if (!po?.poFile) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
   const file = po.poFile;
-  const label = escapeHtml(file.name.length > 18 ? file.name.slice(0, 16) + '..' : file.name);
-  if (file._backendFileId) {
-    return `<button class="portal-download-btn" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')" title="${escapeHtml(file.name)}">Download file</button>`;
-  }
-  return `<a class="portal-download-btn" href="${file.dataUrl}" download="${escapeHtml(file.name)}" title="${escapeHtml(file.name)}">Download file</a>`;
+  return backendFileActionHtml(file, {
+    className: 'portal-download-btn',
+    label: 'Download file'
+  });
 }
 
 function poFileDetailHtml(po) {
   if (!po?.poFile) return '';
   const file = po.poFile;
-  if (file._backendFileId) {
-    return `<div style="margin-top:8px"><button class="btn btn-icon btn-sm" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')">File: ${escapeHtml(file.name)}</button></div>`;
+  return `<div style="margin-top:8px">${backendFileActionHtml(file, {
+    className: 'btn btn-icon btn-sm',
+    htmlLabel: `File: ${escapeHtml(file.name)}`,
+    unavailableHtml: ''
+  })}</div>`;
+}
+
+function purchaseOrderFileLinkHtml(file, label = 'file') {
+  const name = file?.name || file?.fileName || label;
+  return backendFileActionHtml(file, {
+    style: 'color:var(--orange);text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+    htmlLabel: `&#128206; ${escapeHtml(name)}`,
+    unavailableHtml: `<span style="font-size:12px;color:var(--brown-light)">&#128206; ${escapeHtml(name)} unavailable</span>`
+  });
+}
+
+function productionValuesEditControlHtml(po) {
+  if (!po?.productionDate) return '';
+  if (employeeBackendSessionActive()) {
+    return `<div class="inv-check" style="margin:0 0 8px auto;max-width:520px"><strong>Production values are correction-controlled.</strong> Use Production Log &rarr; Reopen for Correction to adjust backend-finalized units, cases, or lot numbers. Direct edit is disabled for signed-in backend records.</div>`;
   }
-  return `<div style="margin-top:8px"><a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);font-size:13px">File: ${escapeHtml(file.name)}</a></div>`;
+  return `<button class="btn btn-icon btn-sm" onclick="editProductionValues('${po.id}')">&#9998; Edit Units / Cases / Lot #</button>`;
 }
 
 function escapeAttr(value) {
@@ -4439,7 +4573,7 @@ async function viewPO(id) {
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
-      <button class="btn btn-icon btn-sm" onclick="editProductionValues('${po.id}')">&#9998; Edit Units / Cases / Lot #</button>
+      ${productionValuesEditControlHtml(po)}
     </div>
     <table>
       <thead><tr><th>Product</th><th>SKU</th><th>Ordered</th><th>Units Produced</th><th>Cases Produced</th><th>Lot #</th><th>Price</th><th>Subtotal</th></tr></thead>
@@ -4486,7 +4620,7 @@ async function viewPO(id) {
       </div>
     ` : ''}
     ${po.completionNotes ? `<div class="inv-check ok" style="margin-top:14px"><strong>Production Notes:</strong> ${escapeHtml(po.completionNotes)}</div>` : ''}
-    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(po.coa.name)}</a> <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</span></div>` : ''}
+    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> ${purchaseOrderFileLinkHtml(po.coa, 'COA')} <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</span></div>` : ''}
     ${po.qaNotes ? `<div class="inv-check" style="margin-top:14px"><strong>QA Notes:</strong> ${escapeHtml(po.qaNotes)}</div>` : ''}
     ${(po.productionDate && po.status !== 'completed' && !po.productionFinalized) ? `
       <div style="margin-top:14px;padding:14px;background:#e8f4e2;border-left:4px solid var(--success);border-radius:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -4584,8 +4718,18 @@ function printSpecSheetForPO(id) {
   const cust = getCustomer(po.customerId);
   if (!cust) { toast('No customer linked to this PO.'); return; }
   const sheet = cust.specSheet;
-  if (!sheet || !sheet.dataUrl) {
+  if (!sheet) {
     toast('No spec sheet on file for ' + (cust.name || 'this customer') + '. Upload one on the Customers page.');
+    return;
+  }
+  if (sheet._backendFileId || sheet.fileId) {
+    previewBackendFile(sheet._backendFileId || sheet.fileId, sheet.name || 'spec-sheet', sheet.type || '')
+      .then(() => toast('Spec sheet opened in a new tab. Print from the viewer.'))
+      .catch(error => toast(error.message || 'Spec sheet preview failed.'));
+    return;
+  }
+  if (!sheet.dataUrl) {
+    toast('Spec sheet preview is unavailable for ' + (cust.name || 'this customer') + '.');
     return;
   }
   // open the file in a new tab - browser handles PDF/image/etc display + print
@@ -5718,6 +5862,7 @@ function productionLogInnerHtml() {
       <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
         Auto-generated history of finished production runs. An entry is created here automatically when a run is marked complete and sent to Quality Assurance. Click <strong>View</strong> for the full breakdown of finished goods and materials used.
       </div>
+      ${productionLogImmutableNoticeHtml()}
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
@@ -5739,13 +5884,23 @@ function productionLogInnerHtml() {
                 <td>${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'-'}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewProductionLog('${r.id}')">View</button>
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionLog('${r.id}')">Delete</button>
+                  ${!employeeBackendSessionActive() ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionLog('${r.id}')">Delete</button>` : '<span class="pill" title="Backend production logs are immutable">Locked</span>'}
                 </td>
               </tr>`;
             }).join('')
           }
         </tbody>
       </table></div>
+    </div>
+  `;
+}
+
+function productionLogImmutableNoticeHtml() {
+  if (!employeeBackendSessionActive()) return '';
+  return `
+    <div class="inv-check" style="margin-bottom:12px">
+      <strong>Production Log entries are backend-immutable after finalization.</strong>
+      <div class="help-text">Delete and direct unit/case/lot edits are disabled for signed-in backend records. Use <strong>View</strong> &rarr; <strong>Reopen for Correction</strong> when a finalized production run needs an auditable correction.</div>
     </div>
   `;
 }
@@ -6794,7 +6949,7 @@ function shippingCardHtml(p) {
           <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
             ${hasDocs ? `&#128206; ${escapeHtml(s.documents.name)} (${Math.round((s.documents.size||0)/1024)} KB)` : 'No documents uploaded. Required before marking shipped.'}
           </div>
-          ${hasDocs ? `<a href="${s.documents.dataUrl}" download="${escapeHtml(s.documents.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a><button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}
+          ${hasDocs ? `${shippingFileDownloadHtml(s.documents)}${!s.documents._backendFile ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}` : ''}
         </div>
       </div>
       <div class="form-row" style="margin-top:10px">
@@ -6925,6 +7080,16 @@ async function saveWarehouseNotes(id) {
   } catch (error) {
     failBackendRequiredWrite(error, backendShippingState);
   }
+}
+
+function shippingFileDownloadHtml(file) {
+  const name = file?.name || file?.fileName || 'shipment-document';
+  return backendFileActionHtml(file, {
+    className: 'btn btn-icon btn-sm',
+    style: 'text-decoration:none',
+    label: 'Download',
+    unavailableHtml: `<span class="pill" title="Backend file unavailable">${escapeHtml(name)}</span>`
+  });
 }
 async function confirmStocked(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
@@ -7314,14 +7479,14 @@ function supplierWebsiteHref(website) {
 
 function supplierDocumentLinkHtml(file, label = '') {
   if (!file) return '';
-  if (file.fileId) {
-    const href = `/api/files/${encodeURIComponent(file.fileId)}/download`;
-    return `<a href="${href}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
+  const name = file.name || label || 'Selected file';
+  if (!file.fileId && !file._backendFileId && !file.dataUrl) {
+    return `<span style="color:var(--brown);font-size:12px">&#128206; ${escapeHtml(name)}</span> <span class="pill">Pending upload</span>`;
   }
-  if (file.dataUrl) {
-    return `<a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);text-decoration:none;font-size:12px">&#128206; ${escapeHtml(file.name)}</a>`;
-  }
-  return `<span style="color:var(--brown);font-size:12px">&#128206; ${escapeHtml(file.name || label || 'Selected file')}</span> <span class="pill">Pending upload</span>`;
+  return backendFileActionHtml(file, {
+    style: 'color:var(--orange);text-decoration:none;font-size:12px;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+    htmlLabel: `&#128206; ${escapeHtml(name)}`
+  });
 }
 
 function renderSuppliers(el) {
@@ -7356,8 +7521,12 @@ function renderSuppliers(el) {
             const docPills = VENDOR_DOC_TYPES.filter(d => docs[d.key]).map(d => {
               const f = docs[d.key];
               if (!f.fileId && !f.dataUrl) return `<span class="pill" title="${escapeHtml(d.label)}: pending upload">&#128206; ${escapeHtml(d.label.split(' ')[0])} pending</span>`;
-              const href = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : f.dataUrl;
-              return `<a href="${href}" download="${escapeHtml(f.name)}" class="pill" style="cursor:pointer;text-decoration:none" title="${escapeHtml(d.label)}: ${escapeHtml(f.name)}">&#128206; ${escapeHtml(d.label.split(' ')[0])}</a>`;
+              return backendFileActionHtml(f, {
+                className: 'pill',
+                style: 'cursor:pointer;text-decoration:none;background:none;border:none',
+                title: `${d.label}: ${f.name}`,
+                htmlLabel: `&#128206; ${escapeHtml(d.label.split(' ')[0])}`
+              });
             }).join('');
             const docCount = Object.keys(docs).filter(k => docs[k]).length;
             const lines = Array.isArray(s.productLines) ? s.productLines : [];
@@ -7542,7 +7711,7 @@ function removeSupplierDoc(docKey) {
 async function saveSupplier(id, isNew) {
   const docs = {};
   VENDOR_DOC_TYPES.forEach(d => {
-    if (supplierEditingDocs[d.key]) {
+    if (supplierEditingDocs[d.key] && !supplierEditingDocs[d.key].file) {
       const { file, ...docMeta } = supplierEditingDocs[d.key];
       docs[d.key] = docMeta;
     }
@@ -7570,17 +7739,24 @@ async function saveSupplier(id, isNew) {
   };
   try {
     let saved = await saveA10DataRecord('suppliers', 'supplier', data, { recordId: isNew ? null : (existing?._backendId || id) });
-    const uploadedDocs = { ...docs };
-    let uploadedAny = false;
-    for (const d of VENDOR_DOC_TYPES) {
-      const pending = supplierEditingDocs[d.key];
-      if (!pending?.file) continue;
-      const uploaded = await uploadA10FileReference('supplier', saved.id, 'supplier_document', pending.file);
-      uploadedDocs[d.key] = { name: pending.name, type: pending.type, size: pending.size, fileId: uploaded.id };
-      uploadedAny = true;
-    }
-    if (uploadedAny) {
-      saved = await saveA10DataRecord('suppliers', 'supplier', { ...data, docs: uploadedDocs, fileIds: Object.values(uploadedDocs).map(doc => doc.fileId).filter(Boolean) }, { recordId: saved.id });
+    try {
+      const uploadedDocs = { ...docs };
+      let uploadedAny = false;
+      for (const d of VENDOR_DOC_TYPES) {
+        const pending = supplierEditingDocs[d.key];
+        if (!pending?.file) continue;
+        const uploaded = await uploadA10FileReference('supplier', saved.id, 'supplier_document', pending.file);
+        uploadedDocs[d.key] = { name: pending.name, type: pending.type, size: pending.size, fileId: uploaded.id };
+        uploadedAny = true;
+      }
+      if (uploadedAny) {
+        saved = await saveA10DataRecord('suppliers', 'supplier', { ...data, docs: uploadedDocs, fileIds: Object.values(uploadedDocs).map(doc => doc.fileId).filter(Boolean) }, { recordId: saved.id });
+      }
+    } catch (err) {
+      if (isNew && saved?.id) {
+        try { await archiveA10DataRecord('suppliers', saved.id); } catch (cleanupErr) {}
+      }
+      throw err;
     }
     closeModal();
     router('suppliers');
@@ -7613,6 +7789,43 @@ async function deleteSupplier(id) {
 /* =========================================================================
    CUSTOMERS & PRODUCTS
    ========================================================================= */
+const pendingCustomerFiles = { spec: null, agree: null };
+
+function catalogFileLinkHtml(file, fallbackLabel) {
+  if (!file) return '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>';
+  const name = file.name || file.fileName || fallbackLabel || 'file';
+  if (file._backendFileId || file.fileId) {
+    return backendFileActionHtml(file, {
+      className: 'btn btn-icon btn-sm',
+      style: 'text-decoration:none',
+      htmlLabel: `&#128196; ${escapeHtml(name.slice(0,18))}`
+    });
+  }
+  if (file.dataUrl) {
+    return `<a href="${file.dataUrl}" download="${escapeHtml(name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml(name.slice(0,18))}</a>`;
+  }
+  return `<span class="pill" title="${escapeHtml(name)}">${escapeHtml(name.slice(0,18))}</span>`;
+}
+
+function catalogProductMediaDownloadHtml(img, kind) {
+  if (!img) return '';
+  const name = img.name || img.fileName || `${kind}-image`;
+  if (!img._backendFileId && !img.fileId && !img.dataUrl) return `<span class="pill" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
+  return backendFileActionHtml(img, {
+    className: 'btn btn-secondary',
+    style: 'text-decoration:none',
+    label: 'Download'
+  });
+}
+
+function catalogProductMediaThumbHtml(img, alt, onClick) {
+  if (!img) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
+  if (img.dataUrl && !img._backendFile) {
+    return `<img src="${img.dataUrl}" alt="${escapeHtml(alt)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="${onClick}" />`;
+  }
+  return `<button class="btn btn-icon btn-sm" onclick="${onClick}" title="${escapeHtml(img.name||img.fileName||alt)}">&#128196; File</button>`;
+}
+
 function renderCustomers(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendCustomerState.loaded && !backendCustomerState.loading) {
     loadBackendCustomers().then(() => { if (currentPage === 'customers') router('customers'); });
@@ -7667,11 +7880,11 @@ function renderCustomers(el) {
                 <td>${contactCell('billingContact')}</td>
                 <td>${contactCell('foodSafetyContact')}</td>
                 <td>${sheet
-                  ? `<a href="${sheet.dataUrl}" download="${escapeHtml(sheet.name||sheet.fileName||'spec-sheet')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((sheet.name||sheet.fileName||'spec').slice(0,18))}</a>`
+                  ? catalogFileLinkHtml(sheet, 'spec-sheet')
                   : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>'
                 }</td>
                 <td>${agreement
-                  ? `<a href="${agreement.dataUrl}" download="${escapeHtml(agreement.name||agreement.fileName||'agreement')}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128196; ${escapeHtml((agreement.name||agreement.fileName||'agreement').slice(0,18))}</a>`
+                  ? catalogFileLinkHtml(agreement, 'agreement')
                   : '<span style="font-size:12px;color:var(--brown-light)">&mdash;</span>'
                 }</td>
                 <td class="customer-actions-cell">
@@ -7734,7 +7947,7 @@ function editCustomer(id) {
           <div class="file-info ${c.specSheet?'has':''}" id="cust_spec_info">
             ${c.specSheet ? `&#128206; ${escapeHtml(c.specSheet.name||c.specSheet.fileName||'file')} (${Math.round((c.specSheet.size||0)/1024)} KB)` : 'No spec sheet uploaded.'}
           </div>
-          ${c.specSheet ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('spec')">Remove</button>` : ''}
+          ${c.specSheet && !c.specSheet._backendFile ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('spec')">Remove</button>` : ''}
         </div>
         <input type="hidden" id="cust_spec_data" value='${c.specSheet ? JSON.stringify(c.specSheet).replace(/'/g, "&#039;") : ""}' />
       </div>
@@ -7744,7 +7957,7 @@ function editCustomer(id) {
           <div class="file-info ${c.copackingAgreement?'has':''}" id="cust_agree_info">
             ${c.copackingAgreement ? `&#128206; ${escapeHtml(c.copackingAgreement.name||c.copackingAgreement.fileName||'file')} (${Math.round((c.copackingAgreement.size||0)/1024)} KB)` : 'No co-packing agreement uploaded.'}
           </div>
-          ${c.copackingAgreement ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('agree')">Remove</button>` : ''}
+          ${c.copackingAgreement && !c.copackingAgreement._backendFile ? `<button type="button" class="btn btn-icon btn-sm" onclick="clearCustomerFile('agree')">Remove</button>` : ''}
         </div>
         <input type="hidden" id="cust_agree_data" value='${c.copackingAgreement ? JSON.stringify(c.copackingAgreement).replace(/'/g, "&#039;") : ""}' />
       </div>
@@ -7762,6 +7975,7 @@ function customerFileSelected(e, kind) {
   const f = e.target.files[0];
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { toast('File too large (max 5 MB).'); e.target.value=''; return; }
+  pendingCustomerFiles[kind] = f;
   const reader = new FileReader();
   reader.onload = () => {
     const data = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result };
@@ -7773,6 +7987,7 @@ function customerFileSelected(e, kind) {
   reader.readAsDataURL(f);
 }
 function clearCustomerFile(kind) {
+  pendingCustomerFiles[kind] = null;
   document.getElementById('cust_'+kind+'_data').value = '';
   document.getElementById('cust_'+kind+'_input').value = '';
   const info = document.getElementById('cust_'+kind+'_info');
@@ -7817,6 +8032,12 @@ async function saveCustomer(id, isNew) {
       ? await apiRequest('/api/customers', { method: 'POST', body: JSON.stringify(payload) })
       : await apiRequest(`/api/customers/${encodeURIComponent(existing?._backendId || '')}`, { method: 'PATCH', body: JSON.stringify(payload) });
     mergeBackendCustomers([saved]);
+    const customer = (state.customers || []).find(c => c._backendId === saved.id || c.id === saved.id);
+    if (pendingCustomerFiles.spec) customer.specSheet = mapBackendFileToPrototype(await uploadBackendCustomerFile(saved.id, pendingCustomerFiles.spec, 'customer_spec_sheet'));
+    if (pendingCustomerFiles.agree) customer.copackingAgreement = mapBackendFileToPrototype(await uploadBackendCustomerFile(saved.id, pendingCustomerFiles.agree, 'co_packing_agreement'));
+    pendingCustomerFiles.spec = null;
+    pendingCustomerFiles.agree = null;
+    await hydrateBackendCustomerFiles(customer ? [customer] : state.customers.filter(c => c._backendId === saved.id));
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     closeModal();
@@ -7981,7 +8202,7 @@ function editProduct(id) {
 }
 function productImagePreviewHtml(img, kind) {
   const inputId = kind === 'nfp' ? 'prod_nfp_input' : 'prod_image_input';
-  if (img && img.dataUrl) {
+  if (img && img.dataUrl && !img._backendFile) {
     return `
       <div style="border:1px solid var(--grey-light);border-radius:6px;padding:8px;background:var(--white);text-align:center">
         <img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:140px;border-radius:4px" />
@@ -7989,6 +8210,19 @@ function productImagePreviewHtml(img, kind) {
         <div style="margin-top:6px;display:flex;gap:6px;justify-content:center">
           <button type="button" class="btn btn-icon btn-sm" onclick="document.getElementById('${inputId}').click()">Replace</button>
           <button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearProductImage('${kind}')">Remove</button>
+        </div>
+      </div>
+    `;
+  }
+  if (img) {
+    const name = img.name || img.fileName || `${kind}-image`;
+    return `
+      <div style="border:1px solid var(--grey-light);border-radius:6px;padding:8px;background:var(--white);text-align:center">
+        <div style="font-size:28px;color:var(--brown)">&#128196;</div>
+        <div style="font-size:11px;color:var(--brown-light);margin-top:4px">${escapeHtml(name)} (${Math.round((img.size||0)/1024)} KB)</div>
+        <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+          ${catalogProductMediaDownloadHtml(img, kind)}
+          <button type="button" class="btn btn-icon btn-sm" onclick="document.getElementById('${inputId}').click()">Replace</button>
         </div>
       </div>
     `;
@@ -8168,8 +8402,8 @@ async function saveProduct(id, isNew) {
   if (!requireEmployeeBackendWrite(backendProductState)) return;
   try {
     backendProduct = await saveBackendProduct(id, isNew, { ...data, _backendId: existing?._backendId }, cleanFormula);
-    if (pendingProductMediaFiles.product) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image');
-    if (pendingProductMediaFiles.nfp) await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts');
+    if (pendingProductMediaFiles.product) data.productImage = mapBackendFileToPrototype(await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.product, 'product_image'));
+    if (pendingProductMediaFiles.nfp) data.nfpImage = mapBackendFileToPrototype(await uploadBackendProductMedia(backendProduct.id, pendingProductMediaFiles.nfp, 'nutrition_facts'));
     pendingProductMediaFiles.product = null;
     pendingProductMediaFiles.nfp = null;
     backendProductState.status = 'connected';
@@ -8178,6 +8412,7 @@ async function saveProduct(id, isNew) {
     data.id = backendProduct.id;
     data._backendId = backendProduct.id;
     id = backendProduct.id;
+    await hydrateBackendProductFiles([{ ...data, _backendId: backendProduct.id }]);
   } catch (error) {
     failBackendRequiredWrite(error, backendProductState);
     return;
@@ -8258,13 +8493,16 @@ function viewProductImage(productId, kind) {
   const img = kind === 'nfp' ? p.nfpImage : p.productImage;
   if (!img) return;
   const title = kind === 'nfp' ? 'Nutrition Facts Panel' : 'Product Image';
+  const imageHtml = img.dataUrl && !img._backendFile
+    ? `<img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:60vh;border-radius:6px;border:1px solid var(--grey-light)" />`
+    : `<div style="padding:30px;border:1px solid var(--grey-light);border-radius:6px;color:var(--brown);font-size:32px">&#128196;</div>`;
   openModal(`${title} - ${escapeHtml(p.name)}`, `
     <div style="text-align:center">
-      <img src="${img.dataUrl}" alt="${escapeHtml(img.name||'')}" style="max-width:100%;max-height:60vh;border-radius:6px;border:1px solid var(--grey-light)" />
+      ${imageHtml}
       <div style="font-size:12px;color:var(--brown-light);margin-top:8px">${escapeHtml(img.name||'')} (${Math.round((img.size||0)/1024)} KB)</div>
     </div>
     <div class="form-actions">
-      <a href="${img.dataUrl}" download="${escapeHtml(img.name||(kind+'-image'))}" class="btn btn-secondary" style="text-decoration:none">Download</a>
+      ${catalogProductMediaDownloadHtml(img, kind)}
       <button class="btn" onclick="closeModal()">Close</button>
     </div>
   `);
@@ -8406,7 +8644,7 @@ function renderProductList(el) {
             const bom = state.boms[p.id] || [];
             return `
             <tr>
-              <td>${p.productImage ? `<img src="${p.productImage.dataUrl}" alt="${escapeHtml(p.name)}" style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','product')" />` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
+              <td>${catalogProductMediaThumbHtml(p.productImage, p.name, `viewProductImage('${p.id}','product')`)}</td>
               <td><strong>${escapeHtml(p.sku)}</strong></td>
               <td>${escapeHtml(p.name)}</td>
               <td>${escapeHtml(getCustomer(p.customerId)?.name||'-')}</td>
@@ -8417,7 +8655,7 @@ function renderProductList(el) {
               <td>${p.dailyProductionRate ? p.dailyProductionRate + ' / day' : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
               <td>${p.kosher ? '<span class="badge badge-prod" title="Kosher Certified">&#10003; Kosher</span>' : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
               <td>${p.allergen ? `<span class="badge badge-low" title="${escapeHtml(p.allergenDetails||'Allergen')}">&#9888; ${escapeHtml(p.allergenDetails||'Yes')}</span>` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
-              <td>${p.nfpImage ? `<img src="${p.nfpImage.dataUrl}" alt="NFP" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--grey-light);cursor:pointer" onclick="viewProductImage('${p.id}','nfp')" />` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
+              <td>${catalogProductMediaThumbHtml(p.nfpImage, 'NFP', `viewProductImage('${p.id}','nfp')`)}</td>
               <td>${formulaPillHtml(p, bom)}</td>
               <td>${fmtMoney(p.price)}</td>
               <td class="row-actions">
@@ -9994,10 +10232,14 @@ function inventoryCustomer(item) {
 
 function inventoryCoaLinkHtml(coa) {
   if (!coa) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
-  const fileId = coa.fileId || coa._backendFileId || coa.id || '';
   const label = coa.name || coa.fileName || 'CoA';
-  if (!fileId) return '<span style="color:var(--brown-light);font-size:12px">Backend file unavailable</span>';
-  return `<a href="/api/files/${encodeURIComponent(fileId)}/download" download="${escapeHtml(label)}" class="btn btn-icon btn-sm" style="text-decoration:none" title="${escapeHtml(label)}">&#128196; CoA</a>`;
+  return backendFileActionHtml(coa, {
+    className: 'btn btn-icon btn-sm',
+    style: 'text-decoration:none',
+    htmlLabel: '&#128196; CoA',
+    title: label,
+    unavailableHtml: '<span style="color:var(--brown-light);font-size:12px">Backend file unavailable</span>'
+  });
 }
 
 function inventoryEmployeeBackendSession() {
@@ -11431,17 +11673,27 @@ function renderContentLibrary(el) {
             }).join('')}
             ${files.map(f => {
               const ext = (f.name.split('.').pop()||'').toLowerCase();
-              const downloadHref = f.fileId ? `/api/files/${encodeURIComponent(f.fileId)}/download` : (f.dataUrl || '#');
+              const nameButton = backendFileActionHtml(f, {
+                style: 'color:var(--brown);font-weight:600;text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+                label: f.name,
+                unavailableHtml: `<span style="color:var(--brown);font-weight:600">${escapeHtml(f.name)}</span>`
+              });
+              const downloadButton = backendFileActionHtml(f, {
+                className: 'btn btn-icon btn-sm',
+                style: 'text-decoration:none',
+                label: 'Download',
+                unavailableHtml: '<span class="pill">Unavailable</span>'
+              });
               return `<tr class="lib-row" data-file-id="${f.id}"
                   draggable="true"
                   ondragstart="libDragStart(event,'file','${f.id}')">
                 <td style="text-align:center;font-size:18px;color:var(--orange)">${fileIcon(f.type, f.name)}</td>
-                <td><a href="${downloadHref}" download="${escapeHtml(f.name)}" style="color:var(--brown);font-weight:600;text-decoration:none">${escapeHtml(f.name)}</a></td>
+                <td>${nameButton}</td>
                 <td style="font-size:12px;color:var(--brown-light);text-transform:uppercase">${escapeHtml(ext||'file')}</td>
                 <td style="font-size:12px">${formatBytes(f.size)}</td>
                 <td style="font-size:12px">${fmtDate(f.uploadedAt)}</td>
                 <td class="row-actions">
-                  <a href="${downloadHref}" download="${escapeHtml(f.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">Download</a>
+                  ${downloadButton}
                   <button class="btn btn-icon btn-sm" onclick="moveFile('${f.id}')">Move</button>
                   <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLibraryFile('${f.id}')">Delete</button>
                 </td>
@@ -11614,10 +11866,10 @@ async function libraryUpload(e) {
   if (files.length === 0) return;
   try {
     for (const f of files) {
-    if (f.size > 5 * 1024 * 1024) {
-      toast(`Skipped "${f.name}" - over 5 MB.`);
-      continue;
-    }
+      if (f.size > 5 * 1024 * 1024) {
+        toast(`Skipped "${f.name}" - over 5 MB.`);
+        continue;
+      }
       const recordPayload = {
         id: uid('lf'),
         kind: 'file',
@@ -11628,9 +11880,17 @@ async function libraryUpload(e) {
         uploadedAt: new Date().toISOString().slice(0,10),
         fileIds: []
       };
-      const saved = await saveA10DataRecord('contentLibrary', 'file', recordPayload);
-      const uploaded = await uploadA10FileReference('content_library', saved.id, 'content_library_file', f);
-      await saveA10DataRecord('contentLibrary', 'file', { ...recordPayload, fileId: uploaded.id, fileIds: [uploaded.id] }, { recordId: saved.id });
+      let saved = null;
+      try {
+        saved = await saveA10DataRecord('contentLibrary', 'file', recordPayload);
+        const uploaded = await uploadA10FileReference('content_library', saved.id, 'content_library_file', f);
+        await saveA10DataRecord('contentLibrary', 'file', { ...recordPayload, fileId: uploaded.id, fileIds: [uploaded.id] }, { recordId: saved.id });
+      } catch (err) {
+        if (saved?.id) {
+          try { await archiveA10DataRecord('contentLibrary', saved.id); } catch (cleanupErr) {}
+        }
+        throw err;
+      }
     }
     e.target.value = '';
     router('content-library');
@@ -11681,9 +11941,26 @@ async function moveFile(id) {
    TEAM CHAT (Slack-like)
    ========================================================================= */
 let activeChannel = null;
+function signedInChatAuthorName() {
+  const user = backendAuthState.user || null;
+  if (!user) return 'You';
+  return (user.displayName || user.email || 'You').trim();
+}
+
+function teamChatAttachmentHtml(attachment) {
+  if (!attachment) return '';
+  const name = attachment.name || 'attachment';
+  return backendFileActionHtml(attachment, {
+    className: 'chat-attach',
+    style: 'cursor:pointer',
+    htmlLabel: `${attachIcon(attachment)} <span>${escapeHtml(name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(attachment.size)}</span>`,
+    mode: attachment.type && attachment.type.startsWith('image/') ? 'preview' : 'download'
+  });
+}
+
 function renderSlack(el) {
   if (!a10DataRecordState.teamChat.loaded && !a10DataRecordState.teamChat.loading) {
-    refreshA10DataRecordModule('teamChat').then(() => { if (currentPage === 'team-chat') router('team-chat'); }).catch(() => {});
+    refreshA10DataRecordModule('teamChat').then(() => { if (currentPage === 'slack') router('slack'); }).catch(() => {});
   }
   if (!activeChannel || !state.channels.find(c => c.id === activeChannel)) {
     activeChannel = state.channels[0]?.id || null;
@@ -11725,7 +12002,7 @@ function renderSlack(el) {
                   <div class="chat-body">
                     <div class="chat-meta"><strong>${escapeHtml(m.author||'')}</strong> ${formatChatTime(m.timestamp)}</div>
                     ${m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : ''}
-                    ${m.attachment ? `<a href="${m.attachment.fileId ? '/api/files/'+encodeURIComponent(m.attachment.fileId)+'/download' : (m.attachment.dataUrl || '#')}" download="${escapeHtml(m.attachment.name)}" class="chat-attach">${attachIcon(m.attachment)} <span>${escapeHtml(m.attachment.name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(m.attachment.size)}</span></a>` : ''}
+                    ${m.attachment ? teamChatAttachmentHtml(m.attachment) : ''}
                   </div>
                 </div>
               `).join('')
@@ -11841,20 +12118,25 @@ async function sendMessage() {
   const msg = {
     id: uid('m'),
     channelId: activeChannel,
-    author: 'Henry',
+    author: signedInChatAuthorName(),
     text: txt,
     timestamp: new Date().toISOString()
   };
   try {
     let saved = await saveA10DataRecord('teamChat', 'message', { ...msg, kind: 'message' });
     if (pendingChatAttachment?.file) {
-      const uploaded = await uploadA10FileReference('team_chat', saved.id, 'chat_attachment', pendingChatAttachment.file);
-      saved = await saveA10DataRecord('teamChat', 'message', {
-        ...msg,
-        kind: 'message',
-        attachment: { name: pendingChatAttachment.name, type: pendingChatAttachment.type, size: pendingChatAttachment.size, fileId: uploaded.id },
-        fileIds: [uploaded.id]
-      }, { recordId: saved.id });
+      try {
+        const uploaded = await uploadA10FileReference('team_chat', saved.id, 'chat_attachment', pendingChatAttachment.file);
+        saved = await saveA10DataRecord('teamChat', 'message', {
+          ...msg,
+          kind: 'message',
+          attachment: { name: pendingChatAttachment.name, type: pendingChatAttachment.type, size: pendingChatAttachment.size, fileId: uploaded.id },
+          fileIds: [uploaded.id]
+        }, { recordId: saved.id });
+      } catch (err) {
+        try { await archiveA10DataRecord('teamChat', saved.id); } catch (cleanupErr) {}
+        throw err;
+      }
     }
     ta.value = '';
     pendingChatAttachment = null;
@@ -12139,15 +12421,30 @@ async function deleteComplaint(id) {
 }
 
 /* ----- Lot Tracking ----- */
+function foodSafetyLotsAreBackendLocked() {
+  return !!backendAuthState.token;
+}
+
+function foodSafetyLotsUnavailableMessage() {
+  return 'Food Safety lot tracking is not backend-backed yet. Nothing was saved locally.';
+}
+
+function foodSafetyLotsNoticeHtml() {
+  if (!foodSafetyLotsAreBackendLocked()) return '';
+  return `<div class="inv-check" style="margin-bottom:8px"><strong>Lot Tracking is read-only for signed-in sessions.</strong> This screen is not connected to a backend lot-tracking workflow yet, so create, edit, and delete controls are disabled until that exists.</div>`;
+}
+
 function renderFsLots(el) {
+  const signedInLocked = foodSafetyLotsAreBackendLocked();
   el.innerHTML = `
     <div class="card-header">
       <h2>Lot Tracking</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''})))">Export CSV</button>
-        <button class="btn" onclick="editLot()">+ New Lot</button>
+        <button class="btn" onclick="editLot()" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>+ New Lot</button>
       </div>
     </div>
+    ${foodSafetyLotsNoticeHtml()}
     <div class="help-text" style="margin-bottom:8px">Track every production lot for traceability. SQF requires forward and backward lot trace within 4 hours.</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Lot #</th><th>Product</th><th>PO</th><th>Production Date</th><th>Qty</th><th>Status</th><th></th></tr></thead>
@@ -12162,8 +12459,8 @@ function renderFsLots(el) {
               <td>${l.quantity}</td>
               <td><span class="badge ${l.status==='Released'?'badge-prod':l.status==='Hold'?'badge-pending':'badge-low'}">${escapeHtml(l.status||'')}</span></td>
               <td class="row-actions">
-                <button class="btn btn-icon btn-sm" onclick="editLot('${l.id}')">Edit</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLot('${l.id}')">Delete</button>
+                <button class="btn btn-icon btn-sm" onclick="editLot('${l.id}')" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>Edit</button>
+                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLot('${l.id}')" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>Delete</button>
               </td>
             </tr>
           `).join('')}
@@ -12172,6 +12469,10 @@ function renderFsLots(el) {
   `;
 }
 function editLot(id) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const l = state.lots.find(x=>x.id===id) || { id: uid('lt'), lotNumber:'', productId:'', poId:'', productionDate: new Date().toISOString().slice(0,10), quantity: 0, status: 'Released' };
   const isNew = !id;
   openModal((isNew?'New':'Edit')+' Lot', `
@@ -12209,6 +12510,10 @@ function editLot(id) {
   `);
 }
 function saveLot(id, isNew) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const data = {
     id,
     lotNumber: document.getElementById('lt_num').value,
@@ -12225,6 +12530,10 @@ function saveLot(id, isNew) {
   renderFoodSafety(document.getElementById('content'));
 }
 async function deleteLot(id) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const lot = state.lots.find(l => l.id === id);
   const ok = await openConfirmModal({ title: 'Delete lot', record: lot?.lotNumber || id, message: 'Delete this lot record?', risk: 'This removes the local lot-tracking row.', confirmLabel: 'Delete Lot', tone: 'danger' });
   if (!ok) return;
@@ -13041,8 +13350,8 @@ function renderQualityAssurance(el) {
                   <td>${escapeHtml(getCustomer(p.customerId)?.name||'')}</td>
                   <td><div><span class="pill">${escapeHtml(qualityActionLabel(p))}</span></div><div style="font-size:11px;color:var(--brown-light);margin-top:3px">${escapeHtml(qualityReleaseStatusText(p))}</div></td>
                   <td>
-                    ${p.coa ? `<div><a href="${p.coa.dataUrl}" download="${escapeHtml(p.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(p.coa.name)}</a></div>` : '<div style="color:var(--brown-light);font-size:12px">No COA on file</div>'}
-                    ${p.postShipmentCoa ? `<div style="margin-top:4px"><a href="${p.postShipmentCoa.dataUrl}" download="${escapeHtml(p.postShipmentCoa.name)}" style="color:var(--brown);text-decoration:none">&#128196; ${escapeHtml(p.postShipmentCoa.name)}</a></div>` : ((p.status === 'shipping' || p.status === 'completed') ? `<div class="file-upload" style="margin-top:6px;padding:8px"><input type="file" accept=".pdf,application/pdf,image/*" onchange="qualityPostShipmentCoaSelected(event,'${p.id}')" /><div class="file-info">Optional post-shipment COA upload.</div></div>` : '<div style="color:var(--brown-light);font-size:12px;margin-top:4px">Post-shipment COA can be attached later.</div>')}
+                    ${p.coa ? `<div>${qualityFileLinkHtml(p.coa, 'var(--orange)')}</div>` : '<div style="color:var(--brown-light);font-size:12px">No COA on file</div>'}
+                    ${p.postShipmentCoa ? `<div style="margin-top:4px">${qualityFileLinkHtml(p.postShipmentCoa, 'var(--brown)')}</div>` : ((p.status === 'shipping' || p.status === 'completed') ? `<div class="file-upload" style="margin-top:6px;padding:8px"><input type="file" accept=".pdf,application/pdf,image/*" onchange="qualityPostShipmentCoaSelected(event,'${p.id}')" /><div class="file-info">Optional post-shipment COA upload.</div></div>` : '<div style="color:var(--brown-light);font-size:12px;margin-top:4px">Post-shipment COA can be attached later.</div>')}
                   </td>
                   <td>${fmtDate(qualityActionTimestamp(p)?.slice(0,10)||'')}</td>
                   <td>${escapeHtml(qualityActionActor(p))}</td>
@@ -13055,6 +13364,15 @@ function renderQualityAssurance(el) {
       }
     </div>
   `;
+}
+
+function qualityFileLinkHtml(file, color = 'var(--orange)', label = '') {
+  const name = file?.name || file?.fileName || label || 'file';
+  return backendFileActionHtml(file, {
+    style: `color:${color};text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer`,
+    htmlLabel: `&#128206; ${escapeHtml(name)}`,
+    unavailableHtml: `<span style="color:var(--brown-light);font-size:12px">&#128206; ${escapeHtml(name)} unavailable</span>`
+  });
 }
 
 function qaCardHtml(po) {
@@ -13090,7 +13408,7 @@ function qaCardHtml(po) {
         <div style="font-size:13px;font-weight:600;color:var(--brown);margin-bottom:6px">Certificate of Analysis (COA)</div>
         ${po.coa
           ? `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-              <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none;font-size:13px">&#128206; ${escapeHtml(po.coa.name)} (${Math.round((po.coa.size||0)/1024)} KB)</a>
+              <span style="font-size:13px">${qualityFileLinkHtml(po.coa, 'var(--orange)')} <span style="color:var(--brown-light)">(${Math.round((po.coa.size||0)/1024)} KB)</span></span>
               <div style="font-size:11px;color:var(--brown-light)">Uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</div>
             </div>`
           : `<div class="file-upload">
@@ -13296,14 +13614,16 @@ function prodReqStatusClass(s) {
 }
 function renderProductionRequests(el) {
   const reqs = (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const actionsDisabled = productionRequestActionsDisabled();
   el.innerHTML = `
     <div class="card-header">
       <h2>Requested Production Orders</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes})))">Export CSV</button>
-        <button class="btn" onclick="editProductionRequest()">+ Request Production</button>
+        <button class="btn" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : 'onclick="editProductionRequest()"'}>+ Request Production</button>
       </div>
     </div>
+    ${productionRequestsUnsupportedHtml()}
     <div class="help-text" style="margin-bottom:8px">Pick &amp; Pack staff can request more product to be made for <strong>Bnutty, Poochie Butter, or Wonder Bark</strong> when finished-goods inventory is running low for fulfillment.</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Distributor</th><th>Product</th><th>Qty Requested</th><th>On Hand</th><th>Needed By</th><th>Requested By</th><th>Status</th><th></th></tr></thead>
@@ -13322,13 +13642,13 @@ function renderProductionRequests(el) {
               <td>${fmtDate(r.neededBy)}</td>
               <td>${escapeHtml(r.requestedBy||'')}</td>
               <td>
-                <select onchange="updateProductionRequestStatus('${r.id}', this.value)" style="font-size:12px;padding:4px 6px;border:1px solid var(--grey);border-radius:4px;background:var(--white)">
+                <select ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onchange="updateProductionRequestStatus('${r.id}', this.value)"`} style="font-size:12px;padding:4px 6px;border:1px solid var(--grey);border-radius:4px;background:var(--white)">
                   ${PROD_REQUEST_STATUSES.map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
                 </select>
               </td>
               <td class="row-actions">
-                <button class="btn btn-icon btn-sm" onclick="editProductionRequest('${r.id}')">Edit</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionRequest('${r.id}')">Delete</button>
+                <button class="btn btn-icon btn-sm" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onclick="editProductionRequest('${r.id}')"`}>Edit</button>
+                <button class="btn btn-icon btn-sm" style="color:var(--danger)" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onclick="deleteProductionRequest('${r.id}')"`}>Delete</button>
               </td>
             </tr>`;
           }).join('')}
@@ -13336,7 +13656,25 @@ function renderProductionRequests(el) {
     </table></div>
   `;
 }
+
+function productionRequestActionsDisabled() {
+  return employeeBackendSessionActive();
+}
+
+function productionRequestsUnsupportedHtml() {
+  if (!productionRequestActionsDisabled()) return '';
+  return `
+    <div class="inv-check" style="margin-bottom:10px">
+      <strong>Requested PO's are not included in the backend automations yet.</strong>
+      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. Signed-in users can view existing rows only; request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
+    </div>
+  `;
+}
 function editProductionRequest(id) {
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
+    return;
+  }
   const r = (state.productionRequests||[]).find(x=>x.id===id) || { id: uid('pr'), date: new Date().toISOString().slice(0,10), customerId:'', ingredientId:'', qtyRequested:0, neededBy:'', requestedBy: state.users?.[0]?.name||'', notes:'', status:'Requested' };
   const isNew = !id;
   openModal((isNew?'Request':'Edit')+' Production', `
@@ -13386,8 +13724,8 @@ function prFgOptions(selectedFgId) {
   sel.onchange();
 }
 function saveProductionRequest(id, isNew) {
-  if (employeeBackendSessionActive()) {
-    failBackendRequiredWrite(null, backendPickPackState, 'Requested production requests are not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
     return;
   }
   const customerId = document.getElementById('pr_customer').value;
@@ -13414,8 +13752,8 @@ function saveProductionRequest(id, isNew) {
   toast(isNew ? 'Production request submitted.' : 'Request updated.');
 }
 function updateProductionRequestStatus(id, status) {
-  if (employeeBackendSessionActive()) {
-    failBackendRequiredWrite(null, backendPickPackState, 'Production request status changes are not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
     return;
   }
   const r = (state.productionRequests||[]).find(x=>x.id===id);
@@ -13425,8 +13763,8 @@ function updateProductionRequestStatus(id, status) {
   toast('Status updated.');
 }
 async function deleteProductionRequest(id) {
-  if (employeeBackendSessionActive()) {
-    return failBackendRequiredWrite(null, backendPickPackState, 'Production request delete is not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    return failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
   }
   const ok = await openConfirmModal({
     title: 'Delete production request',
@@ -13473,7 +13811,13 @@ function renderPickPackPOs(el, pos) {
                 <td>${p.lines.length}</td>
                 <td>${stockBadge}</td>
                 <td>${p.poFile
-                  ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button><a class="btn btn-icon btn-sm" href="${p.poFile.dataUrl}" download="${escapeHtml(p.poFile.name)}" title="Download PO" style="text-decoration:none">&#11015;</a></div>`
+                  ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
+                      className: 'btn btn-icon btn-sm',
+                      style: 'text-decoration:none',
+                      htmlLabel: '&#11015;',
+                      label: 'Download PO',
+                      title: 'Download PO'
+                    })}</div>`
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
@@ -13991,8 +14335,16 @@ async function deletePickPackPO(id) {
 function viewPickPackPoFile(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p?.poFile) return;
-  const w = window.open(p.poFile.dataUrl, '_blank');
-  if (!w) toast('Popup blocked. Allow popups to view PO.');
+  const fileId = p.poFile._backendFileId || p.poFile.fileId;
+  if (fileId) {
+    previewBackendFile(fileId, p.poFile.name || 'pick-pack-po', p.poFile.type || '')
+      .catch(error => toast(error?.message || 'PO file could not be opened.'));
+    return;
+  }
+  if (p.poFile.dataUrl) {
+    const w = window.open(p.poFile.dataUrl, '_blank');
+    if (!w) toast('Popup blocked. Allow popups to view PO.');
+  }
 }
 
 /* js/api/research-backend.js */
@@ -14251,6 +14603,18 @@ async function archiveBackendResearchRequest(request) {
 const FEEDBACK_TYPES = ['Bug / Error', 'Feature Request', 'General Feedback', 'Question'];
 const FEEDBACK_STATUSES = ['Open', 'Reviewed', 'In Progress', 'Resolved', "Won't Do"];
 let pendingFeedbackFile = null;
+function feedbackAttachmentLinkHtml(attachment, options = {}) {
+  if (!attachment) return options.emptyHtml || '<span style="font-size:12px;color:var(--brown-light)">-</span>';
+  const name = attachment.name || 'attachment';
+  return backendFileActionHtml(attachment, {
+    className: options.className,
+    style: options.style,
+    label: options.label || name,
+    htmlLabel: options.htmlLabel,
+    mode: options.mode,
+    unavailableHtml: options.unavailableHtml || `<span style="font-size:12px;color:var(--brown-light)">${escapeHtml(name)} unavailable</span>`
+  });
+}
 function feedbackStatusClass(s) {
   switch(s) {
     case 'Open': return 'badge-low';
@@ -14329,7 +14693,10 @@ function renderFeedback(el) {
                   <td><span class="pill">${escapeHtml(f.type||'')}</span></td>
                   <td><strong>${escapeHtml(f.title||'')}</strong></td>
                   <td>${f.attachment
-                    ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" style="color:var(--orange);font-size:12px;text-decoration:none">&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}</a>`
+                    ? feedbackAttachmentLinkHtml(f.attachment, {
+                        style: 'color:var(--orange);font-size:12px;text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+                        htmlLabel: `&#128206; ${escapeHtml(f.attachment.name.length>16?f.attachment.name.slice(0,14)+'..':f.attachment.name)}`
+                      })
                     : '<span style="font-size:12px;color:var(--brown-light)">-</span>'
                   }</td>
                   <td>
@@ -14393,12 +14760,17 @@ async function submitFeedback() {
   try {
     let saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), data);
     if (pendingFeedbackFile) {
-      const uploaded = await uploadA10FileReference('feedback', saved.id, 'feedback_attachment', pendingFeedbackFile);
-      saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), {
-        ...data,
-        attachment: { name: pendingFeedbackFile.name, type: pendingFeedbackFile.type, size: pendingFeedbackFile.size, fileId: uploaded.id },
-        fileIds: [uploaded.id]
-      }, { recordId: saved.id });
+      try {
+        const uploaded = await uploadA10FileReference('feedback', saved.id, 'feedback_attachment', pendingFeedbackFile);
+        saved = await saveA10DataRecord('feedback', feedbackKindForType(data.type), {
+          ...data,
+          attachment: { name: pendingFeedbackFile.name, type: pendingFeedbackFile.type, size: pendingFeedbackFile.size, fileId: uploaded.id },
+          fileIds: [uploaded.id]
+        }, { recordId: saved.id });
+      } catch (err) {
+        try { await archiveA10DataRecord('feedback', saved.id); } catch (cleanupErr) {}
+        throw err;
+      }
       pendingFeedbackFile = null;
     }
     router('feedback');
@@ -14464,8 +14836,24 @@ function viewFeedback(id) {
       <div style="margin-top:14px">
         <div style="font-size:11px;color:var(--brown-light);text-transform:uppercase;font-weight:600;margin-bottom:6px">Attachment</div>
         ${f.attachment.type && f.attachment.type.startsWith('image/')
-          ? `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" target="_blank" style="display:inline-block">${f.attachment.dataUrl ? `<img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" />` : '&#128206; '+escapeHtml(f.attachment.name)}</a><div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px"><a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#11015; Download</a></div>`
-          : `<a href="${f.attachment.fileId ? '/api/files/'+encodeURIComponent(f.attachment.fileId)+'/download' : (f.attachment.dataUrl || '#')}" download="${escapeHtml(f.attachment.name)}" class="btn btn-icon btn-sm" style="text-decoration:none">&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</a>`
+          ? `${f.attachment.dataUrl && !backendFileId(f.attachment)
+              ? `<a href="${f.attachment.dataUrl}" target="_blank" rel="noopener" style="display:inline-block"><img src="${f.attachment.dataUrl}" alt="${escapeHtml(f.attachment.name)}" style="max-width:100%;max-height:300px;border:1px solid var(--grey-light);border-radius:6px" /></a>`
+              : feedbackAttachmentLinkHtml(f.attachment, {
+                  mode: 'preview',
+                  className: 'btn btn-icon btn-sm',
+                  style: 'text-decoration:none',
+                  htmlLabel: `&#128206; ${escapeHtml(f.attachment.name)}`
+                })}<div style="font-size:12px;color:var(--brown-light);margin-top:4px">${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)</div><div style="margin-top:6px">${feedbackAttachmentLinkHtml(f.attachment, {
+                  className: 'btn btn-icon btn-sm',
+                  style: 'text-decoration:none',
+                  htmlLabel: '&#11015; Download',
+                  label: 'Download'
+                })}</div>`
+          : feedbackAttachmentLinkHtml(f.attachment, {
+              className: 'btn btn-icon btn-sm',
+              style: 'text-decoration:none',
+              htmlLabel: `&#128206; ${escapeHtml(f.attachment.name)} (${Math.round(f.attachment.size/1024)} KB)`
+            })
         }
       </div>
     ` : ''}

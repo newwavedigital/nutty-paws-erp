@@ -212,6 +212,74 @@ describe("production workflow service", () => {
     expect(store.calls.filter((call) => call.startsWith("upsertProductionLog:po-1:"))).toHaveLength(1);
   });
 
+  it("derives the product from the purchase-order line when the client omits it", async () => {
+    const store = createStore();
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    const finalized = await finalizeProductionRun(store, {
+      productionRunId: scheduled.id,
+      lines: [{ purchaseOrderLineId: "line-1", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+      materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+    });
+
+    expect(finalized.lines[0]).toMatchObject({ productId: "product-own" });
+    expect(store.calls).toContain("listProductBomItems:product-own");
+  });
+
+  it("rejects finalization when a submitted product does not match the PO line", async () => {
+    const store = createStore();
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await expect(
+      finalizeProductionRun(store, {
+        productionRunId: scheduled.id,
+        lines: [{ purchaseOrderLineId: "line-1", productId: "product-copack", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+        materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+      }),
+    ).rejects.toEqual(
+      new ProductionError("PURCHASE_ORDER_LINE_PRODUCT_MISMATCH", "Production line product does not match the purchase order line"),
+    );
+    expect(store.calls.some((call) => call.startsWith("replaceRunLines:"))).toBe(false);
+  });
+
+  it("deduplicates duplicate BOM rows before calculating production material usage", async () => {
+    const store = createStore({
+      async listProductBomItems(productId) {
+        store.calls.push(`listProductBomItems:${productId}`);
+        return [
+          { productId, masterItemId: "master-ingredient", quantityPerUnit: 2, itemType: "raw_material", inventoryItemId: "inv-ingredient-a", productIsOwnBrand: true },
+          { productId, masterItemId: "master-ingredient", quantityPerUnit: 2, itemType: "raw_material", inventoryItemId: "inv-ingredient-b", productIsOwnBrand: true },
+        ];
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await finalizeProductionRun(store, {
+      productionRunId: scheduled.id,
+      lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+      materialActuals: [],
+    });
+
+    expect(store.calls).toContain("adjustInventory:inv-ingredient-a:-18.9");
+    expect(store.calls).not.toContain("adjustInventory:inv-ingredient-b:-18.9");
+    expect(store.calls.some((call) => call === "adjustInventory:inv-ingredient-a:-37.8")).toBe(false);
+  });
+
   it("blocks duplicate finalization until the run is reopened for correction", async () => {
     const store = createStore();
     const scheduled = await scheduleProductionRun(store, {

@@ -86,8 +86,8 @@ function createInventoryStore(overrides: Partial<InventoryStore> = {}) {
     async getActiveReservation() {
       return null;
     },
-    async releaseReservationRecord() {},
-    async releaseInventoryItemAllocation() {},
+    async releaseReservationRecord() { return true; },
+    async releaseInventoryItemAllocation() { return true; },
     ...overrides,
   };
 

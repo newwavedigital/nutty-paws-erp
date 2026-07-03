@@ -267,27 +267,9 @@ export class D1PickPackStore implements PickPackStore {
     inventoryAdjustments: PickPackInventoryAdjustment[];
     actorUserId?: string;
   }): Promise<PickPackOrderRecord | null> {
-    const statements: D1PreparedStatement[] = [];
+    const inventoryUpdateStatements: D1PreparedStatement[] = [];
     for (const adjustment of input.inventoryAdjustments) {
-      statements.push(
-        this.db
-          .prepare(
-            `
-              INSERT INTO inventory_movements (
-                id, inventory_item_id, movement_type, quantity_delta, reference_type,
-                reference_id, created_by_user_id
-              )
-              VALUES (?, ?, 'consumed', ?, ?, ?, ?)
-            `,
-          )
-          .bind(
-            `movement_${crypto.randomUUID()}`,
-            adjustment.inventoryItemId,
-            adjustment.quantityDelta,
-            adjustment.referenceType,
-            adjustment.referenceId,
-            input.actorUserId ?? null,
-          ),
+      inventoryUpdateStatements.push(
         this.db
           .prepare(
             `
@@ -302,10 +284,68 @@ export class D1PickPackStore implements PickPackStore {
           .bind(adjustment.quantityDelta, adjustment.inventoryItemId, adjustment.quantityDelta),
       );
     }
+    if (inventoryUpdateStatements.length > 0) {
+      const updateResults = await this.db.batch(inventoryUpdateStatements);
+      const failedIndex = updateResults.findIndex((result) => (result.meta?.changes ?? 0) === 0);
+      if (failedIndex >= 0) {
+        const successfulAdjustments = input.inventoryAdjustments.slice(0, failedIndex);
+        if (successfulAdjustments.length > 0) {
+          await this.db.batch(
+            successfulAdjustments.map((adjustment) =>
+              this.db
+                .prepare(
+                  `
+                    UPDATE inventory_items
+                    SET on_hand_quantity = on_hand_quantity - ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                      AND category = 'Finished Good'
+                  `,
+                )
+                .bind(adjustment.quantityDelta, adjustment.inventoryItemId),
+            ),
+          );
+        }
+        throw new PickPackError(
+          "PICK_PACK_INVENTORY_CONFLICT",
+          "Finished-good inventory changed before this order could be marked picked. Refresh and try again.",
+        );
+      }
+    }
 
-    statements.push(
+    const orderUpdate = await this.db
+      .prepare(
+        `
+          UPDATE pick_pack_orders
+          SET status = 'picked',
+              picked_at = COALESCE(picked_at, ?),
+              picked_by_user_id = COALESCE(picked_by_user_id, ?),
+              short_stock_confirmed = ?,
+              short_stock_json = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+            AND status = 'open'
+        `,
+      )
+      .bind(
+        input.pickedAt,
+        input.pickedByUserId ?? null,
+        input.shortStockConfirmed ? 1 : 0,
+        input.shortStockJson,
+        input.orderId,
+      )
+      .run();
+    if ((orderUpdate.meta?.changes ?? 0) === 0) {
+      const existing = await this.getOrder(input.orderId);
+      if (existing) {
+        return existing;
+      }
+      return null;
+    }
+
+    const statements: D1PreparedStatement[] = [
       this.db.prepare("DELETE FROM pick_pack_order_lines WHERE pick_pack_order_id = ?").bind(input.orderId),
-    );
+    ];
     for (const [index, line] of input.lines.entries()) {
       statements.push(
         this.db
@@ -329,30 +369,28 @@ export class D1PickPackStore implements PickPackStore {
           ),
       );
     }
-
-    statements.push(
-      this.db
-        .prepare(
-          `
-            UPDATE pick_pack_orders
-            SET status = 'picked',
-                picked_at = COALESCE(picked_at, ?),
-                picked_by_user_id = COALESCE(picked_by_user_id, ?),
-                short_stock_confirmed = ?,
-                short_stock_json = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-              AND status = 'open'
-          `,
-        )
-        .bind(
-          input.pickedAt,
-          input.pickedByUserId ?? null,
-          input.shortStockConfirmed ? 1 : 0,
-          input.shortStockJson,
-          input.orderId,
-        ),
-    );
+    for (const adjustment of input.inventoryAdjustments) {
+      statements.push(
+        this.db
+          .prepare(
+            `
+              INSERT INTO inventory_movements (
+                id, inventory_item_id, movement_type, quantity_delta, reference_type,
+                reference_id, created_by_user_id
+              )
+              VALUES (?, ?, 'consumed', ?, ?, ?, ?)
+            `,
+          )
+          .bind(
+            `movement_${crypto.randomUUID()}`,
+            adjustment.inventoryItemId,
+            adjustment.quantityDelta,
+            adjustment.referenceType,
+            adjustment.referenceId,
+            input.actorUserId ?? null,
+          ),
+      );
+    }
 
     try {
       await this.db.batch(statements);

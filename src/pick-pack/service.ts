@@ -253,7 +253,8 @@ export async function markPickPackPicked(
     throw new PickPackError("PICK_PACK_ORDER_LOCKED", "Only open Pick & Pack orders can be marked picked");
   }
 
-  const shortages = calculateShortages(order.lines);
+  const currentLines = await hydrateCurrentPickPackStock(store, order.lines);
+  const shortages = calculateShortages(currentLines);
   if (shortages.length > 0 && input.confirmShortStock !== true) {
     throw new PickPackError("SHORT_STOCK_WARNING", "Finished-goods stock is short. Confirm before marking picked.", {
       requiresConfirmation: true,
@@ -263,7 +264,7 @@ export async function markPickPackPicked(
 
   const pickedAt = new Date().toISOString();
   const remainingByItem = new Map<string, number>();
-  const pickedLines = order.lines.map((line) => {
+  const pickedLines = currentLines.map((line) => {
     const available = remainingByItem.has(line.inventoryItemId)
       ? (remainingByItem.get(line.inventoryItemId) ?? 0)
       : Math.max(line.onHandQuantity, 0);
@@ -373,6 +374,24 @@ export async function updatePickPackShippingDetails(
     notes: cleanOptional(input.notes),
     actorUserId: input.actorUserId,
   });
+}
+
+async function hydrateCurrentPickPackStock(store: PickPackStore, lines: PickPackOrderLineRecord[]) {
+  const hydrated: PickPackOrderLineRecord[] = [];
+  for (const line of lines) {
+    const item = await store.getFinishedGoodInventoryItem(line.inventoryItemId);
+    if (!item) {
+      throw new PickPackError("PICK_PACK_INVENTORY_ITEM_NOT_FOUND", "Finished-good inventory item not found");
+    }
+    hydrated.push({
+      ...line,
+      itemName: item.itemName,
+      sku: item.sku,
+      customerId: item.customerId ?? line.customerId ?? null,
+      onHandQuantity: item.onHandQuantity,
+    });
+  }
+  return hydrated;
 }
 
 export async function cancelPickPackOrder(
@@ -617,7 +636,8 @@ function pickPackStatusFor(code: string) {
     code === "SHORT_STOCK_WARNING" ||
     code === "PICK_PACK_ORDER_LOCKED" ||
     code === "PICK_PACK_ORDER_NOT_READY" ||
-    code === "PICK_PACK_CUSTOMER_MISMATCH"
+    code === "PICK_PACK_CUSTOMER_MISMATCH" ||
+    code === "PICK_PACK_INVENTORY_CONFLICT"
   ) {
     return 409;
   }

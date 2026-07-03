@@ -137,6 +137,7 @@ function productionLogInnerHtml() {
       <div style="background:var(--beige-light);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--brown)">
         Auto-generated history of finished production runs. An entry is created here automatically when a run is marked complete and sent to Quality Assurance. Click <strong>View</strong> for the full breakdown of finished goods and materials used.
       </div>
+      ${productionLogImmutableNoticeHtml()}
       <div class="table-wrap"><table>
         <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
@@ -158,13 +159,23 @@ function productionLogInnerHtml() {
                 <td>${r.completedAt?fmtDate(r.completedAt.slice(0,10)):'-'}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewProductionLog('${r.id}')">View</button>
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionLog('${r.id}')">Delete</button>
+                  ${!employeeBackendSessionActive() ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionLog('${r.id}')">Delete</button>` : '<span class="pill" title="Backend production logs are immutable">Locked</span>'}
                 </td>
               </tr>`;
             }).join('')
           }
         </tbody>
       </table></div>
+    </div>
+  `;
+}
+
+function productionLogImmutableNoticeHtml() {
+  if (!employeeBackendSessionActive()) return '';
+  return `
+    <div class="inv-check" style="margin-bottom:12px">
+      <strong>Production Log entries are backend-immutable after finalization.</strong>
+      <div class="help-text">Delete and direct unit/case/lot edits are disabled for signed-in backend records. Use <strong>View</strong> &rarr; <strong>Reopen for Correction</strong> when a finalized production run needs an auditable correction.</div>
     </div>
   `;
 }

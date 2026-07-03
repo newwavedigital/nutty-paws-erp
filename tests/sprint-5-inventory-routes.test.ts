@@ -106,8 +106,8 @@ function createRouteStore(overrides: Partial<InventoryStore> = {}) {
     async createMovement() {},
     async createAuditEvent() {},
     async getActiveReservation() { return null; },
-    async releaseReservationRecord() {},
-    async releaseInventoryItemAllocation() {},
+    async releaseReservationRecord() { return true; },
+    async releaseInventoryItemAllocation() { return true; },
     async listInventoryItems() { return [...items.values()]; },
     async createInventoryItem(input: InventoryItemInput) {
       const item = makeInventoryItem({ ...input, id: input.id, netAvailableQuantity: input.onHandQuantity - (input.allocatedQuantity ?? 0) });

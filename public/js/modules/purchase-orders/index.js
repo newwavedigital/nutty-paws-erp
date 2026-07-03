@@ -80,20 +80,37 @@ function exportPOs() {
 function poFileLinkHtml(po) {
   if (!po?.poFile) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
   const file = po.poFile;
-  const label = escapeHtml(file.name.length > 18 ? file.name.slice(0, 16) + '..' : file.name);
-  if (file._backendFileId) {
-    return `<button class="portal-download-btn" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')" title="${escapeHtml(file.name)}">Download file</button>`;
-  }
-  return `<a class="portal-download-btn" href="${file.dataUrl}" download="${escapeHtml(file.name)}" title="${escapeHtml(file.name)}">Download file</a>`;
+  return backendFileActionHtml(file, {
+    className: 'portal-download-btn',
+    label: 'Download file'
+  });
 }
 
 function poFileDetailHtml(po) {
   if (!po?.poFile) return '';
   const file = po.poFile;
-  if (file._backendFileId) {
-    return `<div style="margin-top:8px"><button class="btn btn-icon btn-sm" onclick="downloadBackendFile('${file._backendFileId}', '${escapeAttr(file.name)}')">File: ${escapeHtml(file.name)}</button></div>`;
+  return `<div style="margin-top:8px">${backendFileActionHtml(file, {
+    className: 'btn btn-icon btn-sm',
+    htmlLabel: `File: ${escapeHtml(file.name)}`,
+    unavailableHtml: ''
+  })}</div>`;
+}
+
+function purchaseOrderFileLinkHtml(file, label = 'file') {
+  const name = file?.name || file?.fileName || label;
+  return backendFileActionHtml(file, {
+    style: 'color:var(--orange);text-decoration:none;background:none;border:none;padding:0;font:inherit;cursor:pointer',
+    htmlLabel: `&#128206; ${escapeHtml(name)}`,
+    unavailableHtml: `<span style="font-size:12px;color:var(--brown-light)">&#128206; ${escapeHtml(name)} unavailable</span>`
+  });
+}
+
+function productionValuesEditControlHtml(po) {
+  if (!po?.productionDate) return '';
+  if (employeeBackendSessionActive()) {
+    return `<div class="inv-check" style="margin:0 0 8px auto;max-width:520px"><strong>Production values are correction-controlled.</strong> Use Production Log &rarr; Reopen for Correction to adjust backend-finalized units, cases, or lot numbers. Direct edit is disabled for signed-in backend records.</div>`;
   }
-  return `<div style="margin-top:8px"><a href="${file.dataUrl}" download="${escapeHtml(file.name)}" style="color:var(--orange);font-size:13px">File: ${escapeHtml(file.name)}</a></div>`;
+  return `<button class="btn btn-icon btn-sm" onclick="editProductionValues('${po.id}')">&#9998; Edit Units / Cases / Lot #</button>`;
 }
 
 function escapeAttr(value) {
@@ -383,7 +400,7 @@ async function viewPO(id) {
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
-      <button class="btn btn-icon btn-sm" onclick="editProductionValues('${po.id}')">&#9998; Edit Units / Cases / Lot #</button>
+      ${productionValuesEditControlHtml(po)}
     </div>
     <table>
       <thead><tr><th>Product</th><th>SKU</th><th>Ordered</th><th>Units Produced</th><th>Cases Produced</th><th>Lot #</th><th>Price</th><th>Subtotal</th></tr></thead>
@@ -430,7 +447,7 @@ async function viewPO(id) {
       </div>
     ` : ''}
     ${po.completionNotes ? `<div class="inv-check ok" style="margin-top:14px"><strong>Production Notes:</strong> ${escapeHtml(po.completionNotes)}</div>` : ''}
-    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> <a href="${po.coa.dataUrl}" download="${escapeHtml(po.coa.name)}" style="color:var(--orange);text-decoration:none">&#128206; ${escapeHtml(po.coa.name)}</a> <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</span></div>` : ''}
+    ${po.coa ? `<div class="inv-check ok" style="margin-top:14px"><strong>COA:</strong> ${purchaseOrderFileLinkHtml(po.coa, 'COA')} <span style="font-size:11px;color:var(--brown-light)">uploaded ${fmtDate(po.coa.uploadedAt?.slice(0,10)||'')} by ${escapeHtml(po.coa.uploadedBy||'-')}</span></div>` : ''}
     ${po.qaNotes ? `<div class="inv-check" style="margin-top:14px"><strong>QA Notes:</strong> ${escapeHtml(po.qaNotes)}</div>` : ''}
     ${(po.productionDate && po.status !== 'completed' && !po.productionFinalized) ? `
       <div style="margin-top:14px;padding:14px;background:#e8f4e2;border-left:4px solid var(--success);border-radius:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -528,8 +545,18 @@ function printSpecSheetForPO(id) {
   const cust = getCustomer(po.customerId);
   if (!cust) { toast('No customer linked to this PO.'); return; }
   const sheet = cust.specSheet;
-  if (!sheet || !sheet.dataUrl) {
+  if (!sheet) {
     toast('No spec sheet on file for ' + (cust.name || 'this customer') + '. Upload one on the Customers page.');
+    return;
+  }
+  if (sheet._backendFileId || sheet.fileId) {
+    previewBackendFile(sheet._backendFileId || sheet.fileId, sheet.name || 'spec-sheet', sheet.type || '')
+      .then(() => toast('Spec sheet opened in a new tab. Print from the viewer.'))
+      .catch(error => toast(error.message || 'Spec sheet preview failed.'));
+    return;
+  }
+  if (!sheet.dataUrl) {
+    toast('Spec sheet preview is unavailable for ' + (cust.name || 'this customer') + '.');
     return;
   }
   // open the file in a new tab - browser handles PDF/image/etc display + print

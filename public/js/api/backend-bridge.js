@@ -1265,8 +1265,8 @@ function backendCustomerToLocalCustomer(customer, existing = {}) {
     address: existing.address || '',
     notes: existing.notes || '',
     status: customer.status || existing.status || 'active',
-    specSheet: existing.specSheet || null,
-    copackingAgreement: existing.copackingAgreement || null
+    specSheet: customer.specSheet || existing.specSheet || null,
+    copackingAgreement: customer.copackingAgreement || existing.copackingAgreement || null
   };
 }
 
@@ -1291,8 +1291,8 @@ function backendProductToLocalProduct(product, existing = {}) {
     allergen: !!(product.allergen ?? existing.allergen),
     allergenDetails: product.allergenDetails || existing.allergenDetails || '',
     finishedGoodId: existing.finishedGoodId || '',
-    productImage: existing.productImage || null,
-    nfpImage: existing.nfpImage || null,
+    productImage: product.productImage || existing.productImage || null,
+    nfpImage: product.nfpImage || existing.nfpImage || null,
     status: product.status || existing.status || 'active'
   };
 }
@@ -1806,6 +1806,7 @@ async function loadBackendCustomers() {
   try {
     const customers = await apiRequest('/api/customers');
     mergeBackendCustomers(customers);
+    await hydrateBackendCustomerFiles(state.customers);
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     backendCustomerState.loaded = true;
@@ -1830,6 +1831,7 @@ async function loadBackendCustomerProfile() {
   try {
     const customer = await apiRequest('/api/customers/me');
     mergeBackendCustomers([customer]);
+    await hydrateBackendCustomerFiles(state.customers.filter(c => c._backendId === customer.id));
     backendCustomerState.status = 'connected';
     backendCustomerState.lastError = '';
     backendCustomerState.loaded = true;
@@ -1849,6 +1851,7 @@ async function loadBackendProducts() {
   try {
     const products = await apiRequest('/api/products');
     mergeBackendProducts(products);
+    await hydrateBackendProductFiles(state.products);
     backendProductState.status = 'connected';
     backendProductState.lastError = '';
     backendProductState.loaded = true;
@@ -2150,6 +2153,52 @@ async function uploadBackendProductMedia(productId, file, fileCategory) {
   return apiFormRequest('/api/files', form);
 }
 
+async function uploadBackendCustomerFile(customerId, file, fileCategory) {
+  if (!file || !(file instanceof File)) return null;
+  const form = new FormData();
+  form.append('ownerType', 'customer');
+  form.append('ownerId', customerId);
+  form.append('fileCategory', fileCategory);
+  form.append('file', file);
+  return apiFormRequest('/api/files', form);
+}
+
+async function loadBackendFilesForOwner(ownerType, ownerId) {
+  return apiRequest(`/api/files?ownerType=${encodeURIComponent(ownerType)}&ownerId=${encodeURIComponent(ownerId)}`);
+}
+
+async function hydrateBackendCustomerFiles(customers) {
+  if (!backendAuthState.token) return;
+  await Promise.all((customers || []).filter(c => c._backendId).map(async customer => {
+    try {
+      const files = await loadBackendFilesForOwner('customer', customer._backendId);
+      customer._backendFiles = files || [];
+      const spec = (files || []).find(file => file.fileCategory === 'customer_spec_sheet') || null;
+      const agreement = (files || []).find(file => file.fileCategory === 'co_packing_agreement') || null;
+      customer.specSheet = spec ? mapBackendFileToPrototype(spec) : null;
+      customer.copackingAgreement = agreement ? mapBackendFileToPrototype(agreement) : null;
+    } catch (error) {
+      customer._backendFileError = error?.message || 'Customer files unavailable';
+    }
+  }));
+}
+
+async function hydrateBackendProductFiles(products) {
+  if (!backendAuthState.token) return;
+  await Promise.all((products || []).filter(p => p._backendId).map(async product => {
+    try {
+      const files = await loadBackendFilesForOwner('product', product._backendId);
+      product._backendFiles = files || [];
+      const productImage = (files || []).find(file => file.fileCategory === 'product_image') || null;
+      const nfpImage = (files || []).find(file => file.fileCategory === 'nutrition_facts') || null;
+      product.productImage = productImage ? mapBackendFileToPrototype(productImage) : null;
+      product.nfpImage = nfpImage ? mapBackendFileToPrototype(nfpImage) : null;
+    } catch (error) {
+      product._backendFileError = error?.message || 'Product files unavailable';
+    }
+  }));
+}
+
 async function uploadBackendInventoryCoa(inventoryItemId, file) {
   if (!file || !(file instanceof File)) return null;
   const form = new FormData();
@@ -2310,6 +2359,7 @@ async function hydrateBackendPurchaseOrderFiles(localPos) {
 }
 
 function mapBackendFileToPrototype(file) {
+  const downloadUrl = backendFileHref(file);
   return {
     _backendFileId: file.id,
     _backendOwnerId: file.ownerId,
@@ -2320,11 +2370,25 @@ function mapBackendFileToPrototype(file) {
     size: file.sizeBytes || 0,
     uploadedAt: file.createdAt,
     fileCategory: file.fileCategory,
-    dataUrl: ''
+    dataUrl: downloadUrl,
+    downloadUrl
   };
 }
 
-async function downloadBackendFile(fileId, fileName) {
+function backendFileId(file) {
+  return typeof file === 'string' ? file : file?.fileId || file?._backendFileId || file?.id || '';
+}
+
+function backendFileName(file, fallback = 'file') {
+  return file?.name || file?.fileName || fallback;
+}
+
+function backendFileHref(file) {
+  const fileId = backendFileId(file);
+  return fileId ? `/api/files/${encodeURIComponent(fileId)}/download` : '';
+}
+
+async function fetchBackendFileBlob(fileId) {
   const response = await fetch(`/api/files/${encodeURIComponent(fileId)}/download`, {
     headers: {
       ...authHeaders()
@@ -2333,7 +2397,11 @@ async function downloadBackendFile(fileId, fileName) {
   if (!response.ok) {
     throw new Error(`File download failed (${response.status})`);
   }
-  const blob = await response.blob();
+  return response.blob();
+}
+
+async function downloadBackendFile(fileId, fileName) {
+  const blob = await fetchBackendFileBlob(fileId);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -2342,6 +2410,55 @@ async function downloadBackendFile(fileId, fileName) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function previewBackendFile(fileId, fileName, contentType = '') {
+  const blob = await fetchBackendFileBlob(fileId);
+  const previewBlob = contentType && blob.type !== contentType
+    ? blob.slice(0, blob.size, contentType)
+    : blob;
+  const url = URL.createObjectURL(previewBlob);
+  const preview = window.open(url, '_blank');
+  if (!preview) {
+    URL.revokeObjectURL(url);
+    throw new Error('Popup blocked. Allow popups to preview this file.');
+  }
+  preview.addEventListener('beforeunload', () => URL.revokeObjectURL(url), { once: true });
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return preview;
+}
+
+function backendFileActionHtml(file, options = {}) {
+  if (!file) return options.emptyHtml || '';
+  const fileId = backendFileId(file);
+  const name = backendFileName(file, options.fallbackLabel || 'file');
+  const text = options.htmlLabel || escapeHtml(options.label || name);
+  const className = options.className ? ` class="${escapeHtml(options.className)}"` : '';
+  const style = options.style ? ` style="${escapeHtml(options.style)}"` : '';
+  const title = escapeHtml(options.title || name);
+  if (fileId) {
+    const mode = options.mode === 'preview' ? 'preview' : 'download';
+    return `<button type="button"${className}${style} title="${title}" data-backend-file-id="${escapeHtml(fileId)}" data-backend-file-name="${escapeHtml(name)}" data-backend-file-type="${escapeHtml(file.type || '')}" data-backend-file-mode="${mode}" onclick="handleBackendFileAction(this)">${text}</button>`;
+  }
+  if (file.dataUrl) {
+    const target = options.mode === 'preview' ? ' target="_blank" rel="noopener"' : '';
+    const download = options.mode === 'preview' ? '' : ` download="${escapeHtml(name)}"`;
+    return `<a${className}${style} href="${file.dataUrl}"${download} title="${title}"${target}>${text}</a>`;
+  }
+  return options.unavailableHtml || `<span style="color:var(--brown-light);font-size:12px">${escapeHtml(name)} unavailable</span>`;
+}
+
+async function handleBackendFileAction(button) {
+  const fileId = button?.dataset?.backendFileId || '';
+  const fileName = button?.dataset?.backendFileName || 'download';
+  const contentType = button?.dataset?.backendFileType || '';
+  const mode = button?.dataset?.backendFileMode || 'download';
+  try {
+    if (mode === 'preview') await previewBackendFile(fileId, fileName, contentType);
+    else await downloadBackendFile(fileId, fileName);
+  } catch (error) {
+    toast(error?.message || 'File action failed.');
+  }
 }
 
 async function ensureBackendPurchaseOrdersLoaded() {

@@ -262,15 +262,30 @@ async function deleteComplaint(id) {
 }
 
 /* ----- Lot Tracking ----- */
+function foodSafetyLotsAreBackendLocked() {
+  return !!backendAuthState.token;
+}
+
+function foodSafetyLotsUnavailableMessage() {
+  return 'Food Safety lot tracking is not backend-backed yet. Nothing was saved locally.';
+}
+
+function foodSafetyLotsNoticeHtml() {
+  if (!foodSafetyLotsAreBackendLocked()) return '';
+  return `<div class="inv-check" style="margin-bottom:8px"><strong>Lot Tracking is read-only for signed-in sessions.</strong> This screen is not connected to a backend lot-tracking workflow yet, so create, edit, and delete controls are disabled until that exists.</div>`;
+}
+
 function renderFsLots(el) {
+  const signedInLocked = foodSafetyLotsAreBackendLocked();
   el.innerHTML = `
     <div class="card-header">
       <h2>Lot Tracking</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''})))">Export CSV</button>
-        <button class="btn" onclick="editLot()">+ New Lot</button>
+        <button class="btn" onclick="editLot()" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>+ New Lot</button>
       </div>
     </div>
+    ${foodSafetyLotsNoticeHtml()}
     <div class="help-text" style="margin-bottom:8px">Track every production lot for traceability. SQF requires forward and backward lot trace within 4 hours.</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Lot #</th><th>Product</th><th>PO</th><th>Production Date</th><th>Qty</th><th>Status</th><th></th></tr></thead>
@@ -285,8 +300,8 @@ function renderFsLots(el) {
               <td>${l.quantity}</td>
               <td><span class="badge ${l.status==='Released'?'badge-prod':l.status==='Hold'?'badge-pending':'badge-low'}">${escapeHtml(l.status||'')}</span></td>
               <td class="row-actions">
-                <button class="btn btn-icon btn-sm" onclick="editLot('${l.id}')">Edit</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLot('${l.id}')">Delete</button>
+                <button class="btn btn-icon btn-sm" onclick="editLot('${l.id}')" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>Edit</button>
+                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteLot('${l.id}')" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>Delete</button>
               </td>
             </tr>
           `).join('')}
@@ -295,6 +310,10 @@ function renderFsLots(el) {
   `;
 }
 function editLot(id) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const l = state.lots.find(x=>x.id===id) || { id: uid('lt'), lotNumber:'', productId:'', poId:'', productionDate: new Date().toISOString().slice(0,10), quantity: 0, status: 'Released' };
   const isNew = !id;
   openModal((isNew?'New':'Edit')+' Lot', `
@@ -332,6 +351,10 @@ function editLot(id) {
   `);
 }
 function saveLot(id, isNew) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const data = {
     id,
     lotNumber: document.getElementById('lt_num').value,
@@ -348,6 +371,10 @@ function saveLot(id, isNew) {
   renderFoodSafety(document.getElementById('content'));
 }
 async function deleteLot(id) {
+  if (foodSafetyLotsAreBackendLocked()) {
+    failBackendRequiredWrite(null, a10DataRecordState.foodSafety, foodSafetyLotsUnavailableMessage());
+    return;
+  }
   const lot = state.lots.find(l => l.id === id);
   const ok = await openConfirmModal({ title: 'Delete lot', record: lot?.lotNumber || id, message: 'Delete this lot record?', risk: 'This removes the local lot-tracking row.', confirmLabel: 'Delete Lot', tone: 'danger' });
   if (!ok) return;

@@ -2,9 +2,26 @@
    TEAM CHAT (Slack-like)
    ========================================================================= */
 let activeChannel = null;
+function signedInChatAuthorName() {
+  const user = backendAuthState.user || null;
+  if (!user) return 'You';
+  return (user.displayName || user.email || 'You').trim();
+}
+
+function teamChatAttachmentHtml(attachment) {
+  if (!attachment) return '';
+  const name = attachment.name || 'attachment';
+  return backendFileActionHtml(attachment, {
+    className: 'chat-attach',
+    style: 'cursor:pointer',
+    htmlLabel: `${attachIcon(attachment)} <span>${escapeHtml(name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(attachment.size)}</span>`,
+    mode: attachment.type && attachment.type.startsWith('image/') ? 'preview' : 'download'
+  });
+}
+
 function renderSlack(el) {
   if (!a10DataRecordState.teamChat.loaded && !a10DataRecordState.teamChat.loading) {
-    refreshA10DataRecordModule('teamChat').then(() => { if (currentPage === 'team-chat') router('team-chat'); }).catch(() => {});
+    refreshA10DataRecordModule('teamChat').then(() => { if (currentPage === 'slack') router('slack'); }).catch(() => {});
   }
   if (!activeChannel || !state.channels.find(c => c.id === activeChannel)) {
     activeChannel = state.channels[0]?.id || null;
@@ -46,7 +63,7 @@ function renderSlack(el) {
                   <div class="chat-body">
                     <div class="chat-meta"><strong>${escapeHtml(m.author||'')}</strong> ${formatChatTime(m.timestamp)}</div>
                     ${m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : ''}
-                    ${m.attachment ? `<a href="${m.attachment.fileId ? '/api/files/'+encodeURIComponent(m.attachment.fileId)+'/download' : (m.attachment.dataUrl || '#')}" download="${escapeHtml(m.attachment.name)}" class="chat-attach">${attachIcon(m.attachment)} <span>${escapeHtml(m.attachment.name)}</span> <span style="color:var(--brown-light);font-size:11px">${formatBytes(m.attachment.size)}</span></a>` : ''}
+                    ${m.attachment ? teamChatAttachmentHtml(m.attachment) : ''}
                   </div>
                 </div>
               `).join('')
@@ -162,20 +179,25 @@ async function sendMessage() {
   const msg = {
     id: uid('m'),
     channelId: activeChannel,
-    author: 'Henry',
+    author: signedInChatAuthorName(),
     text: txt,
     timestamp: new Date().toISOString()
   };
   try {
     let saved = await saveA10DataRecord('teamChat', 'message', { ...msg, kind: 'message' });
     if (pendingChatAttachment?.file) {
-      const uploaded = await uploadA10FileReference('team_chat', saved.id, 'chat_attachment', pendingChatAttachment.file);
-      saved = await saveA10DataRecord('teamChat', 'message', {
-        ...msg,
-        kind: 'message',
-        attachment: { name: pendingChatAttachment.name, type: pendingChatAttachment.type, size: pendingChatAttachment.size, fileId: uploaded.id },
-        fileIds: [uploaded.id]
-      }, { recordId: saved.id });
+      try {
+        const uploaded = await uploadA10FileReference('team_chat', saved.id, 'chat_attachment', pendingChatAttachment.file);
+        saved = await saveA10DataRecord('teamChat', 'message', {
+          ...msg,
+          kind: 'message',
+          attachment: { name: pendingChatAttachment.name, type: pendingChatAttachment.type, size: pendingChatAttachment.size, fileId: uploaded.id },
+          fileIds: [uploaded.id]
+        }, { recordId: saved.id });
+      } catch (err) {
+        try { await archiveA10DataRecord('teamChat', saved.id); } catch (cleanupErr) {}
+        throw err;
+      }
     }
     ta.value = '';
     pendingChatAttachment = null;

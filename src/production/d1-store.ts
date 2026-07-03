@@ -200,13 +200,14 @@ export class D1ProductionStore implements ProductionStore {
                  pbi.master_item_id,
                  pbi.quantity_per_unit,
                  mi.item_type,
-                 inv.id AS inventory_item_id,
+                 MIN(inv.id) AS inventory_item_id,
                  p.is_own_brand
           FROM product_bom_items pbi
           JOIN master_items mi ON mi.id = pbi.master_item_id
           JOIN products p ON p.id = pbi.product_id
           LEFT JOIN inventory_items inv ON inv.master_item_id = pbi.master_item_id
           WHERE pbi.product_id = ?
+          GROUP BY pbi.product_id, pbi.master_item_id, pbi.quantity_per_unit, mi.item_type, p.is_own_brand
           ORDER BY pbi.master_item_id
         `,
       )

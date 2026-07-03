@@ -296,6 +296,7 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     },
   });
   expect(uploadResponse.ok(), `COA upload returned ${uploadResponse.status()}`).toBe(true);
+  const uploadBody = await uploadResponse.json() as ApiEnvelope<{ id: string }>;
 
   await page.goto("/");
   await page.getByLabel("Email").fill(adminEmail);
@@ -317,10 +318,21 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   await page.getByRole("button", { name: /Ingredients/ }).click();
   const stockedRow = page.locator("tr", { hasText: "E2E Stocked Ingredient" });
   await expect(stockedRow).toBeVisible();
-  const coaLink = stockedRow.getByRole("link", { name: /CoA/ });
-  await expect(coaLink).toBeVisible();
-  await expect(coaLink).toHaveAttribute("href", /\/api\/files\/.+\/download/);
-  await expect(coaLink).not.toHaveAttribute("href", /^data:/);
+  const coaButton = stockedRow.getByRole("button", { name: /CoA/ });
+  await expect(coaButton).toBeVisible();
+  const [coaResponse, coaRequest] = await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === "GET" &&
+      response.url().includes(`/api/files/${uploadBody.data.id}/download`) &&
+      response.ok()
+    ),
+    page.waitForRequest((fileRequest) =>
+      fileRequest.method() === "GET" && fileRequest.url().includes(`/api/files/${uploadBody.data.id}/download`)
+    ),
+    coaButton.click(),
+  ]);
+  expect(coaResponse.ok()).toBe(true);
+  expect(coaRequest.headers().authorization).toMatch(/^Bearer /);
 
   await stockedRow.getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Item" }).click();

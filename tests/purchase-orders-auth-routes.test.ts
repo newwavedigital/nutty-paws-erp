@@ -119,8 +119,8 @@ function createInventoryStore() {
     async createMovement() {},
     async createAuditEvent() {},
     async getActiveReservation() { return null; },
-    async releaseReservationRecord() {},
-    async releaseInventoryItemAllocation() {},
+    async releaseReservationRecord() { return true; },
+    async releaseInventoryItemAllocation() { return true; },
   };
   return store;
 }

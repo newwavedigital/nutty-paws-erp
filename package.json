@@ -8,6 +8,7 @@
         "dev:wrangler": "wrangler dev",
         "test": "vitest run",
         "test:e2e:inventory": "playwright test tests/e2e/inventory-hardening.spec.ts",
+        "test:e2e:truth": "playwright test tests/e2e/truth-hardening.spec.ts",
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "frontend:build": "node scripts/build-frontend-assets.mjs",

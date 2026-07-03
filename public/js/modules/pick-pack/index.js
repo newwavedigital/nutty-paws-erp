@@ -57,14 +57,16 @@ function prodReqStatusClass(s) {
 }
 function renderProductionRequests(el) {
   const reqs = (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const actionsDisabled = productionRequestActionsDisabled();
   el.innerHTML = `
     <div class="card-header">
       <h2>Requested Production Orders</h2>
       <div>
         <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes})))">Export CSV</button>
-        <button class="btn" onclick="editProductionRequest()">+ Request Production</button>
+        <button class="btn" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : 'onclick="editProductionRequest()"'}>+ Request Production</button>
       </div>
     </div>
+    ${productionRequestsUnsupportedHtml()}
     <div class="help-text" style="margin-bottom:8px">Pick &amp; Pack staff can request more product to be made for <strong>Bnutty, Poochie Butter, or Wonder Bark</strong> when finished-goods inventory is running low for fulfillment.</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Distributor</th><th>Product</th><th>Qty Requested</th><th>On Hand</th><th>Needed By</th><th>Requested By</th><th>Status</th><th></th></tr></thead>
@@ -83,13 +85,13 @@ function renderProductionRequests(el) {
               <td>${fmtDate(r.neededBy)}</td>
               <td>${escapeHtml(r.requestedBy||'')}</td>
               <td>
-                <select onchange="updateProductionRequestStatus('${r.id}', this.value)" style="font-size:12px;padding:4px 6px;border:1px solid var(--grey);border-radius:4px;background:var(--white)">
+                <select ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onchange="updateProductionRequestStatus('${r.id}', this.value)"`} style="font-size:12px;padding:4px 6px;border:1px solid var(--grey);border-radius:4px;background:var(--white)">
                   ${PROD_REQUEST_STATUSES.map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
                 </select>
               </td>
               <td class="row-actions">
-                <button class="btn btn-icon btn-sm" onclick="editProductionRequest('${r.id}')">Edit</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProductionRequest('${r.id}')">Delete</button>
+                <button class="btn btn-icon btn-sm" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onclick="editProductionRequest('${r.id}')"`}>Edit</button>
+                <button class="btn btn-icon btn-sm" style="color:var(--danger)" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : `onclick="deleteProductionRequest('${r.id}')"`}>Delete</button>
               </td>
             </tr>`;
           }).join('')}
@@ -97,7 +99,25 @@ function renderProductionRequests(el) {
     </table></div>
   `;
 }
+
+function productionRequestActionsDisabled() {
+  return employeeBackendSessionActive();
+}
+
+function productionRequestsUnsupportedHtml() {
+  if (!productionRequestActionsDisabled()) return '';
+  return `
+    <div class="inv-check" style="margin-bottom:10px">
+      <strong>Requested PO's are not included in the backend automations yet.</strong>
+      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. Signed-in users can view existing rows only; request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
+    </div>
+  `;
+}
 function editProductionRequest(id) {
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
+    return;
+  }
   const r = (state.productionRequests||[]).find(x=>x.id===id) || { id: uid('pr'), date: new Date().toISOString().slice(0,10), customerId:'', ingredientId:'', qtyRequested:0, neededBy:'', requestedBy: state.users?.[0]?.name||'', notes:'', status:'Requested' };
   const isNew = !id;
   openModal((isNew?'Request':'Edit')+' Production', `
@@ -147,8 +167,8 @@ function prFgOptions(selectedFgId) {
   sel.onchange();
 }
 function saveProductionRequest(id, isNew) {
-  if (employeeBackendSessionActive()) {
-    failBackendRequiredWrite(null, backendPickPackState, 'Requested production requests are not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
     return;
   }
   const customerId = document.getElementById('pr_customer').value;
@@ -175,8 +195,8 @@ function saveProductionRequest(id, isNew) {
   toast(isNew ? 'Production request submitted.' : 'Request updated.');
 }
 function updateProductionRequestStatus(id, status) {
-  if (employeeBackendSessionActive()) {
-    failBackendRequiredWrite(null, backendPickPackState, 'Production request status changes are not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
     return;
   }
   const r = (state.productionRequests||[]).find(x=>x.id===id);
@@ -186,8 +206,8 @@ function updateProductionRequestStatus(id, status) {
   toast('Status updated.');
 }
 async function deleteProductionRequest(id) {
-  if (employeeBackendSessionActive()) {
-    return failBackendRequiredWrite(null, backendPickPackState, 'Production request delete is not backend-supported yet. Nothing was saved locally.');
+  if (productionRequestActionsDisabled()) {
+    return failBackendRequiredWrite(null, backendPickPackState, "Requested PO's are not included in the backend automations yet. Nothing was saved locally.");
   }
   const ok = await openConfirmModal({
     title: 'Delete production request',
@@ -234,7 +254,13 @@ function renderPickPackPOs(el, pos) {
                 <td>${p.lines.length}</td>
                 <td>${stockBadge}</td>
                 <td>${p.poFile
-                  ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button><a class="btn btn-icon btn-sm" href="${p.poFile.dataUrl}" download="${escapeHtml(p.poFile.name)}" title="Download PO" style="text-decoration:none">&#11015;</a></div>`
+                  ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
+                      className: 'btn btn-icon btn-sm',
+                      style: 'text-decoration:none',
+                      htmlLabel: '&#11015;',
+                      label: 'Download PO',
+                      title: 'Download PO'
+                    })}</div>`
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
@@ -752,7 +778,15 @@ async function deletePickPackPO(id) {
 function viewPickPackPoFile(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p?.poFile) return;
-  const w = window.open(p.poFile.dataUrl, '_blank');
-  if (!w) toast('Popup blocked. Allow popups to view PO.');
+  const fileId = p.poFile._backendFileId || p.poFile.fileId;
+  if (fileId) {
+    previewBackendFile(fileId, p.poFile.name || 'pick-pack-po', p.poFile.type || '')
+      .catch(error => toast(error?.message || 'PO file could not be opened.'));
+    return;
+  }
+  if (p.poFile.dataUrl) {
+    const w = window.open(p.poFile.dataUrl, '_blank');
+    if (!w) toast('Popup blocked. Allow popups to view PO.');
+  }
 }
 
