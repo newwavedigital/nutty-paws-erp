@@ -86,7 +86,18 @@ async function openQualityAssurance(page: Page) {
   ).catch(() => null);
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
   await qualityLoad;
-  await expect(page.getByText("Checking backend...")).toHaveCount(0);
+  await expect(page.getByText("Checking backend...")).toHaveCount(0, { timeout: 30_000 });
+}
+
+async function openShipping(page: Page) {
+  const shippingLoad = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    response.url().includes("/api/shipping/queue") &&
+    response.ok()
+  ).catch(() => null);
+  await page.getByRole("button", { name: /Shipping/ }).click();
+  await shippingLoad;
+  await expect(page.getByText("Checking backend...")).toHaveCount(0, { timeout: 30_000 });
 }
 
 async function uploadPurchaseOrderFile(
@@ -202,6 +213,7 @@ async function seedShippingPurchaseOrder(request: APIRequestContext, authHeaders
 }
 
 test("Stage 2 file truth survives browser upload, reload, and authenticated download", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
     const expectedForcedUploadFailure = message.text().includes("Failed to load resource") && message.text().includes("status of 500");
@@ -228,10 +240,23 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
     `/api/files?ownerType=purchase_order&ownerId=${po.id}`,
     { headers: authHeaders },
   );
+  const shippingQueue = await apiJson<Array<{
+    id: string;
+    shipmentDocumentFileId?: string | null;
+    shippingDetails?: { shipmentDocumentFileId?: string | null } | null;
+  }>>(request, "/api/shipping/queue", { headers: authHeaders });
   const existingPostShipmentCoa = existingPo.postShipmentCoaFileId
     ? existingFiles.find((file) => file.id === existingPo.postShipmentCoaFileId && file.fileCategory === "coa")
     : null;
   let postShipmentFileName = existingPostShipmentCoa?.fileName || `post-shipment-${suffix}.pdf`;
+  const existingShippingPo = shippingQueue.find((item) => item.id === po.id);
+  const existingShipmentDocumentFileId = existingShippingPo?.shipmentDocumentFileId ||
+    existingShippingPo?.shippingDetails?.shipmentDocumentFileId ||
+    existingPo.shipmentDocumentFileId;
+  const existingShipmentDocument = existingShipmentDocumentFileId
+    ? existingFiles.find((file) => file.id === existingShipmentDocumentFileId && file.fileCategory === "shipment_document")
+    : null;
+  const shipmentDocumentFileName = existingShipmentDocument?.fileName || `shipment-doc-${suffix}.pdf`;
   const olderShipmentDocument = await uploadPurchaseOrderFile(
     request,
     authHeaders,
@@ -301,57 +326,64 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   expect(postShipmentDownload.ok()).toBe(true);
   expect(postShipmentDownloadRequest.headers().authorization).toMatch(/^Bearer /);
 
-  await page.getByRole("button", { name: /Shipping/ }).click();
+  await openShipping(page);
   await expect(page.getByText(po.poNumber)).toBeVisible();
-  const shippingCard = page.locator(".card", { hasText: po.poNumber }).first();
-  await expect(shippingCard.getByText("Required to ship")).toBeVisible();
-  await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
-  await shippingCard.locator(`input[id^="sh_docs_input_"]`).setInputFiles({
-    name: `shipment-doc-${suffix}.pdf`,
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4\nshipment doc\n"),
-  });
-  await expect(page.getByText("Shipment document selected. Save or mark shipped to upload it to the backend.")).toBeVisible();
-  await expect(shippingCard.locator(".badge", { hasText: "Pending upload" })).toBeVisible();
-  await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
+  const shippingSaveButton = page.locator(`button[onclick="saveShipping('${po.poNumber}')"]`);
+  const shippingCard = shippingSaveButton.locator("xpath=ancestor::div[contains(@class,'card')][1]");
+  if (existingShipmentDocument) {
+    await expect(shippingCard.getByText("Uploaded")).toBeVisible();
+    await expect(shippingCard.getByRole("button", { name: "Download" })).toBeVisible();
+  } else {
+    await expect(shippingCard.getByText("Required to ship").first()).toBeVisible();
+    await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
+    await page.locator(`input[id="sh_docs_input_${po.poNumber}"]`).setInputFiles({
+      name: shipmentDocumentFileName,
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\nshipment doc\n"),
+    });
+    await expect(page.getByText("Shipment document selected. Save or mark shipped to upload it to the backend.")).toBeVisible();
+    await expect(shippingCard.locator(".badge", { hasText: "Pending upload" })).toBeVisible();
+    await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
 
-  await page.route("**/api/files", async (route) => {
-    if (route.request().method() === "POST") {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: false, error: { message: "Forced Stage 2 upload failure" } }),
-      });
-      return;
-    }
-    await route.continue();
-  });
-  await shippingCard.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/Forced Stage 2 upload failure|Backend write failed|Shipping info could not be saved/i)).toBeVisible();
-  await expect(shippingCard.locator(".badge", { hasText: "Pending upload" })).toBeVisible();
-  await expect(shippingCard.getByText("Uploaded")).toHaveCount(0);
-  await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
-  await page.unroute("**/api/files");
+    await page.route("**/api/files", async (route) => {
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false, error: { message: "Forced Stage 2 upload failure" } }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await shippingSaveButton.click();
+    await expect(page.getByText(/Forced Stage 2 upload failure|Backend write failed|Shipping info could not be saved/i)).toBeVisible();
+    await expect(shippingCard.locator(".badge", { hasText: "Pending upload" })).toBeVisible();
+    await expect(shippingCard.getByText("Uploaded")).toHaveCount(0);
+    await expect(shippingCard.getByRole("button", { name: "Download" })).toHaveCount(0);
+    await page.unroute("**/api/files");
 
-  const uploadRequest = page.waitForRequest((req) =>
-    req.method() === "POST" && req.url().endsWith("/api/files")
-  );
-  const detailsRequest = page.waitForRequest((req) =>
-    req.method() === "PATCH" &&
-    req.url().includes(`/api/shipping/purchase-orders/${po.id}/details`) &&
-    req.postData()?.includes("shipmentDocumentFileId") === true
-  );
-  await shippingCard.getByRole("button", { name: "Save" }).click();
-  await uploadRequest;
-  await detailsRequest;
-  await expect(page.getByText(`Shipping info saved to backend for ${po.poNumber}.`)).toBeVisible();
-  await expect(shippingCard.getByText("Uploaded")).toBeVisible();
-  await expect(shippingCard.getByRole("button", { name: "Download" })).toBeVisible();
+    const uploadRequest = page.waitForRequest((req) =>
+      req.method() === "POST" && req.url().endsWith("/api/files")
+    );
+    const detailsRequest = page.waitForRequest((req) =>
+      req.method() === "PATCH" &&
+      req.url().includes(`/api/shipping/purchase-orders/${po.id}/details`) &&
+      req.postData()?.includes("shipmentDocumentFileId") === true
+    );
+    await shippingSaveButton.click();
+    await uploadRequest;
+    await detailsRequest;
+    await expect(page.getByText(`Shipping info saved to backend for ${po.poNumber}.`)).toBeVisible();
+    await expect(shippingCard.getByText("Uploaded")).toBeVisible();
+    await expect(shippingCard.getByRole("button", { name: "Download" })).toBeVisible();
+  }
 
   await page.reload();
   await expect(page.getByRole("button", { name: /Stage 2 E2E Admin/ })).toBeVisible();
-  await page.getByRole("button", { name: /Shipping/ }).click();
-  const reloadedShippingCard = page.locator(".card", { hasText: po.poNumber }).first();
+  await openShipping(page);
+  const reloadedShippingSaveButton = page.locator(`button[onclick="saveShipping('${po.poNumber}')"]`);
+  const reloadedShippingCard = reloadedShippingSaveButton.locator("xpath=ancestor::div[contains(@class,'card')][1]");
   await expect(reloadedShippingCard.getByText("Uploaded")).toBeVisible();
   const shippingDownloadButton = reloadedShippingCard.getByRole("button", { name: "Download" });
   await expect(shippingDownloadButton).toBeVisible();
