@@ -228,9 +228,9 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     method: "POST",
     headers: authHeaders,
     data: {
-      name: "E2E Reservation Customer",
+      name: `E2E Reservation Customer ${runSuffix}`,
       contactName: "E2E Ops",
-      contactEmail: "e2e-reservation@example.com",
+      contactEmail: `e2e-reservation-${runSuffix}@example.com`,
       phone: "555-0100",
     },
   });
@@ -238,7 +238,7 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     method: "POST",
     headers: authHeaders,
     data: {
-      poNumber: "E2E-RESERVATION-PO",
+      poNumber: `E2E-RESERVATION-PO-${runSuffix}`.toUpperCase(),
       customerId: reservationCustomer.id,
       requestedShipDate: "2026-07-15",
       lines: [{ description: "E2E reserved ingredient", quantity: 2, unitOfMeasure: "lb", masterItemId: reservationMaster.id }],
