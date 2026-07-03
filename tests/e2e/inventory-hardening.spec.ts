@@ -6,7 +6,7 @@ const warehouseEmail = "inventory-e2e-warehouse@example.com";
 const warehousePassword = "InventoryE2E123!";
 
 type ApiEnvelope<T> = { ok: boolean; data: T };
-type MasterItemSeed = { id: string };
+type MasterItemSeed = { id: string; name: string };
 type InventoryItemSeed = { id: string };
 
 async function apiJson<T>(
@@ -70,13 +70,15 @@ async function ensureEmployeeUser(request: APIRequestContext, authHeaders: Recor
   expect(updated.ok(), `Non-admin employee user reset returned ${updated.status()}`).toBe(true);
 }
 
-async function createMasterItem(request: APIRequestContext, authHeaders: Record<string, string>, suffix: string) {
+async function createMasterItem(request: APIRequestContext, authHeaders: Record<string, string>, label: string, runSuffix: string) {
+  const displayName = `E2E ${label} ${runSuffix}`;
+  const skuSuffix = `${label}-${runSuffix}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-");
   return apiJson<MasterItemSeed>(request, "/api/master-items", {
     method: "POST",
     headers: authHeaders,
     data: {
-      sku: `E2E-${suffix.toUpperCase()}`,
-      name: `E2E ${suffix}`,
+      sku: `E2E-${skuSuffix}`,
+      name: displayName,
       itemType: "raw_material",
       unitOfMeasure: "lb",
       customerId: "general",
@@ -136,13 +138,17 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   });
   const authHeaders = { authorization: `Bearer ${login.token}` };
   await ensureEmployeeUser(request, authHeaders);
+  const runSuffix = Date.now().toString(36);
+  const archiveMasterName = `E2E Archive Master ${runSuffix}`;
+  const stockedName = `E2E Stocked Ingredient ${runSuffix}`;
+  const zeroName = `E2E Zero Ingredient ${runSuffix}`;
 
   const archiveMaster = await apiJson<{ id: string }>(request, "/api/master-items", {
     method: "POST",
     headers: authHeaders,
     data: {
-      sku: "E2E-ARCHIVE-MASTER",
-      name: "E2E Archive Master",
+      sku: `E2E-ARCHIVE-MASTER-${runSuffix}`.toUpperCase(),
+      name: archiveMasterName,
       itemType: "raw_material",
       unitOfMeasure: "lb",
       customerId: "general",
@@ -153,8 +159,8 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     method: "POST",
     headers: authHeaders,
     data: {
-      sku: "E2E-STOCKED-MASTER",
-      name: "E2E Stocked Ingredient",
+      sku: `E2E-STOCKED-MASTER-${runSuffix}`.toUpperCase(),
+      name: stockedName,
       itemType: "raw_material",
       unitOfMeasure: "lb",
       customerId: "general",
@@ -165,8 +171,8 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     method: "POST",
     headers: authHeaders,
     data: {
-      sku: "E2E-ZERO-MASTER",
-      name: "E2E Zero Ingredient",
+      sku: `E2E-ZERO-MASTER-${runSuffix}`.toUpperCase(),
+      name: zeroName,
       itemType: "raw_material",
       unitOfMeasure: "lb",
       customerId: "general",
@@ -212,11 +218,11 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
       lotsJson: JSON.stringify([{ lotNumber: "E2E-LOT-Z", location: "E2E-Z1", qty: 0 }]),
     },
   });
-  const allocatedMaster = await createMasterItem(request, authHeaders, "Allocated Blocked Ingredient");
+  const allocatedMaster = await createMasterItem(request, authHeaders, "Allocated Blocked Ingredient", runSuffix);
   const allocatedItem = await createInventoryItem(request, authHeaders, allocatedMaster.id, "ALLOC", 8, 3);
-  const forceMaster = await createMasterItem(request, authHeaders, "Force Archive Ingredient");
+  const forceMaster = await createMasterItem(request, authHeaders, "Force Archive Ingredient", runSuffix);
   const forceItem = await createInventoryItem(request, authHeaders, forceMaster.id, "FORCE", 12, 0);
-  const reservationMaster = await createMasterItem(request, authHeaders, "Reservation Blocked Ingredient");
+  const reservationMaster = await createMasterItem(request, authHeaders, "Reservation Blocked Ingredient", runSuffix);
   const reservationItem = await createInventoryItem(request, authHeaders, reservationMaster.id, "RES", 5, 0);
   const reservationCustomer = await apiJson<{ id: string }>(request, "/api/customers", {
     method: "POST",
@@ -248,7 +254,7 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     error: {
       code: "INVENTORY_ITEM_ARCHIVE_BLOCKED",
       details: {
-        itemName: "E2E Allocated Blocked Ingredient",
+        itemName: allocatedMaster.name,
         blockers: expect.arrayContaining([
           expect.objectContaining({ field: "onHandQuantity", value: 8, unit: "lb" }),
           expect.objectContaining({ field: "allocatedQuantity", value: 3, unit: "lb" }),
@@ -271,7 +277,7 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
     error: {
       code: "INVENTORY_ITEM_ARCHIVE_BLOCKED",
       details: {
-        itemName: "E2E Reservation Blocked Ingredient",
+        itemName: reservationMaster.name,
         blockers: expect.arrayContaining([
           expect.objectContaining({ field: "onHandQuantity", value: 5, unit: "lb" }),
           expect.objectContaining({ field: "activeReservations", value: 1 }),
@@ -320,17 +326,17 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   await expect(inventoryNav).toBeVisible();
   await inventoryNav.click();
   await page.getByRole("button", { name: /Ingredients/ }).click();
-  await expect(page.getByText("E2E Stocked Ingredient")).toBeVisible();
+  await expect(page.getByText(stockedName)).toBeVisible();
 
   await page.getByRole("button", { name: /Master List/ }).click();
-  await expect(page.getByText("E2E Archive Master")).toBeVisible();
-  await page.locator("tr", { hasText: "E2E Archive Master" }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText(archiveMasterName)).toBeVisible();
+  await page.locator("tr", { hasText: archiveMasterName }).getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Master Item" }).click();
   await expect(page.getByText("Master item archived.")).toBeVisible();
-  await expect(page.locator("tr", { hasText: "E2E Archive Master" })).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: archiveMasterName })).toHaveCount(0);
 
   await page.getByRole("button", { name: /Ingredients/ }).click();
-  const stockedRow = page.locator("tr", { hasText: "E2E Stocked Ingredient" });
+  const stockedRow = page.locator("tr", { hasText: stockedName });
   await expect(stockedRow).toBeVisible();
   const coaButton = stockedRow.getByRole("button", { name: /CoA/ });
   await expect(coaButton).toBeVisible();
@@ -351,19 +357,19 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   await stockedRow.getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Item" }).click();
   await expect(page.getByRole("dialog", { name: "Force archive inventory item" })).toBeVisible();
-  await expect(page.getByText("On hand of E2E Stocked Ingredient is still 45 lb.")).toBeVisible();
+  await expect(page.getByText(`On hand of ${stockedName} is still 45 lb.`)).toBeVisible();
   await expect(page.getByRole("button", { name: "Force Archive" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(stockedRow).toBeVisible();
 
-  const forceRow = page.locator("tr", { hasText: "E2E Force Archive Ingredient" });
+  const forceRow = page.locator("tr", { hasText: forceMaster.name });
   await expect(forceRow).toBeVisible();
   await forceRow.getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Item" }).click();
-  await expect(page.getByText("On hand of E2E Force Archive Ingredient is still 12 lb.")).toBeVisible();
+  await expect(page.getByText(`On hand of ${forceMaster.name} is still 12 lb.`)).toBeVisible();
   await page.getByRole("button", { name: "Force Archive" }).click();
   await expect(page.getByText("Inventory item archived.")).toBeVisible();
-  await expect(page.locator("tr", { hasText: "E2E Force Archive Ingredient" })).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: forceMaster.name })).toHaveCount(0);
 
   const forcedRead = await request.patch(`/api/inventory/${forceItem.id}`, {
     headers: authHeaders,
@@ -379,12 +385,12 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   await expect(page.locator('[data-page="inventory"]')).toBeVisible();
   await page.locator('[data-page="inventory"]').click();
   await page.getByRole("button", { name: /Ingredients/ }).click();
-  const allocatedRow = page.locator("tr", { hasText: "E2E Allocated Blocked Ingredient" });
+  const allocatedRow = page.locator("tr", { hasText: allocatedMaster.name });
   await expect(allocatedRow).toBeVisible();
   await allocatedRow.getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Item" }).click();
   await expect(page.getByRole("dialog", { name: "Archive blocked" })).toBeVisible();
-  await expect(page.getByText("Allocated quantity of E2E Allocated Blocked Ingredient is still 3 lb.")).toBeVisible();
+  await expect(page.getByText(`Allocated quantity of ${allocatedMaster.name} is still 3 lb.`)).toBeVisible();
   await expect(page.getByText("Only Admin can force delete this Inventory item.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Force Archive" })).toHaveCount(0);
   await page.getByRole("button", { name: "Close" }).first().click();
@@ -412,14 +418,14 @@ test("Inventory hardening flows use backend archive, COA, and reasoned adjustmen
   await page.getByRole("button", { name: "Apply" }).click();
   await adjustmentRequest;
   await expect(page.getByText("Stock updated in backend.")).toBeVisible();
-  await expect(page.locator("tr", { hasText: "E2E Stocked Ingredient" }).getByRole("cell", { name: "33", exact: true })).toBeVisible();
+  await expect(page.locator("tr", { hasText: stockedName }).getByRole("cell", { name: "33", exact: true })).toBeVisible();
 
-  const zeroRow = page.locator("tr", { hasText: "E2E Zero Ingredient" });
+  const zeroRow = page.locator("tr", { hasText: zeroName });
   await expect(zeroRow).toBeVisible();
   await zeroRow.getByRole("button", { name: "Delete" }).click();
   await page.getByRole("button", { name: "Archive Item" }).click();
   await expect(page.getByText("Inventory item archived.")).toBeVisible();
-  await expect(page.locator("tr", { hasText: "E2E Zero Ingredient" })).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: zeroName })).toHaveCount(0);
 
   const zeroRead = await request.patch(`/api/inventory/${zeroItem.id}`, {
     headers: authHeaders,
