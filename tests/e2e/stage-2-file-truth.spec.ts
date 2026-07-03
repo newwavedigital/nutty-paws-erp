@@ -208,6 +208,19 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
         lines: [],
       }
     : await seedShippingPurchaseOrder(request, authHeaders, suffix);
+  const existingPo = await apiJson<{
+    postShipmentCoaFileId?: string | null;
+    shipmentDocumentFileId?: string | null;
+  }>(request, `/api/purchase-orders/${po.id}`, { headers: authHeaders });
+  const existingFiles = await apiJson<Array<{ id: string; fileName: string; fileCategory: string }>>(
+    request,
+    `/api/files?ownerType=purchase_order&ownerId=${po.id}`,
+    { headers: authHeaders },
+  );
+  const existingPostShipmentCoa = existingPo.postShipmentCoaFileId
+    ? existingFiles.find((file) => file.id === existingPo.postShipmentCoaFileId && file.fileCategory === "coa")
+    : null;
+  let postShipmentFileName = existingPostShipmentCoa?.fileName || `post-shipment-${suffix}.pdf`;
   const olderShipmentDocument = await uploadPurchaseOrderFile(
     request,
     authHeaders,
@@ -228,21 +241,26 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   await purchaseOrdersLoad;
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
   await expect(page.getByText(po.poNumber)).toBeVisible();
-  const postShipmentInput = page.locator(`input[onchange*="qualityPostShipmentCoaSelected"][onchange*="${po.poNumber}"]`);
-  await expect(postShipmentInput).toBeAttached();
-  const postShipmentRequest = page.waitForRequest((req) =>
-    req.method() === "POST" &&
-    req.url().includes(`/api/quality/purchase-orders/${po.id}/post-shipment-coa`) &&
-    req.postData()?.includes("coaFileId") === true
-  );
-  await postShipmentInput.setInputFiles({
-    name: `post-shipment-${suffix}.pdf`,
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4\npost shipment coa\n"),
-  });
-  await postShipmentRequest;
-  await expect(page.getByText("Post-shipment COA attached.")).toBeVisible();
-  await expect(page.getByRole("button", { name: new RegExp(`post-shipment-${suffix}\\.pdf`) })).toBeVisible();
+  const postShipmentButton = () => page.getByRole("button", { name: new RegExp(postShipmentFileName) }).first();
+  if (existingPostShipmentCoa) {
+    await expect(postShipmentButton()).toBeVisible();
+  } else {
+    const postShipmentInput = page.locator(`input[onchange*="qualityPostShipmentCoaSelected"][onchange*="${po.poNumber}"]`);
+    await expect(postShipmentInput).toBeAttached();
+    const postShipmentRequest = page.waitForRequest((req) =>
+      req.method() === "POST" &&
+      req.url().includes(`/api/quality/purchase-orders/${po.id}/post-shipment-coa`) &&
+      req.postData()?.includes("coaFileId") === true
+    );
+    await postShipmentInput.setInputFiles({
+      name: postShipmentFileName,
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\npost shipment coa\n"),
+    });
+    await postShipmentRequest;
+    await expect(page.getByText("Post-shipment COA attached.")).toBeVisible();
+    await expect(postShipmentButton()).toBeVisible();
+  }
 
   await page.reload();
   await expect(page.getByRole("button", { name: /Stage 2 E2E Admin/ })).toBeVisible();
@@ -254,7 +272,7 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
   await reloadedPurchaseOrdersLoad;
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
-  const reloadedPostShipment = page.getByRole("button", { name: new RegExp(`post-shipment-${suffix}\\.pdf`) });
+  const reloadedPostShipment = postShipmentButton();
   await expect(reloadedPostShipment).toBeVisible();
   const postShipmentFileId = await reloadedPostShipment.getAttribute("data-backend-file-id");
   expect(postShipmentFileId).toBeTruthy();
