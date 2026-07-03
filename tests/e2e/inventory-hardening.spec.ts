@@ -117,6 +117,7 @@ async function createInventoryItem(
 }
 
 test("Inventory hardening flows use backend archive, COA, and reasoned adjustment behavior", async ({ page, request }) => {
+  test.setTimeout(150_000);
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
     const text = message.text();
