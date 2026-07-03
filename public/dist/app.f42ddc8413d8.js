@@ -13614,6 +13614,17 @@ async function qualitySubmitSkip(poId) {
   }
 }
 
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    qualityCoaFileSelected,
+    qualityPostShipmentCoaSelected,
+    qualitySaveNotes,
+    qualityReleasePo,
+    openQualitySkipModal,
+    qualitySubmitSkip
+  });
+}
+
 /* js/modules/pick-pack/index.js */
 /* =========================================================================
    PICK & PACK
