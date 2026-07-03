@@ -19,6 +19,7 @@ type PORow = {
   deposit_status: DepositStatus;
   requested_ship_date: string | null;
   notes: string | null;
+  post_shipment_coa_file_id: string | null;
 };
 
 type POLineRow = {
@@ -133,7 +134,8 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
     const rows = await this.db
       .prepare(
         `
-          SELECT id, po_number, customer_id, status, deposit_status, requested_ship_date, notes
+          SELECT id, po_number, customer_id, status, deposit_status, requested_ship_date, notes,
+                 post_shipment_coa_file_id
           FROM purchase_orders
           ORDER BY created_at DESC
         `,
@@ -147,7 +149,8 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
     const row = await this.db
       .prepare(
         `
-          SELECT id, po_number, customer_id, status, deposit_status, requested_ship_date, notes
+          SELECT id, po_number, customer_id, status, deposit_status, requested_ship_date, notes,
+                 post_shipment_coa_file_id
           FROM purchase_orders
           WHERE id = ?
         `,
@@ -434,6 +437,7 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
       depositStatus: row.deposit_status,
       requestedShipDate: row.requested_ship_date,
       notes: row.notes,
+      postShipmentCoaFileId: row.post_shipment_coa_file_id,
       lines: (lines.results ?? []).map((line): PurchaseOrderLineRecord => ({
         id: line.id,
         purchaseOrderId: line.purchase_order_id,

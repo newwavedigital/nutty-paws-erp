@@ -22,6 +22,7 @@ function makePurchaseOrder(overrides: Partial<PurchaseOrderRecord> = {}): Purcha
     depositStatus: "not_required",
     requestedShipDate: null,
     notes: null,
+    postShipmentCoaFileId: null,
     lines: [
       {
         id: "line-1",

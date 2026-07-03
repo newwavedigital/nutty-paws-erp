@@ -44,6 +44,7 @@ export type PurchaseOrderRecord = {
   depositStatus: DepositStatus;
   requestedShipDate: string | null;
   notes: string | null;
+  postShipmentCoaFileId: string | null;
   lines: PurchaseOrderLineRecord[];
 };
 
@@ -207,6 +208,7 @@ export async function createPurchaseOrder(
     depositStatus: "not_required",
     requestedShipDate: input.requestedShipDate ?? null,
     notes: input.notes ?? null,
+    postShipmentCoaFileId: null,
     lines,
   };
 }

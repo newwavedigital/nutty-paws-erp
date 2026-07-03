@@ -22,6 +22,7 @@ function makePO(overrides: Partial<PurchaseOrderRecord> = {}): PurchaseOrderReco
     depositStatus: "received",
     requestedShipDate: null,
     notes: null,
+    postShipmentCoaFileId: null,
     lines: [{ id: "line-1", purchaseOrderId: "po-1", lineNumber: 1, description: "Cashews", quantity: 25, unitOfMeasure: "lb", productId: null, masterItemId: "master-1", supplyChainStatus: "available" }],
     ...overrides,
   };

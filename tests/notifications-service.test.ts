@@ -11,6 +11,7 @@ function makePO(overrides: Partial<PurchaseOrderRecord> = {}): PurchaseOrderReco
     depositStatus: "not_required",
     requestedShipDate: "2026-07-01",
     notes: "rush order",
+    postShipmentCoaFileId: null,
     lines: [
       {
         id: "line-1",
