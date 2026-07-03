@@ -78,6 +78,17 @@ async function loginInBrowser(page: Page) {
   await expect(page.getByRole("button", { name: /Stage 2 E2E Admin/ })).toBeVisible();
 }
 
+async function openQualityAssurance(page: Page) {
+  const qualityLoad = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    response.url().includes("/api/quality/queue") &&
+    response.ok()
+  ).catch(() => null);
+  await page.getByRole("button", { name: /Quality Assurance/ }).click();
+  await qualityLoad;
+  await expect(page.getByText("Checking backend...")).toHaveCount(0);
+}
+
 async function uploadPurchaseOrderFile(
   request: APIRequestContext,
   authHeaders: Record<string, string>,
@@ -239,7 +250,7 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   );
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
   await purchaseOrdersLoad;
-  await page.getByRole("button", { name: /Quality Assurance/ }).click();
+  await openQualityAssurance(page);
   await expect(page.getByText(po.poNumber)).toBeVisible();
   const postShipmentButton = () => page.getByRole("button", { name: new RegExp(postShipmentFileName) }).first();
   if (existingPostShipmentCoa) {
@@ -271,7 +282,7 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   );
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
   await reloadedPurchaseOrdersLoad;
-  await page.getByRole("button", { name: /Quality Assurance/ }).click();
+  await openQualityAssurance(page);
   const reloadedPostShipment = postShipmentButton();
   await expect(reloadedPostShipment).toBeVisible();
   const postShipmentFileId = await reloadedPostShipment.getAttribute("data-backend-file-id");
