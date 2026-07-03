@@ -259,6 +259,10 @@ function createCorrectionStore(overrides: Partial<InventoryStore> = {}) {
     async createMovement(input) {
       calls.push(`createMovement:${input.movementType}:${input.quantityDelta}:${input.referenceType}:${input.referenceId}`);
     },
+    async deleteMovement(id) {
+      calls.push(`deleteMovement:${id}`);
+      return true;
+    },
     async createAuditEvent(input) {
       calls.push(`createAuditEvent:${input.action}`);
     },
@@ -422,5 +426,92 @@ describe("inventory receiving and move correction workflows", () => {
     expect(archived.status).toBe("archived");
     expect(store.calls.some((call) => call.startsWith("adjustInventoryOnHand:"))).toBe(false);
     expect(store.calls.some((call) => call.startsWith("createMovement:"))).toBe(false);
+  });
+
+  it("rolls back received stock when creating the receiving row fails", async () => {
+    let onHandQuantity = 100;
+    const store = createCorrectionStore({
+      async adjustInventoryOnHand(input) {
+        store.calls.push(`adjustInventoryOnHand:${input.inventoryItemId}:${input.quantityDelta}`);
+        onHandQuantity += input.quantityDelta;
+        return onHandQuantity >= 0;
+      },
+      async createReceivingEntry() {
+        store.calls.push("createReceivingEntry:fail");
+        throw new Error("receiving insert failed");
+      },
+    });
+
+    await expect(
+      createReceivingLogEntry(store, {
+        masterItemId: "master-1",
+        inventoryItemId: "inv-1",
+        itemName: "Raw Peanuts",
+        date: "2026-06-19",
+        time: "08:00",
+        packages: 3,
+        quantityPerPackage: 10,
+        unitOfMeasure: "lb",
+        lotNumber: "LOT-2",
+        allergens: ["Peanut"],
+        receivedBy: "General",
+        carrier: "LTL",
+        supplierId: "supplier-1",
+      }),
+    ).rejects.toThrow("receiving insert failed");
+
+    expect(onHandQuantity).toBe(100);
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:30");
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:-30");
+    expect(store.calls.some((call) => call.startsWith("deleteMovement:movement_"))).toBe(true);
+  });
+
+  it("rolls back receiving correction stock when updating the receiving row fails", async () => {
+    let onHandQuantity = 150;
+    const store = createCorrectionStore({
+      async adjustInventoryOnHand(input) {
+        store.calls.push(`adjustInventoryOnHand:${input.inventoryItemId}:${input.quantityDelta}`);
+        onHandQuantity += input.quantityDelta;
+        return onHandQuantity >= 0;
+      },
+      async updateReceivingEntry() {
+        store.calls.push("updateReceivingEntry:fail");
+        throw new Error("receiving update failed");
+      },
+    });
+
+    await expect(
+      updateReceivingLogEntry(store, "receiving-1", {
+        packages: 5,
+        quantityPerPackage: 25,
+      }),
+    ).rejects.toThrow("receiving update failed");
+
+    expect(onHandQuantity).toBe(150);
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:25");
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:-25");
+    expect(store.calls.some((call) => call.startsWith("deleteMovement:movement_"))).toBe(true);
+  });
+
+  it("rolls back receiving archive stock when archiving the receiving row fails", async () => {
+    let onHandQuantity = 150;
+    const store = createCorrectionStore({
+      async adjustInventoryOnHand(input) {
+        store.calls.push(`adjustInventoryOnHand:${input.inventoryItemId}:${input.quantityDelta}`);
+        onHandQuantity += input.quantityDelta;
+        return onHandQuantity >= 0;
+      },
+      async archiveReceivingEntry() {
+        store.calls.push("archiveReceivingEntry:fail");
+        throw new Error("receiving archive failed");
+      },
+    });
+
+    await expect(archiveReceivingLogEntry(store, "receiving-1", "user-6")).rejects.toThrow("receiving archive failed");
+
+    expect(onHandQuantity).toBe(150);
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:-100");
+    expect(store.calls).toContain("adjustInventoryOnHand:inv-1:100");
+    expect(store.calls.some((call) => call.startsWith("deleteMovement:movement_"))).toBe(true);
   });
 });

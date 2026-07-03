@@ -130,6 +130,31 @@ export type ProductionStore = {
     notes?: string | null;
     actorUserId?: string;
   }): Promise<ProductionRunRecord>;
+  finalizeRunTransaction?(input: {
+    run: {
+      id: string;
+      status: "finalized";
+      notes?: string | null;
+      actorUserId?: string;
+    };
+    purchaseOrder: {
+      id: string;
+      status: string;
+    };
+    statusEvent: {
+      fromStatus: string | null;
+      toStatus: string;
+      eventType: string;
+      actorUserId?: string;
+      note?: string;
+    };
+    productionLog: Omit<ProductionLogRecord, "id"> & { completedAt?: string | null };
+    audit: {
+      actorUserId?: string;
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+  }): Promise<ProductionRunRecord>;
   reopenRun(input: {
     id: string;
     reason: string;
@@ -251,49 +276,80 @@ export async function finalizeProductionRun(
   const materials = await buildRunMaterials(store, run, po, runLines, input.materialActuals);
   await assertFinishedGoodInventoryReady(store, runLines);
 
-  await reverseExistingEffects(store, run.id, input.actorUserId);
-  await store.replaceRunLines(run.id, runLines);
-  await store.replaceRunMaterials(run.id, materials);
-  await applyMaterialEffects(store, run.id, materials, input.actorUserId);
-  await applyFinishedGoodEffects(store, run, po, runLines, input.actorUserId);
+  const previousEffects = await reverseExistingEffects(store, run.id, input.actorUserId);
+  try {
+    await store.replaceRunLines(run.id, runLines);
+    await store.replaceRunMaterials(run.id, materials);
+    await applyMaterialEffects(store, run.id, materials, input.actorUserId);
+    await applyFinishedGoodEffects(store, run, po, runLines, input.actorUserId);
+  } catch (error) {
+    await reverseCurrentAndRestorePreviousEffects(store, run.id, previousEffects, input.actorUserId);
+    throw error;
+  }
 
-  const finalized = await store.finalizeRun({
+  const finalRunInput = {
     id: run.id,
-    status: "finalized",
+    status: "finalized" as const,
     notes: input.notes ?? run.notes,
     actorUserId: input.actorUserId,
-  });
-  finalized.lines = runLines;
-  finalized.materials = materials;
-
-  await store.updatePurchaseOrderStatus(po.id, "qa_review");
-  await store.createStatusEvent({
+  };
+  const statusEvent = {
     purchaseOrderId: po.id,
     fromStatus: po.status,
     toStatus: "qa_review",
     eventType: "purchase_order.production_finalized",
     actorUserId: input.actorUserId,
-  });
-  await store.upsertProductionLog({
+  };
+  const productionLog = {
     logId: logIdForPurchaseOrder(po),
     purchaseOrderId: po.id,
     productionRunId: run.id,
     productionDate: run.productionDate,
     productionEndDate: run.productionEndDate,
     productionRoom: run.productionRoom,
-    completedAt: finalized.finalizedAt,
+    completedAt: null,
     overallWastePercent: calculateOverallWaste(materials),
     lineSnapshot: runLines,
     materialSnapshot: materials,
     notes: input.notes ?? run.notes,
-  });
-  await store.createAuditEvent({
+  };
+  const audit = {
     actorUserId: input.actorUserId,
     entityType: "production_run",
     entityId: run.id,
     action: run.correctionCount > 0 ? "production_run.corrected_finalized" : "production_run.finalized",
     metadata: { purchaseOrderId: po.id, lineCount: runLines.length, materialCount: materials.length },
-  });
+  };
+
+  if (store.finalizeRunTransaction) {
+    try {
+      const finalized = await store.finalizeRunTransaction({
+        run: finalRunInput,
+        purchaseOrder: {
+          id: po.id,
+          status: "qa_review",
+        },
+        statusEvent,
+        productionLog,
+        audit,
+      });
+      finalized.lines = runLines;
+      finalized.materials = materials;
+      return finalized;
+    } catch (error) {
+      await reverseCurrentAndRestorePreviousEffects(store, run.id, previousEffects, input.actorUserId);
+      throw error;
+    }
+  }
+
+  const finalized = await store.finalizeRun(finalRunInput);
+  finalized.lines = runLines;
+  finalized.materials = materials;
+
+  await store.updatePurchaseOrderStatus(po.id, "qa_review");
+  await store.createStatusEvent(statusEvent);
+  await store.upsertProductionLog({ ...productionLog, completedAt: finalized.finalizedAt });
+  await store.createAuditEvent(audit);
 
   return finalized;
 }
@@ -455,6 +511,42 @@ async function reverseExistingEffects(store: ProductionStore, productionRunId: s
     });
   }
   await store.clearInventoryEffects(productionRunId);
+  return existing;
+}
+
+async function reverseCurrentAndRestorePreviousEffects(
+  store: ProductionStore,
+  productionRunId: string,
+  previousEffects: Array<{ inventoryItemId: string; quantityDelta: number }>,
+  actorUserId?: string,
+) {
+  const currentEffects = await store.listInventoryEffects(productionRunId);
+  for (const effect of currentEffects.reverse()) {
+    await store.adjustInventory({
+      inventoryItemId: effect.inventoryItemId,
+      quantityDelta: -effect.quantityDelta,
+      referenceType: "production_run",
+      referenceId: productionRunId,
+      actorUserId,
+    });
+  }
+  await store.clearInventoryEffects(productionRunId);
+  for (const effect of previousEffects) {
+    await store.adjustInventory({
+      inventoryItemId: effect.inventoryItemId,
+      quantityDelta: effect.quantityDelta,
+      referenceType: "production_run",
+      referenceId: productionRunId,
+      actorUserId,
+    });
+    await store.createInventoryEffect({
+      id: `production_effect_${crypto.randomUUID()}`,
+      productionRunId,
+      inventoryItemId: effect.inventoryItemId,
+      quantityDelta: effect.quantityDelta,
+      effectType: effect.quantityDelta < 0 ? "consume_material" : "produce_finished_good",
+    });
+  }
 }
 
 async function applyMaterialEffects(

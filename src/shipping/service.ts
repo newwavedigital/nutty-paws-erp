@@ -71,12 +71,69 @@ export type ShippingStore = {
   getActiveShipmentDocument(purchaseOrderId: string, fileId: string): Promise<ShipmentDocumentFileRecord | null>;
   findActiveShipmentDocument(purchaseOrderId: string): Promise<ShipmentDocumentFileRecord | null>;
   upsertShippingDetails(input: ShippingDetailsInput & { purchaseOrderId: string }): Promise<ShippingDetailsRecord>;
+  markPurchaseOrderShippedTransaction?(input: {
+    purchaseOrderId: string;
+    shippedAt: string;
+    shippedByUserId?: string;
+    shipmentDocumentFileId: string;
+    shippingNotes?: string | null;
+    details: ShippingDetailsInput;
+    log: {
+      shippedAt: string;
+      stockedAt?: string | null;
+      carrier?: string | null;
+      bolNumber?: string | null;
+      proNumber?: string | null;
+      palletListJson?: string | null;
+      weight?: number | null;
+      itemsSnapshotJson: string;
+    };
+    statusEvent: {
+      fromStatus: string | null;
+      toStatus: string;
+      eventType: string;
+      actorUserId?: string;
+      note?: string;
+    };
+    audit: {
+      actorUserId?: string;
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+  }): Promise<ShippingPurchaseOrderRecord | null>;
   markPurchaseOrderShipped(input: {
     purchaseOrderId: string;
     shippedAt: string;
     shippedByUserId?: string;
     shipmentDocumentFileId: string;
     notes?: string | null;
+  }): Promise<ShippingPurchaseOrderRecord | null>;
+  markPurchaseOrderStockedTransaction?(input: {
+    purchaseOrderId: string;
+    stockedAt: string;
+    stockedByUserId?: string;
+    log: {
+      shippedAt?: string | null;
+      stockedAt: string;
+      carrier?: string | null;
+      bolNumber?: string | null;
+      proNumber?: string | null;
+      palletListJson?: string | null;
+      weight?: number | null;
+      itemsSnapshotJson: string;
+    };
+    statusEvent: {
+      fromStatus: string | null;
+      toStatus: string;
+      eventType: string;
+      actorUserId?: string;
+      note?: string;
+    };
+    audit: {
+      actorUserId?: string;
+      action: string;
+      metadata: Record<string, unknown>;
+    };
   }): Promise<ShippingPurchaseOrderRecord | null>;
   markPurchaseOrderStocked(input: {
     purchaseOrderId: string;
@@ -179,13 +236,67 @@ export async function markPurchaseOrderShipped(
     );
   }
 
+  const shippedAt = po.shippedAt ?? new Date().toISOString();
+  const logInput = {
+    purchaseOrderId: po.id,
+    shippedAt,
+    stockedAt: po.stockedAt,
+    carrier: details.carrier,
+    bolNumber: details.bolNumber,
+    proNumber: details.proNumber,
+    palletListJson: details.palletListJson,
+    weight: input.weight ?? null,
+    itemsSnapshotJson: JSON.stringify(snapshotItems(po)),
+  };
+  const statusEvent = {
+    purchaseOrderId: po.id,
+    fromStatus: po.status,
+    toStatus: "completed",
+    eventType: "purchase_order.shipped",
+    actorUserId: input.actorUserId,
+    note: details.carrier ?? details.bolNumber ?? shipmentDocument.fileName,
+  };
+  const audit = {
+    actorUserId: input.actorUserId,
+    entityType: "purchase_order",
+    entityId: po.id,
+    action: "purchase_order.shipped",
+    metadata: {
+      shipmentDocumentFileId: shipmentDocument.id,
+      carrier: details.carrier,
+      bolNumber: details.bolNumber,
+      proNumber: details.proNumber,
+      confirmedMissingCarrierBol: input.confirmMissingCarrierBol === true,
+    },
+  };
+
+  if (store.markPurchaseOrderShippedTransaction && !(po.shippedAt && po.status === "completed")) {
+    const updated = await store.markPurchaseOrderShippedTransaction({
+      purchaseOrderId: po.id,
+      shippedAt,
+      shippedByUserId: input.actorUserId,
+      shipmentDocumentFileId: shipmentDocument.id,
+      shippingNotes: details.notes,
+      details: {
+        ...details,
+        shipmentDocumentFileId: shipmentDocument.id,
+      },
+      log: logInput,
+      statusEvent,
+      audit,
+    });
+    if (!updated) {
+      throw new ShippingError("SHIPPING_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+    }
+    return updated;
+  }
+
   await store.upsertShippingDetails({
     purchaseOrderId: po.id,
     ...details,
     shipmentDocumentFileId: shipmentDocument.id,
   });
 
-  const shippedAt = po.shippedAt ?? new Date().toISOString();
   const updated =
     po.shippedAt && po.status === "completed"
       ? po
@@ -200,39 +311,10 @@ export async function markPurchaseOrderShipped(
     throw new ShippingError("SHIPPING_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
   }
 
-  await store.upsertShippingLog({
-    purchaseOrderId: po.id,
-    shippedAt,
-    stockedAt: updated.stockedAt,
-    carrier: details.carrier,
-    bolNumber: details.bolNumber,
-    proNumber: details.proNumber,
-    palletListJson: details.palletListJson,
-    weight: input.weight ?? null,
-    itemsSnapshotJson: JSON.stringify(snapshotItems(po)),
-  });
+  await store.upsertShippingLog({ ...logInput, stockedAt: updated.stockedAt });
 
-  await store.createStatusEvent({
-    purchaseOrderId: po.id,
-    fromStatus: po.status,
-    toStatus: "completed",
-    eventType: "purchase_order.shipped",
-    actorUserId: input.actorUserId,
-    note: details.carrier ?? details.bolNumber ?? shipmentDocument.fileName,
-  });
-  await store.createAuditEvent({
-    actorUserId: input.actorUserId,
-    entityType: "purchase_order",
-    entityId: po.id,
-    action: "purchase_order.shipped",
-    metadata: {
-      shipmentDocumentFileId: shipmentDocument.id,
-      carrier: details.carrier,
-      bolNumber: details.bolNumber,
-      proNumber: details.proNumber,
-      confirmedMissingCarrierBol: input.confirmMissingCarrierBol === true,
-    },
-  });
+  await store.createStatusEvent(statusEvent);
+  await store.createAuditEvent(audit);
 
   return updated;
 }
@@ -247,6 +329,50 @@ export async function markPurchaseOrderStocked(
   const po = await requireShippingPurchaseOrder(store, input.purchaseOrderId);
   ensureInternalOwnBrand(po);
   const stockedAt = po.stockedAt ?? new Date().toISOString();
+  const logInput = {
+    purchaseOrderId: po.id,
+    shippedAt: po.shippedAt,
+    stockedAt,
+    carrier: po.shippingDetails?.carrier ?? null,
+    bolNumber: po.shippingDetails?.bolNumber ?? null,
+    proNumber: po.shippingDetails?.proNumber ?? null,
+    palletListJson: po.shippingDetails?.palletListJson ?? null,
+    weight: null,
+    itemsSnapshotJson: JSON.stringify(snapshotItems(po)),
+  };
+  const statusEvent = {
+    purchaseOrderId: po.id,
+    fromStatus: po.status,
+    toStatus: "completed",
+    eventType: "purchase_order.stocked",
+    actorUserId: input.actorUserId,
+    note: "Stocked to warehouse",
+  };
+  const audit = {
+    actorUserId: input.actorUserId,
+    entityType: "purchase_order",
+    entityId: po.id,
+    action: "purchase_order.stocked",
+    metadata: {
+      stockedAt,
+    },
+  };
+
+  if (store.markPurchaseOrderStockedTransaction && !(po.stockedAt && po.status === "completed")) {
+    const updated = await store.markPurchaseOrderStockedTransaction({
+      purchaseOrderId: po.id,
+      stockedAt,
+      stockedByUserId: input.actorUserId,
+      log: logInput,
+      statusEvent,
+      audit,
+    });
+    if (!updated) {
+      throw new ShippingError("SHIPPING_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+    }
+    return updated;
+  }
+
   const updated =
     po.stockedAt && po.status === "completed"
       ? po
@@ -259,35 +385,10 @@ export async function markPurchaseOrderStocked(
     throw new ShippingError("SHIPPING_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
   }
 
-  await store.upsertShippingLog({
-    purchaseOrderId: po.id,
-    shippedAt: updated.shippedAt,
-    stockedAt,
-    carrier: po.shippingDetails?.carrier ?? null,
-    bolNumber: po.shippingDetails?.bolNumber ?? null,
-    proNumber: po.shippingDetails?.proNumber ?? null,
-    palletListJson: po.shippingDetails?.palletListJson ?? null,
-    weight: null,
-    itemsSnapshotJson: JSON.stringify(snapshotItems(po)),
-  });
+  await store.upsertShippingLog({ ...logInput, shippedAt: updated.shippedAt });
 
-  await store.createStatusEvent({
-    purchaseOrderId: po.id,
-    fromStatus: po.status,
-    toStatus: "completed",
-    eventType: "purchase_order.stocked",
-    actorUserId: input.actorUserId,
-    note: "Stocked to warehouse",
-  });
-  await store.createAuditEvent({
-    actorUserId: input.actorUserId,
-    entityType: "purchase_order",
-    entityId: po.id,
-    action: "purchase_order.stocked",
-    metadata: {
-      stockedAt,
-    },
-  });
+  await store.createStatusEvent(statusEvent);
+  await store.createAuditEvent(audit);
 
   return updated;
 }

@@ -285,6 +285,121 @@ describe("production workflow service", () => {
     expect(store.calls.some((call) => call.startsWith("upsertProductionLog:"))).toBe(false);
   });
 
+  it("rolls back production inventory effects when a later finalization write fails", async () => {
+    const store = createStore({
+      async upsertInventoryLot(input) {
+        store.calls.push(`upsertInventoryLot:${input.productId}:${input.lotNumber}:${input.quantityProduced}`);
+        throw new Error("finished-good lot write failed");
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await expect(
+      finalizeProductionRun(store, {
+        productionRunId: scheduled.id,
+        actorUserId: "user-1",
+        lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+        materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+      }),
+    ).rejects.toThrow("finished-good lot write failed");
+
+    expect(store.calls).toContain("adjustInventory:inv-ingredient:-18.9");
+    expect(store.calls).toContain("adjustInventory:inv-packaging:-9.45");
+    expect(store.calls).toContain("adjustInventory:inv-fg-own:9");
+    expect(store.calls).toContain("adjustInventory:inv-fg-own:-9");
+    expect(store.calls).toContain("adjustInventory:inv-packaging:9.45");
+    expect(store.calls).toContain("adjustInventory:inv-ingredient:18.9");
+    expect(store.calls.some((call) => call.startsWith("finalizeRun:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("updatePurchaseOrderStatus:po-1:qa_review"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("upsertProductionLog:"))).toBe(false);
+  });
+
+  it("uses atomic finalization transaction hook for run, PO, log, status event, and audit writes", async () => {
+    const store = createStore({
+      async finalizeRunTransaction(input) {
+        store.calls.push(`transaction:finalize:${input.run.id}:${input.purchaseOrder.status}`);
+        const finalized: ProductionRunRecord = {
+          id: input.run.id,
+          purchaseOrderId: input.productionLog.purchaseOrderId,
+          productionDate: input.productionLog.productionDate,
+          productionEndDate: input.productionLog.productionEndDate,
+          productionRoom: input.productionLog.productionRoom,
+          status: "finalized",
+          finalizedAt: "2026-06-19T00:00:00.000Z",
+          reopenedAt: null,
+          correctionCount: 0,
+          notes: input.run.notes ?? null,
+          lines: [],
+          materials: [],
+        };
+        store.setRun(finalized);
+        store.setPoStatus(input.purchaseOrder.status);
+        return finalized;
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    const finalized = await finalizeProductionRun(store, {
+      productionRunId: scheduled.id,
+      actorUserId: "user-1",
+      lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+      materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+    });
+
+    expect(finalized.status).toBe("finalized");
+    expect(store.calls.some((call) => call.startsWith("transaction:finalize:production_run_") && call.endsWith(":qa_review"))).toBe(true);
+    expect(store.calls.some((call) => call.startsWith("finalizeRun:"))).toBe(false);
+    expect(store.calls.filter((call) => call === "updatePurchaseOrderStatus:po-1:qa_review")).toHaveLength(0);
+    expect(store.calls.some((call) => call.startsWith("upsertProductionLog:"))).toBe(false);
+    expect(store.calls.some((call) => call.includes("purchase_order.production_finalized"))).toBe(false);
+    expect(store.calls).not.toContain("audit:production_run.finalized");
+  });
+
+  it("rolls back inventory effects when atomic finalization transaction fails", async () => {
+    const store = createStore({
+      async finalizeRunTransaction(input) {
+        store.calls.push(`transaction:finalize:fail:${input.run.id}`);
+        throw new Error("production finalization batch failed");
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await expect(
+      finalizeProductionRun(store, {
+        productionRunId: scheduled.id,
+        actorUserId: "user-1",
+        lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+        materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+      }),
+    ).rejects.toThrow("production finalization batch failed");
+
+    expect(store.calls).toContain("adjustInventory:inv-ingredient:-18.9");
+    expect(store.calls).toContain("adjustInventory:inv-packaging:-9.45");
+    expect(store.calls).toContain("adjustInventory:inv-fg-own:9");
+    expect(store.calls).toContain("adjustInventory:inv-fg-own:-9");
+    expect(store.calls).toContain("adjustInventory:inv-packaging:9.45");
+    expect(store.calls).toContain("adjustInventory:inv-ingredient:18.9");
+    expect(store.calls.some((call) => call.startsWith("transaction:finalize:fail:production_run_"))).toBe(true);
+    expect(store.calls.some((call) => call.startsWith("finalizeRun:"))).toBe(false);
+    expect(store.calls.filter((call) => call === "updatePurchaseOrderStatus:po-1:qa_review")).toHaveLength(0);
+    expect(store.calls.some((call) => call.startsWith("upsertProductionLog:"))).toBe(false);
+  });
+
   it("deduplicates duplicate BOM rows before calculating production material usage", async () => {
     const store = createStore({
       async listProductBomItems(productId) {

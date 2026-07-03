@@ -4,6 +4,7 @@ import { registerContentLibraryRoutes } from "../src/content-library/routes";
 import { registerFeedbackRoutes } from "../src/feedback/routes";
 import { registerFoodSafetyRoutes } from "../src/food-safety/routes";
 import { registerMachineryRoutes } from "../src/machinery/routes";
+import type { AuthStore, RoleName } from "../src/auth/service";
 import type { DataRecord, DataRecordStore } from "../src/records/service";
 import { registerSupplierRoutes } from "../src/suppliers/routes";
 import { registerTeamChatRoutes } from "../src/team-chat/routes";
@@ -11,7 +12,7 @@ import { registerTeamChatRoutes } from "../src/team-chat/routes";
 type ModuleCase = {
   basePath: string;
   kind: string;
-  register: (app: ReturnType<typeof createApp>, store: DataRecordStore) => void;
+  register: (app: ReturnType<typeof createApp>, store: DataRecordStore, authStore?: AuthStore) => void;
 };
 
 function makeRecord(module: string, kind: string, overrides: Partial<DataRecord> = {}): DataRecord {
@@ -81,18 +82,45 @@ function createStore(module: string, kind: string) {
   return store;
 }
 
+function createAuthStore(role: "Customer" | "Sales" | "Admin"): AuthStore {
+  return {
+    async createUser() { throw new Error("not used"); },
+    async getUserByEmail() { return null; },
+    async getUserById(id) {
+      return {
+        id,
+        email: `${id}@example.com`,
+        displayName: id,
+        userType: role === "Customer" ? "customer" : "employee",
+        passwordHash: null,
+        isActive: true,
+      };
+    },
+    async listUserRoles() { return [role as RoleName]; },
+    async setUserRoles() {},
+    async listCustomerAccess() { return []; },
+    async setCustomerAccess() {},
+    async createSession() { throw new Error("not used"); },
+    async getSessionByTokenHash() {
+      return { id: "session-1", userId: role, tokenHash: "hash", expiresAt: "2999-01-01T00:00:00.000Z", revokedAt: null };
+    },
+    async revokeSession() {},
+    async countUsers() { return 1; },
+  };
+}
+
 function moduleNameFromPath(basePath: string) {
   if (basePath === "/api/suppliers") return "supplier";
   return basePath.replace("/api/", "").replace(/-/g, "_");
 }
 
 const moduleCases: ModuleCase[] = [
-  { basePath: "/api/suppliers", kind: "supplier", register: (app, store) => registerSupplierRoutes(app, () => store) },
-  { basePath: "/api/content-library", kind: "folder", register: (app, store) => registerContentLibraryRoutes(app, () => store) },
-  { basePath: "/api/team-chat", kind: "channel", register: (app, store) => registerTeamChatRoutes(app, () => store) },
-  { basePath: "/api/food-safety", kind: "complaint", register: (app, store) => registerFoodSafetyRoutes(app, () => store) },
-  { basePath: "/api/machinery", kind: "maintenance", register: (app, store) => registerMachineryRoutes(app, () => store) },
-  { basePath: "/api/feedback", kind: "general", register: (app, store) => registerFeedbackRoutes(app, () => store) },
+  { basePath: "/api/suppliers", kind: "supplier", register: (app, store, authStore) => registerSupplierRoutes(app, () => store, authStore ? () => authStore : undefined) },
+  { basePath: "/api/content-library", kind: "folder", register: (app, store, authStore) => registerContentLibraryRoutes(app, () => store, authStore ? () => authStore : undefined) },
+  { basePath: "/api/team-chat", kind: "channel", register: (app, store, authStore) => registerTeamChatRoutes(app, () => store, authStore ? () => authStore : undefined) },
+  { basePath: "/api/food-safety", kind: "complaint", register: (app, store, authStore) => registerFoodSafetyRoutes(app, () => store, authStore ? () => authStore : undefined) },
+  { basePath: "/api/machinery", kind: "maintenance", register: (app, store, authStore) => registerMachineryRoutes(app, () => store, authStore ? () => authStore : undefined) },
+  { basePath: "/api/feedback", kind: "general", register: (app, store, authStore) => registerFeedbackRoutes(app, () => store, authStore ? () => authStore : undefined) },
 ];
 
 describe("Sprint A8 data record routes", () => {
@@ -146,5 +174,86 @@ describe("Sprint A8 data record routes", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it.each(moduleCases)("blocks Customer users from employee-only $basePath reads and writes", async ({ basePath, kind, register }) => {
+    const moduleName = moduleNameFromPath(basePath);
+    const store = createStore(moduleName, kind);
+    const authStore = createAuthStore("Customer");
+    const app = createApp((hono) => register(hono, store, authStore), { AUTH_REQUIRED: "true" });
+    const headers = { authorization: "Bearer customer-token", "content-type": "application/json" };
+
+    const list = await app.request(`${basePath}?kind=${kind}`, { headers });
+    const read = await app.request(`${basePath}/${moduleName}_seed`, { headers });
+    const update = await app.request(`${basePath}/${moduleName}_seed`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ title: "Customer update" }),
+    });
+    const archive = await app.request(`${basePath}/${moduleName}_seed`, {
+      method: "DELETE",
+      headers,
+    });
+
+    expect(list.status).toBe(403);
+    expect(read.status).toBe(403);
+    expect(update.status).toBe(403);
+    expect(archive.status).toBe(403);
+  });
+
+  it.each(moduleCases.filter((moduleCase) => moduleCase.basePath !== "/api/feedback"))(
+    "blocks Customer users from creating employee-only $basePath records",
+    async ({ basePath, kind, register }) => {
+      const moduleName = moduleNameFromPath(basePath);
+      const store = createStore(moduleName, kind);
+      const authStore = createAuthStore("Customer");
+      const app = createApp((hono) => register(hono, store, authStore), { AUTH_REQUIRED: "true" });
+
+      const created = await app.request(basePath, {
+        method: "POST",
+        headers: { authorization: "Bearer customer-token", "content-type": "application/json" },
+        body: JSON.stringify({ kind, title: "Customer create", payload: { priority: "High" } }),
+      });
+
+      expect(created.status).toBe(403);
+    },
+  );
+
+  it("allows authenticated Customer users to create feedback but blocks feedback list/update/archive", async () => {
+    const store = createStore("feedback", "general");
+    const authStore = createAuthStore("Customer");
+    const app = createApp((hono) => registerFeedbackRoutes(hono, () => store, () => authStore), { AUTH_REQUIRED: "true" });
+    const headers = { authorization: "Bearer customer-token", "content-type": "application/json" };
+
+    const created = await app.request("/api/feedback", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ kind: "general", title: "Customer feedback", payload: { note: "Found an issue" } }),
+    });
+    const list = await app.request("/api/feedback?kind=general", { headers });
+    const update = await app.request("/api/feedback/feedback_seed", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ title: "Customer update" }),
+    });
+    const archive = await app.request("/api/feedback/feedback_seed", { method: "DELETE", headers });
+
+    expect(created.status).toBe(200);
+    expect(list.status).toBe(403);
+    expect(update.status).toBe(403);
+    expect(archive.status).toBe(403);
+  });
+
+  it.each(moduleCases)("allows employee users through protected $basePath routes", async ({ basePath, kind, register }) => {
+    const moduleName = moduleNameFromPath(basePath);
+    const store = createStore(moduleName, kind);
+    const authStore = createAuthStore("Sales");
+    const app = createApp((hono) => register(hono, store, authStore), { AUTH_REQUIRED: "true" });
+
+    const list = await app.request(`${basePath}?kind=${kind}`, {
+      headers: { authorization: "Bearer sales-token" },
+    });
+
+    expect(list.status).toBe(200);
   });
 });

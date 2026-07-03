@@ -209,6 +209,139 @@ export class D1ShippingStore implements ShippingStore {
     return details;
   }
 
+  async markPurchaseOrderShippedTransaction(
+    input: Parameters<NonNullable<ShippingStore["markPurchaseOrderShippedTransaction"]>>[0],
+  ): Promise<ShippingPurchaseOrderRecord | null> {
+    const existingDetails = await this.getShippingDetails(input.purchaseOrderId);
+    const detailsId = existingDetails?.id ?? `shipping_details_${crypto.randomUUID()}`;
+    const existingLog = await this.getShippingLog(input.purchaseOrderId);
+    const logId = existingLog?.id ?? `shipping_log_${crypto.randomUUID()}`;
+    const logNumber = existingLog?.shippingLogNumber ?? (await this.nextShippingLogNumber());
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            INSERT INTO shipping_details (
+              id, purchase_order_id, bol_number, pro_number, carrier, freight_class,
+              notes, pallet_list_json, shipment_document_file_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(purchase_order_id) DO UPDATE SET
+              bol_number = excluded.bol_number,
+              pro_number = excluded.pro_number,
+              carrier = excluded.carrier,
+              freight_class = excluded.freight_class,
+              notes = excluded.notes,
+              pallet_list_json = excluded.pallet_list_json,
+              shipment_document_file_id = excluded.shipment_document_file_id,
+              updated_at = CURRENT_TIMESTAMP
+          `,
+        )
+        .bind(
+          detailsId,
+          input.purchaseOrderId,
+          input.details.bolNumber ?? null,
+          input.details.proNumber ?? null,
+          input.details.carrier ?? null,
+          input.details.freightClass ?? null,
+          input.details.notes ?? null,
+          input.details.palletListJson ?? null,
+          input.details.shipmentDocumentFileId ?? input.shipmentDocumentFileId,
+        ),
+      this.db
+        .prepare(
+          `
+            UPDATE purchase_orders
+            SET status = 'completed',
+                shipped_at = COALESCE(shipped_at, ?),
+                shipped_by_user_id = COALESCE(shipped_by_user_id, ?),
+                shipment_document_file_id = ?,
+                shipping_notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+        )
+        .bind(
+          input.shippedAt,
+          input.shippedByUserId ?? null,
+          input.shipmentDocumentFileId,
+          input.shippingNotes ?? null,
+          input.purchaseOrderId,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO shipping_logs (
+              id, purchase_order_id, shipping_log_number, shipped_at, stocked_at,
+              carrier, bol_number, pro_number, pallet_list_json, weight, items_snapshot_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(purchase_order_id) DO UPDATE SET
+              shipped_at = COALESCE(excluded.shipped_at, shipping_logs.shipped_at),
+              stocked_at = COALESCE(excluded.stocked_at, shipping_logs.stocked_at),
+              carrier = COALESCE(excluded.carrier, shipping_logs.carrier),
+              bol_number = COALESCE(excluded.bol_number, shipping_logs.bol_number),
+              pro_number = COALESCE(excluded.pro_number, shipping_logs.pro_number),
+              pallet_list_json = COALESCE(excluded.pallet_list_json, shipping_logs.pallet_list_json),
+              weight = COALESCE(excluded.weight, shipping_logs.weight),
+              items_snapshot_json = excluded.items_snapshot_json,
+              updated_at = CURRENT_TIMESTAMP
+          `,
+        )
+        .bind(
+          logId,
+          input.purchaseOrderId,
+          logNumber,
+          input.log.shippedAt,
+          input.log.stockedAt ?? null,
+          input.log.carrier ?? null,
+          input.log.bolNumber ?? null,
+          input.log.proNumber ?? null,
+          input.log.palletListJson ?? null,
+          input.log.weight ?? null,
+          input.log.itemsSnapshotJson,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_order_status_events (
+              id, purchase_order_id, from_status, to_status, event_type, note, created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `po_status_event_${crypto.randomUUID()}`,
+          input.purchaseOrderId,
+          input.statusEvent.fromStatus,
+          input.statusEvent.toStatus,
+          input.statusEvent.eventType,
+          input.statusEvent.note ?? null,
+          input.statusEvent.actorUserId ?? null,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          "purchase_order",
+          input.purchaseOrderId,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    ]);
+
+    return this.getPurchaseOrder(input.purchaseOrderId);
+  }
+
   async markPurchaseOrderShipped(input: {
     purchaseOrderId: string;
     shippedAt: string;
@@ -231,6 +364,99 @@ export class D1ShippingStore implements ShippingStore {
       )
       .bind(input.shippedAt, input.shippedByUserId ?? null, input.shipmentDocumentFileId, input.notes ?? null, input.purchaseOrderId)
       .run();
+    return this.getPurchaseOrder(input.purchaseOrderId);
+  }
+
+  async markPurchaseOrderStockedTransaction(
+    input: Parameters<NonNullable<ShippingStore["markPurchaseOrderStockedTransaction"]>>[0],
+  ): Promise<ShippingPurchaseOrderRecord | null> {
+    const existingLog = await this.getShippingLog(input.purchaseOrderId);
+    const logId = existingLog?.id ?? `shipping_log_${crypto.randomUUID()}`;
+    const logNumber = existingLog?.shippingLogNumber ?? (await this.nextShippingLogNumber());
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            UPDATE purchase_orders
+            SET status = 'completed',
+                stocked_at = COALESCE(stocked_at, ?),
+                stocked_by_user_id = COALESCE(stocked_by_user_id, ?),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+        )
+        .bind(input.stockedAt, input.stockedByUserId ?? null, input.purchaseOrderId),
+      this.db
+        .prepare(
+          `
+            INSERT INTO shipping_logs (
+              id, purchase_order_id, shipping_log_number, shipped_at, stocked_at,
+              carrier, bol_number, pro_number, pallet_list_json, weight, items_snapshot_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(purchase_order_id) DO UPDATE SET
+              shipped_at = COALESCE(excluded.shipped_at, shipping_logs.shipped_at),
+              stocked_at = COALESCE(excluded.stocked_at, shipping_logs.stocked_at),
+              carrier = COALESCE(excluded.carrier, shipping_logs.carrier),
+              bol_number = COALESCE(excluded.bol_number, shipping_logs.bol_number),
+              pro_number = COALESCE(excluded.pro_number, shipping_logs.pro_number),
+              pallet_list_json = COALESCE(excluded.pallet_list_json, shipping_logs.pallet_list_json),
+              weight = COALESCE(excluded.weight, shipping_logs.weight),
+              items_snapshot_json = excluded.items_snapshot_json,
+              updated_at = CURRENT_TIMESTAMP
+          `,
+        )
+        .bind(
+          logId,
+          input.purchaseOrderId,
+          logNumber,
+          input.log.shippedAt ?? null,
+          input.log.stockedAt,
+          input.log.carrier ?? null,
+          input.log.bolNumber ?? null,
+          input.log.proNumber ?? null,
+          input.log.palletListJson ?? null,
+          input.log.weight ?? null,
+          input.log.itemsSnapshotJson,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_order_status_events (
+              id, purchase_order_id, from_status, to_status, event_type, note, created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `po_status_event_${crypto.randomUUID()}`,
+          input.purchaseOrderId,
+          input.statusEvent.fromStatus,
+          input.statusEvent.toStatus,
+          input.statusEvent.eventType,
+          input.statusEvent.note ?? null,
+          input.statusEvent.actorUserId ?? null,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          "purchase_order",
+          input.purchaseOrderId,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    ]);
+
     return this.getPurchaseOrder(input.purchaseOrderId);
   }
 

@@ -427,29 +427,39 @@ export async function createReceivingLogEntry(store: InventoryStore, input: Omit
   assertNonNegative(input.packages, "packages");
   assertNonNegative(input.quantityPerPackage, "quantityPerPackage");
   const totalQuantity = +(input.packages * input.quantityPerPackage).toFixed(2);
-  await applyInventoryDelta(store, inventoryItemId, totalQuantity);
   const id = `receiving_${crypto.randomUUID()}`;
-  await store.createMovement({
+  const movementId = `movement_${crypto.randomUUID()}`;
+  await applyTrackedInventoryDelta(store, {
     inventoryItemId,
     movementType: "received",
     quantityDelta: totalQuantity,
     referenceType: "receiving_entry",
     referenceId: id,
+    movementId,
     actorUserId: input.actorUserId,
   });
-  return store.createReceivingEntry({
-    ...input,
-    id,
-    receivingId: `RCV-${await store.nextReceivingSequence()}`,
-    inventoryItemId,
-    totalQuantity,
-    status: "active",
-    archivedAt: null,
-    archivedByUserId: null,
-    updatedByUserId: input.actorUserId ?? null,
-    stockAppliedQuantity: totalQuantity,
-    stockAppliedInventoryItemId: inventoryItemId,
-  });
+  try {
+    return await store.createReceivingEntry({
+      ...input,
+      id,
+      receivingId: `RCV-${await store.nextReceivingSequence()}`,
+      inventoryItemId,
+      totalQuantity,
+      status: "active",
+      archivedAt: null,
+      archivedByUserId: null,
+      updatedByUserId: input.actorUserId ?? null,
+      stockAppliedQuantity: totalQuantity,
+      stockAppliedInventoryItemId: inventoryItemId,
+    });
+  } catch (error) {
+    await rollbackTrackedInventoryDelta(store, {
+      inventoryItemId,
+      quantityDelta: totalQuantity,
+      movementId,
+    });
+    throw error;
+  }
 }
 
 export async function updateReceivingLogEntry(store: InventoryStore, receivingEntryId: string, input: Partial<Omit<ReceivingEntryInput, "id" | "receivingId" | "totalQuantity" | "status" | "archivedAt" | "archivedByUserId" | "updatedByUserId" | "stockAppliedQuantity" | "stockAppliedInventoryItemId">>) {
@@ -462,10 +472,15 @@ export async function updateReceivingLogEntry(store: InventoryStore, receivingEn
   const merged = buildReceivingInput(existing, input);
   await assertMasterItemExists(store, merged.masterItemId);
   merged.inventoryItemId = requireInventoryItemId(merged.inventoryItemId);
-  await applyReceivingStockDelta(store, existing, merged, input.actorUserId);
-  const updated = await store.updateReceivingEntry(receivingEntryId, merged);
-  if (!updated) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
-  return updated;
+  const applied = await applyReceivingStockDelta(store, existing, merged, input.actorUserId);
+  try {
+    const updated = await store.updateReceivingEntry(receivingEntryId, merged);
+    if (!updated) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+    return updated;
+  } catch (error) {
+    await rollbackTrackedInventoryDeltas(store, applied);
+    throw error;
+  }
 }
 
 export async function archiveReceivingLogEntry(store: InventoryStore, receivingEntryId: string, actorUserId?: string) {
@@ -477,15 +492,31 @@ export async function archiveReceivingLogEntry(store: InventoryStore, receivingE
   if (existing.status === "archived") return existing;
   if (existing.stockAppliedInventoryItemId && existing.stockAppliedQuantity > 0) {
     const quantityDelta = -existing.stockAppliedQuantity;
-    await applyInventoryDelta(store, existing.stockAppliedInventoryItemId, quantityDelta);
-    await store.createMovement({
+    const movementId = `movement_${crypto.randomUUID()}`;
+    await applyTrackedInventoryDelta(store, {
       inventoryItemId: existing.stockAppliedInventoryItemId,
       movementType: "adjusted",
       quantityDelta,
       referenceType: "receiving_entry",
       referenceId: existing.id,
+      movementId,
       actorUserId,
     });
+    try {
+      const archived = await store.archiveReceivingEntry(receivingEntryId, {
+        archivedAt: new Date().toISOString(),
+        actorUserId,
+      });
+      if (!archived) throw new InventoryError("RECEIVING_ENTRY_NOT_FOUND", "Receiving entry not found");
+      return archived;
+    } catch (error) {
+      await rollbackTrackedInventoryDelta(store, {
+        inventoryItemId: existing.stockAppliedInventoryItemId,
+        quantityDelta,
+        movementId,
+      });
+      throw error;
+    }
   }
   const archived = await store.archiveReceivingEntry(receivingEntryId, {
     archivedAt: new Date().toISOString(),
@@ -759,6 +790,55 @@ async function applyInventoryDelta(store: InventoryStore, inventoryItemId: strin
   }
 }
 
+type TrackedInventoryDelta = {
+  inventoryItemId: string;
+  quantityDelta: number;
+  movementId?: string;
+};
+
+async function applyTrackedInventoryDelta(
+  store: InventoryStore,
+  input: InventoryMovementInput & { movementId?: string },
+): Promise<TrackedInventoryDelta | null> {
+  if (input.quantityDelta === 0) return null;
+  const movementId = input.movementId ?? `movement_${crypto.randomUUID()}`;
+  await applyInventoryDelta(store, input.inventoryItemId, input.quantityDelta);
+  try {
+    await store.createMovement({
+      id: movementId,
+      inventoryItemId: input.inventoryItemId,
+      movementType: input.movementType,
+      quantityDelta: input.quantityDelta,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      actorUserId: input.actorUserId,
+    });
+    return { inventoryItemId: input.inventoryItemId, quantityDelta: input.quantityDelta, movementId };
+  } catch (error) {
+    await rollbackTrackedInventoryDelta(store, {
+      inventoryItemId: input.inventoryItemId,
+      quantityDelta: input.quantityDelta,
+      movementId,
+    });
+    throw error;
+  }
+}
+
+async function rollbackTrackedInventoryDeltas(store: InventoryStore, deltas: TrackedInventoryDelta[]) {
+  for (const delta of deltas.reverse()) {
+    await rollbackTrackedInventoryDelta(store, delta);
+  }
+}
+
+async function rollbackTrackedInventoryDelta(store: InventoryStore, delta: TrackedInventoryDelta) {
+  const rollbackTasks: Promise<unknown>[] = [];
+  if (delta.movementId && store.deleteMovement) {
+    rollbackTasks.push(store.deleteMovement(delta.movementId));
+  }
+  rollbackTasks.push(applyInventoryDelta(store, delta.inventoryItemId, -delta.quantityDelta));
+  await Promise.allSettled(rollbackTasks);
+}
+
 function buildReceivingInput(existing: ReceivingEntryRecord, input: Partial<ReceivingEntryInput>): ReceivingEntryInput {
   const packages = input.packages ?? existing.packages;
   const quantityPerPackage = input.quantityPerPackage ?? existing.quantityPerPackage;
@@ -783,13 +863,13 @@ function buildReceivingInput(existing: ReceivingEntryRecord, input: Partial<Rece
 }
 
 async function applyReceivingStockDelta(store: InventoryStore, existing: ReceivingEntryRecord, updated: ReceivingEntryInput, actorUserId?: string) {
+  const applied: TrackedInventoryDelta[] = [];
   const oldItemId = existing.stockAppliedInventoryItemId;
   const oldQuantity = existing.stockAppliedQuantity ?? 0;
   const newItemId = requireInventoryItemId(updated.stockAppliedInventoryItemId);
   const newQuantity = updated.stockAppliedQuantity ?? 0;
   if (oldItemId && oldItemId !== newItemId && oldQuantity > 0) {
-    await applyInventoryDelta(store, oldItemId, -oldQuantity);
-    await store.createMovement({
+    const oldMovement = await applyTrackedInventoryDelta(store, {
       inventoryItemId: oldItemId,
       movementType: "adjusted",
       quantityDelta: -oldQuantity,
@@ -797,8 +877,8 @@ async function applyReceivingStockDelta(store: InventoryStore, existing: Receivi
       referenceId: existing.id,
       actorUserId,
     });
-    await applyInventoryDelta(store, newItemId, newQuantity);
-    await store.createMovement({
+    if (oldMovement) applied.push(oldMovement);
+    const newMovement = await applyTrackedInventoryDelta(store, {
       inventoryItemId: newItemId,
       movementType: "adjusted",
       quantityDelta: newQuantity,
@@ -806,20 +886,20 @@ async function applyReceivingStockDelta(store: InventoryStore, existing: Receivi
       referenceId: existing.id,
       actorUserId,
     });
-    return;
+    if (newMovement) applied.push(newMovement);
+    return applied;
   }
   const quantityDelta = oldItemId ? +(newQuantity - oldQuantity).toFixed(2) : newQuantity;
-  await applyInventoryDelta(store, newItemId, quantityDelta);
-  if (quantityDelta !== 0) {
-    await store.createMovement({
-      inventoryItemId: newItemId,
-      movementType: "adjusted",
-      quantityDelta,
-      referenceType: "receiving_entry",
-      referenceId: existing.id,
-      actorUserId,
-    });
-  }
+  const movement = await applyTrackedInventoryDelta(store, {
+    inventoryItemId: newItemId,
+    movementType: "adjusted",
+    quantityDelta,
+    referenceType: "receiving_entry",
+    referenceId: existing.id,
+    actorUserId,
+  });
+  if (movement) applied.push(movement);
+  return applied;
 }
 
 function assertNonNegative(quantity: number, field: string) {

@@ -72,6 +72,10 @@ function createPOStore(overrides: Partial<PurchaseOrderStore> = {}) {
       calls.push(`updatePurchaseOrderStatus:${id}:${status}`);
       po = { ...po, status };
     },
+    async transitionPurchaseOrder(input) {
+      calls.push(`transitionPurchaseOrder:${input.fromStatus}->${input.toStatus}:${input.eventType}`);
+      po = { ...po, status: input.toStatus };
+    },
     async updatePurchaseOrderDepositStatus(id, depositStatus) {
       calls.push(`updatePurchaseOrderDepositStatus:${id}:${depositStatus}`);
       po = { ...po, depositStatus };
@@ -301,9 +305,7 @@ describe("purchase order workflow service", () => {
     expect(result.status).toBe("supply_chain_review");
     expect(store.calls).toEqual([
       "getPurchaseOrder:po-1",
-      "updatePurchaseOrderStatus:po-1:supply_chain_review",
-      "createStatusEvent:draft->supply_chain_review:purchase_order.submitted",
-      "createAuditEvent:purchase_order.submitted",
+      "transitionPurchaseOrder:draft->supply_chain_review:purchase_order.submitted",
       "getPurchaseOrder:po-1",
     ]);
   });
@@ -391,9 +393,7 @@ describe("purchase order workflow service", () => {
     expect(poStore.calls).toEqual([
       "getPurchaseOrder:po-1",
       "findInventoryItemByMasterItemId:master-1",
-      "updatePurchaseOrderStatus:po-1:approved_for_production",
-      "createStatusEvent:supply_chain_review->approved_for_production:purchase_order.approved_for_production",
-      "createAuditEvent:purchase_order.approved_for_production",
+      "transitionPurchaseOrder:supply_chain_review->approved_for_production:purchase_order.approved_for_production",
       "getPurchaseOrder:po-1",
     ]);
     expect(inventoryStore.calls).toEqual([
@@ -581,5 +581,25 @@ describe("purchase order workflow service", () => {
     expect(inventoryStore.reservations.size).toBe(2);
     expect([...inventoryStore.reservations.values()].every((reservation) => reservation.status === "released")).toBe(true);
     expect(poStore.calls).not.toContain("updatePurchaseOrderStatus:po-1:approved_for_production");
+  });
+
+  it("does not leave a status-only transition when the atomic transition write fails", async () => {
+    const store = createPOStore({
+      async transitionPurchaseOrder(input) {
+        store.calls.push(`transitionPurchaseOrder:${input.fromStatus}->${input.toStatus}:${input.eventType}`);
+        throw new Error("status history insert failed");
+      },
+    });
+
+    await expect(
+      submitPurchaseOrder(store, {
+        purchaseOrderId: "po-1",
+        actorUserId: "user-1",
+      }),
+    ).rejects.toThrow("status history insert failed");
+
+    expect(await store.getPurchaseOrder("po-1")).toMatchObject({ status: "draft" });
+    expect(store.calls).not.toContain("updatePurchaseOrderStatus:po-1:supply_chain_review");
+    expect(store.calls).not.toContain("createStatusEvent:draft->supply_chain_review:purchase_order.submitted");
   });
 });

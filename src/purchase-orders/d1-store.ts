@@ -198,6 +198,77 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
       .run();
   }
 
+  async transitionPurchaseOrder(input: {
+    purchaseOrderId: string;
+    fromStatus: PurchaseOrderStatus | null;
+    toStatus: PurchaseOrderStatus;
+    eventType: string;
+    actorUserId?: string;
+    note?: string;
+  }): Promise<void> {
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            UPDATE purchase_orders
+            SET status = ?,
+                submitted_at = CASE WHEN ? = 'submitted' THEN CURRENT_TIMESTAMP ELSE submitted_at END,
+                approved_for_production_at = CASE WHEN ? = 'approved_for_production' THEN CURRENT_TIMESTAMP ELSE approved_for_production_at END,
+                cancelled_at = CASE WHEN ? = 'cancelled' THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+        )
+        .bind(input.toStatus, input.toStatus, input.toStatus, input.toStatus, input.purchaseOrderId),
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_order_status_events (
+              id,
+              purchase_order_id,
+              from_status,
+              to_status,
+              event_type,
+              note,
+              created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `po_status_event_${crypto.randomUUID()}`,
+          input.purchaseOrderId,
+          input.fromStatus,
+          input.toStatus,
+          input.eventType,
+          input.note ?? null,
+          input.actorUserId ?? null,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id,
+              actor_user_id,
+              entity_type,
+              entity_id,
+              action,
+              metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.actorUserId ?? null,
+          "purchase_order",
+          input.purchaseOrderId,
+          input.eventType,
+          JSON.stringify({ fromStatus: input.fromStatus, toStatus: input.toStatus }),
+        ),
+    ]);
+  }
+
   async updatePurchaseOrderDepositStatus(id: string, depositStatus: DepositStatus): Promise<void> {
     await this.db
       .prepare(

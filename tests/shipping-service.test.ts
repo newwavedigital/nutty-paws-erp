@@ -232,6 +232,78 @@ describe("shipping workflow service", () => {
     expect(store.calls).toContain("audit:purchase_order.shipped");
   });
 
+  it("uses atomic shipped transaction hook instead of separate backend writes", async () => {
+    const store = createStore({
+      async markPurchaseOrderShippedTransaction(input) {
+        store.calls.push(`transaction:shipped:${input.shipmentDocumentFileId}`);
+        const updated = makePO({
+          status: "completed",
+          shippedAt: input.shippedAt,
+          shippedByUserId: input.shippedByUserId ?? null,
+          shippingNotes: input.shippingNotes ?? null,
+          shipmentDocumentFileId: input.shipmentDocumentFileId,
+          shippingDetails: {
+            id: "shipping-details-1",
+            purchaseOrderId: input.purchaseOrderId,
+            bolNumber: input.details.bolNumber ?? null,
+            proNumber: input.details.proNumber ?? null,
+            carrier: input.details.carrier ?? null,
+            freightClass: input.details.freightClass ?? null,
+            notes: input.details.notes ?? null,
+            palletListJson: input.details.palletListJson ?? null,
+            shipmentDocumentFileId: input.details.shipmentDocumentFileId ?? null,
+            updatedAt: "2026-06-19T00:00:00.000Z",
+          },
+        });
+        store.setPO(updated);
+        return updated;
+      },
+    });
+
+    const result = await markPurchaseOrderShipped(store, {
+      purchaseOrderId: "po-1",
+      shipmentDocumentFileId: "shipment-doc-1",
+      carrier: "Acme Freight",
+      bolNumber: "BOL-100",
+      actorUserId: "user-1",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(store.calls).toContain("transaction:shipped:shipment-doc-1");
+    expect(store.calls.some((call) => call.startsWith("upsertShippingDetails:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("markPurchaseOrderShipped:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("upsertShippingLog:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("createStatusEvent:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("audit:"))).toBe(false);
+  });
+
+  it("does not mark shipped with separate writes when atomic shipped transaction fails", async () => {
+    const store = createStore({
+      async markPurchaseOrderShippedTransaction() {
+        store.calls.push("transaction:shipped:fail");
+        throw new Error("shipping batch failed");
+      },
+    });
+
+    await expect(
+      markPurchaseOrderShipped(store, {
+        purchaseOrderId: "po-1",
+        shipmentDocumentFileId: "shipment-doc-1",
+        carrier: "Acme Freight",
+        bolNumber: "BOL-100",
+        actorUserId: "user-1",
+      }),
+    ).rejects.toThrow("shipping batch failed");
+
+    await expect(store.getPurchaseOrder("po-1")).resolves.toMatchObject({ status: "shipping", shippedAt: null });
+    expect(store.calls).toContain("transaction:shipped:fail");
+    expect(store.calls.some((call) => call.startsWith("upsertShippingDetails:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("markPurchaseOrderShipped:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("upsertShippingLog:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("createStatusEvent:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("audit:"))).toBe(false);
+  });
+
   it("stores shipping details independently from mark shipped", async () => {
     const store = createStore();
 
@@ -265,5 +337,68 @@ describe("shipping workflow service", () => {
     expect(result.stockedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.stockedByUserId).toBe("warehouse-user");
     expect(store.calls).toContain("audit:purchase_order.stocked");
+  });
+
+  it("uses atomic stocked transaction hook instead of separate backend writes", async () => {
+    const store = createStore({
+      async markPurchaseOrderStockedTransaction(input) {
+        store.calls.push("transaction:stocked");
+        const updated = makePO({
+          status: "completed",
+          stockedAt: input.stockedAt,
+          stockedByUserId: input.stockedByUserId ?? null,
+          lines: [
+            { id: "line-1", productId: "product-1", quantity: 5, description: "Own brand item", productIsOwnBrand: true },
+          ],
+        });
+        store.setPO(updated);
+        return updated;
+      },
+    });
+    store.setPO(makePO({
+      lines: [
+        { id: "line-1", productId: "product-1", quantity: 5, description: "Own brand item", productIsOwnBrand: true },
+      ],
+    }));
+
+    const result = await markPurchaseOrderStocked(store, {
+      purchaseOrderId: "po-1",
+      actorUserId: "warehouse-user",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(store.calls).toContain("transaction:stocked");
+    expect(store.calls).not.toContain("markPurchaseOrderStocked");
+    expect(store.calls.some((call) => call.startsWith("upsertShippingLog:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("createStatusEvent:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("audit:"))).toBe(false);
+  });
+
+  it("does not mark stocked with separate writes when atomic stocked transaction fails", async () => {
+    const store = createStore({
+      async markPurchaseOrderStockedTransaction() {
+        store.calls.push("transaction:stocked:fail");
+        throw new Error("stocked batch failed");
+      },
+    });
+    store.setPO(makePO({
+      lines: [
+        { id: "line-1", productId: "product-1", quantity: 5, description: "Own brand item", productIsOwnBrand: true },
+      ],
+    }));
+
+    await expect(
+      markPurchaseOrderStocked(store, {
+        purchaseOrderId: "po-1",
+        actorUserId: "warehouse-user",
+      }),
+    ).rejects.toThrow("stocked batch failed");
+
+    await expect(store.getPurchaseOrder("po-1")).resolves.toMatchObject({ status: "shipping", stockedAt: null });
+    expect(store.calls).toContain("transaction:stocked:fail");
+    expect(store.calls).not.toContain("markPurchaseOrderStocked");
+    expect(store.calls.some((call) => call.startsWith("upsertShippingLog:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("createStatusEvent:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("audit:"))).toBe(false);
   });
 });

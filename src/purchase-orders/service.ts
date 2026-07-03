@@ -86,6 +86,14 @@ export type PurchaseOrderStore = {
     input: { notes?: string | null; requestedShipDate?: string | null },
   ): Promise<PurchaseOrderRecord | null>;
   updatePurchaseOrderStatus(id: string, status: PurchaseOrderStatus): Promise<void>;
+  transitionPurchaseOrder?(input: {
+    purchaseOrderId: string;
+    fromStatus: PurchaseOrderStatus | null;
+    toStatus: PurchaseOrderStatus;
+    eventType: string;
+    actorUserId?: string;
+    note?: string;
+  }): Promise<void>;
   updatePurchaseOrderDepositStatus(id: string, depositStatus: DepositStatus): Promise<void>;
   updateLineSupplyChainStatus(lineId: string, status: SupplyChainStatus): Promise<void>;
   createStatusEvent(input: {
@@ -445,6 +453,17 @@ async function transitionPO(
   eventType: string,
   actorUserId?: string,
 ) {
+  if (store.transitionPurchaseOrder) {
+    await store.transitionPurchaseOrder({
+      purchaseOrderId: po.id,
+      fromStatus: po.status,
+      toStatus,
+      eventType,
+      actorUserId,
+    });
+    return;
+  }
+
   await store.updatePurchaseOrderStatus(po.id, toStatus);
   await store.createStatusEvent({
     purchaseOrderId: po.id,

@@ -435,6 +435,103 @@ export class D1ProductionStore implements ProductionStore {
     return (await this.getProductionRun(input.id)) as ProductionRunRecord;
   }
 
+  async finalizeRunTransaction(
+    input: Parameters<NonNullable<ProductionStore["finalizeRunTransaction"]>>[0],
+  ): Promise<ProductionRunRecord> {
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            UPDATE production_runs
+            SET status = ?,
+                finalized_at = CURRENT_TIMESTAMP,
+                finalized_by_user_id = ?,
+                reopened_at = NULL,
+                notes = COALESCE(?, notes),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+        )
+        .bind(input.run.status, input.run.actorUserId ?? null, input.run.notes ?? null, input.run.id),
+      this.db
+        .prepare("UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(input.purchaseOrder.status, input.purchaseOrder.id),
+      this.db
+        .prepare(
+          `
+            INSERT INTO production_logs (
+              id, log_id, purchase_order_id, production_run_id, production_date,
+              production_end_date, production_room, completed_at, overall_waste_percent,
+              line_snapshot_json, material_snapshot_json, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?, ?)
+            ON CONFLICT(purchase_order_id) DO UPDATE SET
+              production_run_id = excluded.production_run_id,
+              production_date = excluded.production_date,
+              production_end_date = excluded.production_end_date,
+              production_room = excluded.production_room,
+              completed_at = excluded.completed_at,
+              overall_waste_percent = excluded.overall_waste_percent,
+              line_snapshot_json = excluded.line_snapshot_json,
+              material_snapshot_json = excluded.material_snapshot_json,
+              notes = excluded.notes,
+              updated_at = CURRENT_TIMESTAMP
+          `,
+        )
+        .bind(
+          `production_log_${crypto.randomUUID()}`,
+          input.productionLog.logId,
+          input.productionLog.purchaseOrderId,
+          input.productionLog.productionRunId,
+          input.productionLog.productionDate,
+          input.productionLog.productionEndDate,
+          input.productionLog.productionRoom,
+          input.productionLog.completedAt ?? null,
+          input.productionLog.overallWastePercent,
+          JSON.stringify(input.productionLog.lineSnapshot),
+          JSON.stringify(input.productionLog.materialSnapshot),
+          input.productionLog.notes,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_order_status_events (
+              id, purchase_order_id, from_status, to_status, event_type, note, created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `po_status_event_${crypto.randomUUID()}`,
+          input.purchaseOrder.id,
+          input.statusEvent.fromStatus,
+          input.statusEvent.toStatus,
+          input.statusEvent.eventType,
+          input.statusEvent.note ?? null,
+          input.statusEvent.actorUserId ?? null,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          "production_run",
+          input.run.id,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    ]);
+
+    return (await this.getProductionRun(input.run.id)) as ProductionRunRecord;
+  }
+
   async reopenRun(input: { id: string; reason: string; actorUserId?: string }): Promise<ProductionRunRecord> {
     await this.db
       .prepare(
