@@ -260,6 +260,7 @@ async function seedMasterInventory(
   authHeaders: Headers,
   suffix: string,
   itemType: "raw_material" | "finished_good" = "raw_material",
+  customerId = "general",
 ) {
   const sku = `MESSY-${itemType === "finished_good" ? "FG" : "RAW"}-${suffix}`.toUpperCase();
   const master = await apiJson<{ id: string; sku: string; name: string }>(request, "/api/master-items", {
@@ -270,7 +271,7 @@ async function seedMasterInventory(
       name: `Messy ${itemType === "finished_good" ? "Finished Good" : "Raw"} ${suffix}`,
       itemType,
       unitOfMeasure: itemType === "finished_good" ? "ea" : "lb",
-      customerId: "general",
+      customerId,
       allergens: [],
     },
   });
@@ -281,7 +282,7 @@ async function seedMasterInventory(
       masterItemId: master.id,
       category: itemType === "finished_good" ? "Finished Good" : "Ingredient",
       supplierId: null,
-      customerId: "general",
+      customerId,
       onHandQuantity: 20,
       allocatedQuantity: 0,
       reorderPointQuantity: 5,
@@ -384,13 +385,13 @@ test("dirty duplicate and weird input cases fail as stable API errors, not fake 
   }, [400], "INVALID_QUANTITY");
 });
 
-test("backtracking and status boundaries reject stale actions after submit, cancel, receive, archive, and reopen", async ({ request }) => {
+test("backtracking and status boundaries reject stale actions after submit, cancel, receive, archive, and pick-pack changes", async ({ request }) => {
   test.setTimeout(180_000);
   const token = await ensureAdmin(request);
   const authHeaders = { authorization: `Bearer ${token}` };
   const suffix = Date.now().toString(36);
 
-  const { po } = await seedPurchaseOrder(request, authHeaders, `${suffix}-po`);
+  const { customer, po } = await seedPurchaseOrder(request, authHeaders, `${suffix}-po`);
   const patchedDraft = await apiJson<{ notes: string; requestedShipDate: string }>(request, `/api/purchase-orders/${po.id}`, {
     method: "PATCH",
     headers: authHeaders,
@@ -570,6 +571,41 @@ test("backtracking and status boundaries reject stale actions after submit, canc
     headers: authHeaders,
     data: { receiptDate: "2026-07-23", lines: [{ procurementOrderLineId: procurement2.lines[0].id, receivedQuantity: 99 }] },
   }, [409], "PROCUREMENT_OVER_RECEIPT");
+
+  const pickInventory = await seedMasterInventory(request, authHeaders, `${suffix}-pick`, "finished_good", customer.id);
+  const pickOrder = await apiJson<{ id: string; status: string }>(request, "/api/pick-pack/orders", {
+    method: "POST",
+    headers: authHeaders,
+    data: {
+      customerId: customer.id,
+      customerPoNumber: `MESSY-PICK-${suffix}`,
+      dateSubmitted: "2026-07-04",
+      dateNeededToShip: "2026-07-12",
+      notes: "wrong shipping detail before cancel",
+      lines: [{ inventoryItemId: pickInventory.inventory.id, quantity: 2 }],
+    },
+  });
+  await apiJson(request, `/api/pick-pack/orders/${pickOrder.id}/shipping`, {
+    method: "PATCH",
+    headers: authHeaders,
+    data: { shippingMode: "parcel", carrier: "Wrong Carrier", trackingNumber: `WRONG-${suffix}`, weight: 3 },
+  });
+  await apiJson(request, `/api/pick-pack/orders/${pickOrder.id}/shipping`, {
+    method: "PATCH",
+    headers: authHeaders,
+    data: { shippingMode: "parcel", carrier: "Correct Carrier", trackingNumber: `CORRECT-${suffix}`, weight: 4 },
+  });
+  await apiJson(request, `/api/pick-pack/orders/${pickOrder.id}/cancel`, { method: "POST", headers: authHeaders, data: {} });
+  await expectApiError(request, `/api/pick-pack/orders/${pickOrder.id}/shipping`, {
+    method: "PATCH",
+    headers: authHeaders,
+    data: { shippingMode: "parcel", carrier: "stale edit after cancel" },
+  }, [409], "PICK_PACK_ORDER_LOCKED");
+  await expectApiError(request, `/api/pick-pack/orders/${pickOrder.id}/mark-picked`, {
+    method: "POST",
+    headers: authHeaders,
+    data: {},
+  }, [409], "PICK_PACK_ORDER_LOCKED");
 });
 
 test("production, QA, shipping, files, and generic records survive corrections and stale retries", async ({ request }) => {
