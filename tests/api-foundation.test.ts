@@ -102,4 +102,52 @@ describe("API foundation", () => {
       },
     });
   });
+
+  it("returns a stable duplicate-record error for database uniqueness failures", async () => {
+    const app = createApp((route: Hono<{ Bindings: Env; Variables: { requestId?: string } }>) => {
+      route.get("/api/test-duplicate", () => {
+        throw new Error("D1_ERROR: UNIQUE constraint failed: purchase_orders.po_number");
+      });
+    });
+
+    const response = await app.request("/api/test-duplicate", {
+      headers: { "x-request-id": "req-duplicate-1" },
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "DUPLICATE_RECORD",
+        message: "A record with that unique value already exists",
+      },
+      meta: {
+        requestId: "req-duplicate-1",
+      },
+    });
+  });
+
+  it("returns a stable invalid-reference error for database foreign-key failures", async () => {
+    const app = createApp((route: Hono<{ Bindings: Env; Variables: { requestId?: string } }>) => {
+      route.get("/api/test-invalid-reference", () => {
+        throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+      });
+    });
+
+    const response = await app.request("/api/test-invalid-reference", {
+      headers: { "x-request-id": "req-foreign-key-1" },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_REFERENCE",
+        message: "A referenced record does not exist or is no longer available",
+      },
+      meta: {
+        requestId: "req-foreign-key-1",
+      },
+    });
+  });
 });

@@ -27,8 +27,11 @@ function libDescendantFolderIds(folderId) {
   return out;
 }
 function renderContentLibrary(el) {
-  if (!a10DataRecordState.contentLibrary.loaded && !a10DataRecordState.contentLibrary.loading) {
+  const backendState = a10DataRecordState.contentLibrary;
+  if (!backendState.loaded && !backendState.loading && backendState.status !== 'error' && backendState.status !== 'stale') {
     refreshA10DataRecordModule('contentLibrary').then(() => { if (currentPage === 'content-library') router('content-library'); }).catch(() => {});
+  } else if (!backendState.loaded && backendState.loading) {
+    setTimeout(() => { if (currentPage === 'content-library') router('content-library'); }, 150);
   }
   const folder = currentFolder ? state.libraryFolders.find(f => f.id === currentFolder) : null;
   // show subfolders of currentFolder (or top-level if root)

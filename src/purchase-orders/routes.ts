@@ -413,7 +413,7 @@ function asString(value: unknown, field: string) {
     throw new ValidationError(`${field} must be a non-empty string`, { fields: [field] });
   }
 
-  return value;
+  return value.trim();
 }
 
 function optionalString(value: unknown, field: string) {

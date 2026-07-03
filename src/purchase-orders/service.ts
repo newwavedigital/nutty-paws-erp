@@ -443,7 +443,7 @@ async function resolveInventoryRequirements(
 }
 
 function isOrdinaryEditLocked(status: PurchaseOrderStatus) {
-  return ["approved_for_production", "in_production", "qa_review", "completed"].includes(status);
+  return ["approved_for_production", "in_production", "qa_review", "completed", "cancelled"].includes(status);
 }
 
 async function transitionPO(

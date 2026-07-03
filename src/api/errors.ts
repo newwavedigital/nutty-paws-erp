@@ -26,5 +26,27 @@ export function toApiError(error: unknown): ApiError {
     return error;
   }
 
+  const message = errorMessage(error);
+  if (isUniqueConstraintError(message)) {
+    return new ApiError("DUPLICATE_RECORD", "A record with that unique value already exists", 409);
+  }
+  if (isForeignKeyConstraintError(message)) {
+    return new ApiError("INVALID_REFERENCE", "A referenced record does not exist or is no longer available", 400);
+  }
+
   return new ApiError("INTERNAL_ERROR", "Internal server error", 500);
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "";
+}
+
+function isUniqueConstraintError(message: string) {
+  return /unique constraint failed/i.test(message);
+}
+
+function isForeignKeyConstraintError(message: string) {
+  return /foreign key constraint failed/i.test(message);
 }
