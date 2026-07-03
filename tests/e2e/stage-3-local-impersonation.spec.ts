@@ -204,8 +204,8 @@ test("Stage 3 stale local rows cannot impersonate backend records in signed-in m
   await expect(staleShippingCard).toBeVisible();
   await expect(staleShippingCard.locator('[title="Not saved to backend"]').getByText("Local draft")).toBeVisible();
   await expect(staleShippingCard.getByText("Not saved to backend.")).toBeVisible();
-  await expect(staleShippingCard.getByRole("button", { name: "Save" })).toBeDisabled();
-  await expect(staleShippingCard.getByRole("button", { name: /Mark Shipped/ })).toBeDisabled();
+  await expect(page.locator(`button[onclick="savePickPackShippingForm('PP-STAGE3-SHIP')"]`)).toBeDisabled();
+  await expect(page.locator(`button[onclick="markPickPackShipped('PP-STAGE3-SHIP')"]`)).toBeDisabled();
 
   expect(consoleErrors).toEqual([]);
 });
