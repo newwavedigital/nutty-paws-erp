@@ -43,17 +43,31 @@ async function apiFetchJson(request: APIRequestContext, path: string, options: P
 }
 
 async function ensureEmployeeUser(request: APIRequestContext, authHeaders: Record<string, string>) {
+  const payload = {
+    email: warehouseEmail,
+    displayName: "Inventory E2E Warehouse",
+    password: warehousePassword,
+    roles: ["Warehousing"],
+  };
   const created = await request.post("/api/users", {
     headers: authHeaders,
-    data: {
-      email: warehouseEmail,
-      displayName: "Inventory E2E Warehouse",
-      password: warehousePassword,
-      roles: ["Warehousing"],
-    },
+    data: payload,
   });
   if (created.ok()) return;
-  expect(created.status(), "Non-admin employee user setup should either create or already exist").toBe(400);
+  expect([400, 409], "Non-admin employee user setup should either create or already exist").toContain(created.status());
+
+  const users = await apiJson<Array<{ id: string; email: string }>>(request, "/api/users", { headers: authHeaders });
+  const existing = users.find((user) => user.email === warehouseEmail);
+  expect(existing, "Existing non-admin employee user should be visible to Admin").toBeTruthy();
+  const updated = await request.patch(`/api/users/${existing?.id}`, {
+    headers: authHeaders,
+    data: {
+      displayName: payload.displayName,
+      temporaryPassword: warehousePassword,
+      roles: payload.roles,
+    },
+  });
+  expect(updated.ok(), `Non-admin employee user reset returned ${updated.status()}`).toBe(true);
 }
 
 async function createMasterItem(request: APIRequestContext, authHeaders: Record<string, string>, suffix: string) {
