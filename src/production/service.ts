@@ -687,8 +687,12 @@ function round2(value: number) {
 }
 
 function logIdForPurchaseOrder(po: ProductionPurchaseOrder) {
-  const numeric = po.poNumber.match(/\d+/)?.[0] ?? po.id.match(/\d+/)?.[0];
-  return `PRD-${numeric ?? po.id}`;
+  const slug = po.poNumber
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `PRD-${slug || po.id}`;
 }
 
 function productionStatusFor(code: string) {

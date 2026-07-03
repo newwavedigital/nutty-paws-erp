@@ -365,6 +365,51 @@ describe("production workflow service", () => {
     expect(store.calls).not.toContain("audit:production_run.finalized");
   });
 
+  it("uses the full sanitized PO number for production log IDs to avoid numeric prefix collisions", async () => {
+    let capturedLogId = "";
+    const store = createStore({
+      async getPurchaseOrder(id) {
+        const po = await createStore().getPurchaseOrder(id);
+        return po ? { ...po, poNumber: "STAGE2-FILE-MR5HAP8Z" } : null;
+      },
+      async finalizeRunTransaction(input) {
+        capturedLogId = input.productionLog.logId;
+        const finalized: ProductionRunRecord = {
+          id: input.run.id,
+          purchaseOrderId: input.productionLog.purchaseOrderId,
+          productionDate: input.productionLog.productionDate,
+          productionEndDate: input.productionLog.productionEndDate,
+          productionRoom: input.productionLog.productionRoom,
+          status: "finalized",
+          finalizedAt: "2026-06-19T00:00:00.000Z",
+          reopenedAt: null,
+          correctionCount: 0,
+          notes: input.run.notes ?? null,
+          lines: [],
+          materials: [],
+        };
+        store.setRun(finalized);
+        store.setPoStatus(input.purchaseOrder.status);
+        return finalized;
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await finalizeProductionRun(store, {
+      productionRunId: scheduled.id,
+      actorUserId: "user-1",
+      lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+      materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+    });
+
+    expect(capturedLogId).toBe("PRD-STAGE2-FILE-MR5HAP8Z");
+  });
+
   it("rolls back inventory effects when atomic finalization transaction fails", async () => {
     const store = createStore({
       async finalizeRunTransaction(input) {
