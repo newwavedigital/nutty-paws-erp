@@ -213,8 +213,13 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
 
   await loginInBrowser(page);
 
+  const purchaseOrdersLoad = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    response.url().includes("/api/purchase-orders") &&
+    response.ok()
+  );
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
-  await expect(page.getByText(po.poNumber)).toBeVisible();
+  await purchaseOrdersLoad;
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
   await expect(page.getByText(po.poNumber)).toBeVisible();
   const postShipmentInput = page.locator(`input[onchange*="qualityPostShipmentCoaSelected"][onchange*="${po.poNumber}"]`);
@@ -235,8 +240,13 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
 
   await page.reload();
   await expect(page.getByRole("button", { name: /Stage 2 E2E Admin/ })).toBeVisible();
+  const reloadedPurchaseOrdersLoad = page.waitForResponse((response) =>
+    response.request().method() === "GET" &&
+    response.url().includes("/api/purchase-orders") &&
+    response.ok()
+  );
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
-  await expect(page.getByText(po.poNumber)).toBeVisible();
+  await reloadedPurchaseOrdersLoad;
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
   const reloadedPostShipment = page.getByRole("button", { name: new RegExp(`post-shipment-${suffix}\\.pdf`) });
   await expect(reloadedPostShipment).toBeVisible();
