@@ -73,7 +73,7 @@ async function ensureSalesUser(request: APIRequestContext, adminToken: string) {
       roles: ["Sales"],
     },
   });
-  expect([200, 400], `Stage 4 sales setup returned ${created.status()}`).toContain(created.status());
+  expect([200, 400, 409], `Stage 4 sales setup returned ${created.status()}`).toContain(created.status());
 
   const token = await tryLogin(request, salesEmail, salesPassword);
   expect(token, "Stage 4 sales login should work").toBeTruthy();

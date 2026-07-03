@@ -4240,7 +4240,7 @@ function renderPurchaseOrders(el) {
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
             pos.map(p => {
-              const localOnly = !!p._localOnlyBackendStale;
+            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
               <tr>
                 <td><strong>${p.id}</strong></td>
@@ -13883,7 +13883,7 @@ function renderPickPackPOs(el, pos) {
           <tbody>
           ${pos.map(p => {
               const cust = getCustomer(p.customerId);
-              const localOnly = !!p._localOnlyBackendStale;
+              const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               const stockOk = pickPackStockCheck(p);
               const stockBadge = stockOk.ok
                 ? '<span class="badge badge-prod">Available</span>'
@@ -13936,7 +13936,7 @@ function renderPickPackShipping(el, list) {
 function pickPackShippingCardHtml(p) {
   const cust = getCustomer(p.customerId);
   const mode = p.shippingMode || 'pallet';
-  const localOnly = !!p._localOnlyBackendStale;
+  const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
   return `
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -14034,7 +14034,7 @@ function renderPickPackShipped(el, list) {
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
             const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'-') : (p.bol||'-');
-            const localOnly = !!p._localOnlyBackendStale;
+            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
             return `<tr>
               <td><strong>${escapeHtml(p.id)}</strong>${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
               <td>${escapeHtml(cust?.name||'')}</td>

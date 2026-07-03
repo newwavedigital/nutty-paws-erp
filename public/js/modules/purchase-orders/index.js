@@ -35,7 +35,7 @@ function renderPurchaseOrders(el) {
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
             pos.map(p => {
-              const localOnly = !!p._localOnlyBackendStale;
+            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
               <tr>
                 <td><strong>${p.id}</strong></td>
