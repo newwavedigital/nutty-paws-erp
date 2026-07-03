@@ -198,7 +198,7 @@ export class D1InventoryStore implements InventoryStore {
         `,
       )
       .bind(
-        `movement_${crypto.randomUUID()}`,
+        input.id ?? `movement_${crypto.randomUUID()}`,
         input.inventoryItemId,
         input.movementType,
         input.quantityDelta,
@@ -207,6 +207,14 @@ export class D1InventoryStore implements InventoryStore {
         input.actorUserId ?? null,
       )
       .run();
+  }
+
+  async deleteMovement(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM inventory_movements WHERE id = ?")
+      .bind(id)
+      .run();
+    return (result.meta?.changes ?? 0) > 0;
   }
 
   async createAuditEvent(input: InventoryAuditInput): Promise<void> {

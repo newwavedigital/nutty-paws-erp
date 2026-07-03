@@ -34,7 +34,9 @@ function renderPurchaseOrders(el) {
         </thead>
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
-            pos.map(p => `
+            pos.map(p => {
+              const localOnly = !!p._localOnlyBackendStale;
+              return `
               <tr>
                 <td><strong>${p.id}</strong></td>
                 <td>${p.brand ? `<span class="pill">${escapeHtml(p.brand)}</span>` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
@@ -44,15 +46,16 @@ function renderPurchaseOrders(el) {
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
                 <td>${poFileLinkHtml(p)}</td>
-                <td>${statusBadge(p.status)}</td>
+                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
                   <button class="btn btn-icon btn-sm" onclick="printPO('${p.id}')">Print</button>
-                  ${p.status === 'pending' || p.status === 'in_supply_chain' ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
-                  ${p.status === 'pending' || p.status === 'in_supply_chain' ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
+                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited or cancelled">Backend required</span>' : ''}
+                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
+                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
                 </td>
               </tr>
-            `).join('')
+            `}).join('')
           }
         </tbody>
       </table></div>

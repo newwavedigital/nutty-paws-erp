@@ -239,8 +239,9 @@ function renderPickPackPOs(el, pos) {
             <th>PP #</th><th>Distributor</th><th>PO #</th><th>Date Submitted</th><th>Date Needed to Ship</th><th>Items</th><th>Stock</th><th>PO File</th><th></th>
           </tr></thead>
           <tbody>
-            ${pos.map(p => {
+          ${pos.map(p => {
               const cust = getCustomer(p.customerId);
+              const localOnly = !!p._localOnlyBackendStale;
               const stockOk = pickPackStockCheck(p);
               const stockBadge = stockOk.ok
                 ? '<span class="badge badge-prod">Available</span>'
@@ -252,7 +253,7 @@ function renderPickPackPOs(el, pos) {
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
-                <td>${stockBadge}</td>
+                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
                       className: 'btn btn-icon btn-sm',
@@ -264,9 +265,9 @@ function renderPickPackPOs(el, pos) {
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
-                  <button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>
-                  <button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>
+                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited, picked, or cancelled">Backend required</span>' : `<button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>`}
+                  ${localOnly ? '' : `<button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>`}
+                  ${localOnly ? '' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>`}
                 </td>
               </tr>`;
             }).join('')}
@@ -293,6 +294,7 @@ function renderPickPackShipping(el, list) {
 function pickPackShippingCardHtml(p) {
   const cust = getCustomer(p.customerId);
   const mode = p.shippingMode || 'pallet';
+  const localOnly = !!p._localOnlyBackendStale;
   return `
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -300,6 +302,7 @@ function pickPackShippingCardHtml(p) {
           <h3 style="margin:0">${escapeHtml(p.id)} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'-')} &middot; Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} &middot; Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
+        ${localOnly ? '<span class="badge badge-low">Local only</span>' : ''}
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
@@ -315,21 +318,24 @@ function pickPackShippingCardHtml(p) {
         <strong style="color:var(--brown);font-size:13px">Shipping Mode</strong>
         <div style="display:flex;gap:14px;margin-top:6px">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
+            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
+            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
           </label>
         </div>
       </div>
-      <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
-      <div class="form-row" style="margin-top:10px">
-        <label>Notes</label>
-        <textarea id="pp_sh_notes_${p.id}" placeholder="Special handling, delivery instructions, etc.">${escapeHtml(p.notes||'')}</textarea>
-      </div>
+      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local-only row.</strong> This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
+      <fieldset ${localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+        <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
+        <div class="form-row" style="margin-top:10px">
+          <label>Notes</label>
+          <textarea id="pp_sh_notes_${p.id}" placeholder="Special handling, delivery instructions, etc.">${escapeHtml(p.notes||'')}</textarea>
+        </div>
+      </fieldset>
       <div class="form-actions">
-        <button class="btn btn-secondary" onclick="savePickPackShippingForm('${p.id}')">Save</button>
-        <button class="btn" style="background:var(--success)" onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
+        <button class="btn btn-secondary" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be saved to the backend"' : ''} onclick="savePickPackShippingForm('${p.id}')">Save</button>
+        <button class="btn" style="background:var(--success)" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be marked shipped"' : ''} onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
       </div>
     </div>
   `;
@@ -364,9 +370,12 @@ function pickPackModeFieldsHtml(p, mode) {
 function togglePickPackMode(id, mode) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
-  p.shippingMode = mode;
-  saveState();
-  document.getElementById('pp_mode_fields_'+id).innerHTML = pickPackModeFieldsHtml(p, mode);
+  const preview = { ...p, shippingMode: mode };
+  if (!employeeBackendSessionActive()) {
+    p.shippingMode = mode;
+    saveState();
+  }
+  document.getElementById('pp_mode_fields_'+id).innerHTML = pickPackModeFieldsHtml(preview, mode);
 }
 
 function renderPickPackShipped(el, list) {
@@ -383,8 +392,9 @@ function renderPickPackShipped(el, list) {
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
             const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'-') : (p.bol||'-');
+            const localOnly = !!p._localOnlyBackendStale;
             return `<tr>
-              <td><strong>${escapeHtml(p.id)}</strong></td>
+              <td><strong>${escapeHtml(p.id)}</strong>${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
               <td>${escapeHtml(cust?.name||'')}</td>
               <td><span class="pill">${escapeHtml(p.poNumber||'-')}</span></td>
               <td>${fmtDate(p.shippedAt?.slice(0,10)||'')}</td>
@@ -672,28 +682,30 @@ async function markPickPackPicked(id) {
 async function savePickPackShippingForm(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
-  const mode = p.shippingMode || 'pallet';
+  const mode = Array.from(document.getElementsByName(`pp_mode_${id}`)).find(input => input.checked)?.value || p.shippingMode || 'pallet';
+  const shippingPatch = { shippingMode: mode };
   if (mode === 'parcel') {
-    p.parcelCarrier = document.getElementById('pp_carrier_'+id).value;
-    p.trackingNumber = document.getElementById('pp_tracking_'+id).value;
-    p.packageWeight = parseFloat(document.getElementById('pp_pkg_weight_'+id).value) || 0;
+    shippingPatch.parcelCarrier = document.getElementById('pp_carrier_'+id).value;
+    shippingPatch.trackingNumber = document.getElementById('pp_tracking_'+id).value;
+    shippingPatch.packageWeight = parseFloat(document.getElementById('pp_pkg_weight_'+id).value) || 0;
   } else {
-    p.carrier = document.getElementById('pp_lcarrier_'+id).value;
-    p.pallets = parseInt(document.getElementById('pp_pal_'+id).value, 10) || 0;
-    p.weight = parseFloat(document.getElementById('pp_wt_'+id).value) || 0;
-    p.bol = document.getElementById('pp_bol_'+id).value;
-    p.length = parseFloat(document.getElementById('pp_l_'+id).value) || 0;
-    p.width = parseFloat(document.getElementById('pp_w_'+id).value) || 0;
-    p.height = parseFloat(document.getElementById('pp_h_'+id).value) || 0;
+    shippingPatch.carrier = document.getElementById('pp_lcarrier_'+id).value;
+    shippingPatch.pallets = parseInt(document.getElementById('pp_pal_'+id).value, 10) || 0;
+    shippingPatch.weight = parseFloat(document.getElementById('pp_wt_'+id).value) || 0;
+    shippingPatch.bol = document.getElementById('pp_bol_'+id).value;
+    shippingPatch.length = parseFloat(document.getElementById('pp_l_'+id).value) || 0;
+    shippingPatch.width = parseFloat(document.getElementById('pp_w_'+id).value) || 0;
+    shippingPatch.height = parseFloat(document.getElementById('pp_h_'+id).value) || 0;
   }
-  p.notes = document.getElementById('pp_sh_notes_'+id).value;
+  shippingPatch.notes = document.getElementById('pp_sh_notes_'+id).value;
   if (!requireEmployeeBackendWrite(backendPickPackState)) return false;
   if (!p._backendId) {
     failBackendRequiredWrite(null, backendPickPackState, 'This Pick & Pack order is not backend-backed. Nothing was saved locally.');
     return false;
   }
   try {
-    await saveBackendPickPackShippingDetails(p);
+    await saveBackendPickPackShippingDetails({ ...p, ...shippingPatch });
+    Object.assign(p, shippingPatch);
     backendPickPackState.status = 'connected';
     backendPickPackState.lastError = '';
     toast('Shipping info saved to backend.');

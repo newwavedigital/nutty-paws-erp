@@ -138,6 +138,92 @@ function createInventoryStore(overrides: Partial<InventoryStore> = {}) {
   return store;
 }
 
+function createRollbackInventoryStore() {
+  const calls: string[] = [];
+  const items = new Map([
+    ["inv-1", { id: "inv-1", onHandQuantity: 100, allocatedQuantity: 0, unitOfMeasure: "lb" }],
+    ["inv-2", { id: "inv-2", onHandQuantity: 50, allocatedQuantity: 0, unitOfMeasure: "lb" }],
+  ]);
+  const reservations = new Map<string, { id: string; inventoryItemId: string; purchaseOrderLineId: string; quantity: number; status: "active" | "released" }>();
+  const movements = new Set<string>();
+  const reservationLineById = new Map<string, string>();
+  let failingReservationId: string | null = null;
+
+  const store: InventoryStore & { calls: string[]; items: typeof items; reservations: typeof reservations } = {
+    calls,
+    items,
+    reservations,
+    async getInventoryItem(id) {
+      calls.push(`getInventoryItem:${id}`);
+      const item = items.get(id);
+      return item ? { id: item.id, onHandQuantity: item.onHandQuantity, allocatedQuantity: item.allocatedQuantity, unitOfMeasure: item.unitOfMeasure } : null;
+    },
+    async allocateInventoryItem(id, quantity) {
+      calls.push(`allocateInventoryItem:${id}:${quantity}`);
+      const item = items.get(id)!;
+      if (item.allocatedQuantity + quantity > item.onHandQuantity) return false;
+      item.allocatedQuantity += quantity;
+      return true;
+    },
+    async createReservation(input) {
+      calls.push(`createReservation:${input.purchaseOrderLineId}:${input.quantity}`);
+      reservations.set(input.id, {
+        id: input.id,
+        inventoryItemId: input.inventoryItemId,
+        purchaseOrderLineId: input.purchaseOrderLineId,
+        quantity: input.quantity,
+        status: "active",
+      });
+      reservationLineById.set(input.id, input.purchaseOrderLineId);
+      if (input.purchaseOrderLineId === "line-2") {
+        failingReservationId = input.id;
+      }
+    },
+    async createMovement(input) {
+      calls.push(`createMovement:${input.movementType}:${input.quantityDelta}`);
+      if (input.id) movements.add(input.id);
+    },
+    async createAuditEvent(input) {
+      calls.push(`createAuditEvent:${input.entityId}:${input.action}`);
+      if (input.action === "inventory.reserved" && input.entityId === failingReservationId) {
+        throw new Error("inventory reservation audit failed");
+      }
+    },
+    async getActiveReservation(id) {
+      const reservation = reservations.get(id);
+      return reservation && reservation.status === "active"
+        ? {
+            id: reservation.id,
+            inventoryItemId: reservation.inventoryItemId,
+            purchaseOrderLineId: reservation.purchaseOrderLineId,
+            quantity: reservation.quantity,
+            status: "active" as const,
+          }
+        : null;
+    },
+    async releaseReservationRecord(id) {
+      calls.push(`releaseReservationRecord:${id}`);
+      const reservation = reservations.get(id);
+      if (!reservation || reservation.status !== "active") return false;
+      reservation.status = "released";
+      return true;
+    },
+    async releaseInventoryItemAllocation(id, quantity) {
+      calls.push(`releaseInventoryItemAllocation:${id}:${quantity}`);
+      const item = items.get(id);
+      if (!item || item.allocatedQuantity < quantity) return false;
+      item.allocatedQuantity -= quantity;
+      return true;
+    },
+    async deleteMovement(id) {
+      calls.push(`deleteMovement:${id}`);
+      return movements.delete(id);
+    },
+  };
+
+  return store;
+}
+
 describe("purchase order workflow service", () => {
   it("creates a draft purchase order with lines", async () => {
     const store = createPOStore();
@@ -242,6 +328,7 @@ describe("purchase order workflow service", () => {
 
   it("reviews a purchase order line for Supply Chain and writes an audit event", async () => {
     const store = createPOStore();
+    store.setPO(makePurchaseOrder({ status: "supply_chain_review" }));
 
     const result = await reviewPurchaseOrderLineSupplyChain(store, {
       purchaseOrderId: "po-1",
@@ -253,6 +340,22 @@ describe("purchase order workflow service", () => {
     expect(result.lines[0].supplyChainStatus).toBe("available");
     expect(store.calls).toContain("updateLineSupplyChainStatus:line-1:available");
     expect(store.calls).toContain("createAuditEvent:purchase_order.line_supply_chain_reviewed");
+  });
+
+  it("blocks supply-chain line review for closed purchase orders", async () => {
+    const store = createPOStore();
+    store.setPO(makePurchaseOrder({ status: "completed" }));
+
+    await expect(
+      reviewPurchaseOrderLineSupplyChain(store, {
+        purchaseOrderId: "po-1",
+        lineId: "line-1",
+        supplyChainStatus: "available",
+      }),
+    ).rejects.toEqual(
+      new POError("SUPPLY_CHAIN_REVIEW_LOCKED", "Supply Chain review is only available for active review purchase orders"),
+    );
+    expect(store.calls).not.toContain("updateLineSupplyChainStatus:line-1:available");
   });
 
   it("updates deposit status and writes an audit event", async () => {
@@ -388,6 +491,94 @@ describe("purchase order workflow service", () => {
     ).rejects.toEqual(
       new InventoryError("INSUFFICIENT_INVENTORY", "Insufficient net available inventory"),
     );
+    expect(poStore.calls).not.toContain("updatePurchaseOrderStatus:po-1:approved_for_production");
+  });
+
+  it("rolls back earlier reservations when a later approval reservation fails", async () => {
+    const poStore = createPOStore({
+      async findInventoryItemByMasterItemId(masterItemId) {
+        poStore.calls.push(`findInventoryItemByMasterItemId:${masterItemId}`);
+        return { id: masterItemId === "master-2" ? "inv-2" : "inv-1" };
+      },
+    });
+    poStore.setPO(
+      makePurchaseOrder({
+        status: "supply_chain_review",
+        depositStatus: "received",
+        lines: [
+          { ...makePurchaseOrder().lines[0], id: "line-1", masterItemId: "master-1" },
+          { ...makePurchaseOrder().lines[0], id: "line-2", lineNumber: 2, masterItemId: "master-2" },
+        ],
+      }),
+    );
+    const inventoryStore = createInventoryStore({
+      async getInventoryItem(id) {
+        inventoryStore.calls.push(`getInventoryItem:${id}`);
+        return { id, onHandQuantity: 100, allocatedQuantity: 0, unitOfMeasure: "lb" };
+      },
+      async allocateInventoryItem(id, quantity) {
+        inventoryStore.calls.push(`allocateInventoryItem:${id}:${quantity}`);
+        return id !== "inv-2";
+      },
+      async getActiveReservation(id) {
+        inventoryStore.calls.push(`getActiveReservation:${id}`);
+        return { id, inventoryItemId: "inv-1", purchaseOrderLineId: "line-1", quantity: 25, status: "active" };
+      },
+      async releaseInventoryItemAllocation(id, quantity) {
+        inventoryStore.calls.push(`releaseInventoryItemAllocation:${id}:${quantity}`);
+        return true;
+      },
+      async releaseReservationRecord(id) {
+        inventoryStore.calls.push(`releaseReservationRecord:${id}`);
+        return true;
+      },
+    });
+
+    await expect(
+      approvePurchaseOrderForProduction(poStore, inventoryStore, {
+        purchaseOrderId: "po-1",
+      }),
+    ).rejects.toEqual(
+      new InventoryError("INSUFFICIENT_INVENTORY", "Insufficient net available inventory"),
+    );
+    expect(inventoryStore.calls).toContain("allocateInventoryItem:inv-1:25");
+    expect(inventoryStore.calls).toContain("allocateInventoryItem:inv-2:25");
+    expect(inventoryStore.calls).toContain("releaseInventoryItemAllocation:inv-1:25");
+    expect(inventoryStore.calls.some((call) => call.startsWith("releaseReservationRecord:reservation_"))).toBe(true);
+    expect(poStore.calls).not.toContain("updatePurchaseOrderStatus:po-1:approved_for_production");
+  });
+
+  it("rolls back a partially created later reservation when its write path fails", async () => {
+    const poStore = createPOStore({
+      async getPurchaseOrder(id) {
+        poStore.calls.push(`getPurchaseOrder:${id}`);
+        return makePurchaseOrder({
+          status: "supply_chain_review",
+          depositStatus: "received",
+          lines: [
+            { ...makePurchaseOrder().lines[0], id: "line-1", masterItemId: "master-1" },
+            { ...makePurchaseOrder().lines[0], id: "line-2", lineNumber: 2, masterItemId: "master-2" },
+          ],
+        });
+      },
+      async findInventoryItemByMasterItemId(masterItemId) {
+        poStore.calls.push(`findInventoryItemByMasterItemId:${masterItemId}`);
+        return { id: masterItemId === "master-1" ? "inv-1" : "inv-2" };
+      },
+    });
+    const inventoryStore = createRollbackInventoryStore();
+
+    await expect(
+      approvePurchaseOrderForProduction(poStore, inventoryStore, {
+        purchaseOrderId: "po-1",
+        actorUserId: "user-1",
+      }),
+    ).rejects.toThrow("inventory reservation audit failed");
+
+    expect(inventoryStore.items.get("inv-1")?.allocatedQuantity).toBe(0);
+    expect(inventoryStore.items.get("inv-2")?.allocatedQuantity).toBe(0);
+    expect(inventoryStore.reservations.size).toBe(2);
+    expect([...inventoryStore.reservations.values()].every((reservation) => reservation.status === "released")).toBe(true);
     expect(poStore.calls).not.toContain("updatePurchaseOrderStatus:po-1:approved_for_production");
   });
 });

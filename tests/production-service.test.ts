@@ -252,6 +252,39 @@ describe("production workflow service", () => {
     expect(store.calls.some((call) => call.startsWith("replaceRunLines:"))).toBe(false);
   });
 
+  it("blocks own-brand finalization before mutating when finished-good inventory is not mapped", async () => {
+    const store = createStore({
+      async findFinishedGoodInventoryItem(productId) {
+        store.calls.push(`findFinishedGoodInventoryItem:${productId}`);
+        return null;
+      },
+    });
+    const scheduled = await scheduleProductionRun(store, {
+      purchaseOrderId: "po-1",
+      productionDate: "2026-06-20",
+      productionEndDate: "2026-06-20",
+      productionRoom: "Main",
+    });
+
+    await expect(
+      finalizeProductionRun(store, {
+        productionRunId: scheduled.id,
+        lines: [{ purchaseOrderLineId: "line-1", productId: "product-own", quantityProduced: 9, casesProduced: 3, lotNumber: "LOT-OWN" }],
+        materialActuals: [{ masterItemId: "master-ingredient", actualUsedQuantity: 18.9, lotNumber: "RAW-1" }],
+      }),
+    ).rejects.toEqual(
+      new ProductionError(
+        "FINISHED_GOOD_INVENTORY_NOT_FOUND",
+        "Finished-good inventory item is required before finalizing own-brand production",
+      ),
+    );
+    expect(store.calls).toContain("findFinishedGoodInventoryItem:product-own");
+    expect(store.calls.some((call) => call.startsWith("replaceRunLines:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("adjustInventory:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("finalizeRun:"))).toBe(false);
+    expect(store.calls.some((call) => call.startsWith("upsertProductionLog:"))).toBe(false);
+  });
+
   it("deduplicates duplicate BOM rows before calculating production material usage", async () => {
     const store = createStore({
       async listProductBomItems(productId) {

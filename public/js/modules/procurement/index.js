@@ -332,7 +332,7 @@ function renderProcCompleted(el) {
               <td>${fmtDate(p.receivedDate)}</td>
               <td class="row-actions">
                 <button class="btn btn-icon btn-sm" onclick="procFormHtml('${p.id}')">View</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProc('${p.id}')">Delete</button>
+                <span class="pill" title="Received procurement POs are locked from cancellation">Locked</span>
               </td>
             </tr>`;
           }).join('')

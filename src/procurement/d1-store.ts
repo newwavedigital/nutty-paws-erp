@@ -1,4 +1,4 @@
-import { calculateNeedToOrderRows, type NeedToOrderInventoryItem, type ProcurementOrderInput, type ProcurementOrderLineInput, type ProcurementOrderLineRecord, type ProcurementOrderRecord, type ProcurementOrderStatus, type ProcurementStore, type SupplyChainDemand } from "./service";
+import { ProcurementError, calculateNeedToOrderRows, type NeedToOrderInventoryItem, type ProcurementInventorySnapshot, type ProcurementOrderInput, type ProcurementOrderLineInput, type ProcurementOrderLineRecord, type ProcurementOrderRecord, type ProcurementOrderStatus, type ProcurementReceiptTransactionInput, type ProcurementStore, type SupplyChainDemand } from "./service";
 
 type ProcurementOrderRow = {
   id: string;
@@ -27,6 +27,13 @@ type ProcurementLineRow = {
   suggested_quantity: number;
   source_reason: ProcurementOrderLineRecord["sourceReason"];
   source_purchase_order_line_id: string | null;
+};
+
+type InventoryItemSnapshotDbRow = {
+  id: string;
+  on_hand_quantity: number;
+  lot_number: string | null;
+  location: string | null;
 };
 
 type InventoryNeedRow = {
@@ -349,6 +356,27 @@ export class D1ProcurementStore implements ProcurementStore {
       .run();
   }
 
+  async getInventoryItem(inventoryItemId: string): Promise<ProcurementInventorySnapshot | null> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT id, on_hand_quantity, lot_number, location
+          FROM inventory_items
+          WHERE id = ?
+        `,
+      )
+      .bind(inventoryItemId)
+      .first<InventoryItemSnapshotDbRow>();
+    return row
+      ? {
+          id: row.id,
+          onHandQuantity: row.on_hand_quantity,
+          lotNumber: row.lot_number,
+          location: row.location,
+        }
+      : null;
+  }
+
   async increaseInventory(input: {
     inventoryItemId: string;
     quantity: number;
@@ -357,7 +385,7 @@ export class D1ProcurementStore implements ProcurementStore {
     lotNumber?: string | null;
     location?: string | null;
   }) {
-    await this.db
+    const result = await this.db
       .prepare(
         `
           UPDATE inventory_items
@@ -366,10 +394,13 @@ export class D1ProcurementStore implements ProcurementStore {
               location = COALESCE(?, location),
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `,
+      `,
       )
       .bind(input.quantity, input.lotNumber ?? null, input.location ?? null, input.inventoryItemId)
       .run();
+    if ((result.meta?.changes ?? 0) === 0) {
+      throw new ProcurementError("PROCUREMENT_INVENTORY_ITEM_NOT_FOUND", "Procurement inventory item not found");
+    }
 
     await this.db
       .prepare(
@@ -389,6 +420,171 @@ export class D1ProcurementStore implements ProcurementStore {
         input.actorUserId ?? null,
       )
       .run();
+  }
+
+  async restoreInventoryItem(input: ProcurementInventorySnapshot) {
+    await this.db
+      .prepare(
+        `
+          UPDATE inventory_items
+          SET on_hand_quantity = ?,
+              lot_number = ?,
+              location = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+      )
+      .bind(input.onHandQuantity, input.lotNumber, input.location, input.id)
+      .run();
+  }
+
+  async deleteReceiptLine(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM procurement_receipt_lines WHERE id = ?")
+      .bind(id)
+      .run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  async deleteReceipt(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM procurement_receipts WHERE id = ?")
+      .bind(id)
+      .run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  async receiveOrderTransaction(input: ProcurementReceiptTransactionInput) {
+    const statements = [
+      this.db
+        .prepare(
+          `
+            INSERT INTO procurement_receipts (
+              id, receipt_number, procurement_order_id, receipt_date,
+              received_by_user_id, is_final
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          input.receipt.id,
+          input.receipt.receiptNumber,
+          input.receipt.procurementOrderId,
+          input.receipt.receiptDate,
+          input.receipt.receivedByUserId ?? null,
+          input.receipt.isFinal ? 1 : 0,
+        ),
+    ];
+
+    for (const line of input.lines) {
+      statements.push(
+        this.db
+          .prepare(
+            `
+              INSERT INTO procurement_receipt_lines (
+                id, procurement_receipt_id, procurement_order_line_id,
+                inventory_item_id, received_quantity, lot_number, location
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+          )
+          .bind(
+            line.receiptLineId,
+            input.receipt.id,
+            line.procurementOrderLineId,
+            line.inventoryItemId,
+            line.receivedQuantity,
+            line.lotNumber ?? null,
+            line.location ?? null,
+          ),
+      );
+
+      if (line.inventoryItemId) {
+        statements.push(
+          this.db
+            .prepare(
+              `
+                UPDATE inventory_items
+                SET on_hand_quantity = on_hand_quantity + ?,
+                    lot_number = COALESCE(?, lot_number),
+                    location = COALESCE(?, location),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `,
+            )
+            .bind(line.receivedQuantity, line.lotNumber ?? null, line.location ?? null, line.inventoryItemId),
+          this.db
+            .prepare(
+              `
+                INSERT INTO inventory_movements (
+                  id, inventory_item_id, movement_type, quantity_delta,
+                  reference_type, reference_id, created_by_user_id
+                )
+                VALUES (?, ?, 'received', ?, 'procurement_receipt_line', ?, ?)
+              `,
+            )
+            .bind(
+              `movement_${crypto.randomUUID()}`,
+              line.inventoryItemId,
+              line.receivedQuantity,
+              line.receiptLineId,
+              input.receipt.receivedByUserId ?? null,
+            ),
+        );
+      }
+
+      statements.push(
+        this.db
+          .prepare(
+            `
+              UPDATE procurement_order_lines
+              SET quantity_received = ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `,
+          )
+          .bind(line.finalReceivedQuantity, line.procurementOrderLineId),
+      );
+    }
+
+    statements.push(
+      this.db
+        .prepare(
+          `
+            UPDATE procurement_orders
+            SET status = ?,
+                received_date = COALESCE(?, received_date),
+                completed_at = CASE WHEN ? = 'completed' AND completed_at IS NULL THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+        )
+        .bind(
+          input.orderUpdate.status,
+          input.orderUpdate.receivedDate ?? null,
+          input.orderUpdate.status,
+          input.orderUpdate.id,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          input.audit.entityType,
+          input.audit.entityId,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    );
+
+    await this.db.batch(statements);
   }
 
   async createAuditEvent(input: {

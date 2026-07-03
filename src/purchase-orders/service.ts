@@ -1,5 +1,5 @@
 import { ApiError } from "../api/errors";
-import { reserveInventory, type InventoryStore } from "../inventory/service";
+import { releaseInventoryReservation, reserveInventory, type InventoryStore } from "../inventory/service";
 
 export type PurchaseOrderStatus =
   | "draft"
@@ -290,6 +290,9 @@ export async function reviewPurchaseOrderLineSupplyChain(
   if (!line) {
     throw new POError("PURCHASE_ORDER_LINE_NOT_FOUND", "Purchase order line not found");
   }
+  if (!["supply_chain_review", "awaiting_deposit"].includes(po.status)) {
+    throw new POError("SUPPLY_CHAIN_REVIEW_LOCKED", "Supply Chain review is only available for active review purchase orders");
+  }
 
   await store.updateLineSupplyChainStatus(input.lineId, input.supplyChainStatus);
   await store.createAuditEvent({
@@ -352,19 +355,36 @@ export async function approvePurchaseOrderForProduction(
     throw new POError("LINES_NOT_AVAILABLE", "All purchase order lines must be available");
   }
 
-  for (const requirement of await resolveInventoryRequirements(store, po.lines)) {
-    const inventoryItem = await store.findInventoryItemByMasterItemId(requirement.masterItemId);
+  const reservations: string[] = [];
+  try {
+    for (const requirement of await resolveInventoryRequirements(store, po.lines)) {
+      const inventoryItem = await store.findInventoryItemByMasterItemId(requirement.masterItemId);
 
-    if (!inventoryItem) {
-      throw new POError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found for purchase order line");
+      if (!inventoryItem) {
+        throw new POError("INVENTORY_ITEM_NOT_FOUND", "Inventory item not found for purchase order line");
+      }
+
+      const reservation = await reserveInventory(inventoryStore, {
+        inventoryItemId: inventoryItem.id,
+        purchaseOrderLineId: requirement.purchaseOrderLineId,
+        quantity: requirement.quantity,
+        actorUserId: input.actorUserId,
+      });
+      reservations.push(reservation.reservationId);
     }
-
-    await reserveInventory(inventoryStore, {
-      inventoryItemId: inventoryItem.id,
-      purchaseOrderLineId: requirement.purchaseOrderLineId,
-      quantity: requirement.quantity,
-      actorUserId: input.actorUserId,
-    });
+  } catch (error) {
+    const rollback = await Promise.allSettled(
+      reservations.reverse().map((reservationId) =>
+        releaseInventoryReservation(inventoryStore, { reservationId, actorUserId: input.actorUserId }),
+      ),
+    );
+    if (rollback.some((result) => result.status === "rejected")) {
+      throw new POError(
+        "INVENTORY_RESERVATION_ROLLBACK_FAILED",
+        "Purchase order approval failed after inventory was reserved, and automatic reservation rollback failed",
+      );
+    }
+    throw error;
   }
 
   await transitionPO(
@@ -467,7 +487,9 @@ function poStatusFor(code: string) {
     code === "INVALID_STATUS_TRANSITION" ||
     code === "INVENTORY_ITEM_NOT_FOUND" ||
     code === "PO_NUMBER_ALREADY_EXISTS" ||
-    code === "PO_LOCKED_FOR_PRODUCTION"
+    code === "PO_LOCKED_FOR_PRODUCTION" ||
+    code === "SUPPLY_CHAIN_REVIEW_LOCKED" ||
+    code === "INVENTORY_RESERVATION_ROLLBACK_FAILED"
   ) {
     return 409;
   }

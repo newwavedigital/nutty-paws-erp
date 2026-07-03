@@ -1076,7 +1076,7 @@ async function attachBackendQualityFiles(queue) {
       po._backendFiles = files || [];
       const coa = (files || []).find(file => file.fileCategory === 'coa') || null;
       if (coa) po.coa = mapBackendFileToPrototype(coa);
-      const postShipmentCoa = (files || []).find(file => file.fileCategory === 'post_shipment_coa') || null;
+      const postShipmentCoa = (files || []).find(file => file.id === po.postShipmentCoaFileId) || null;
       if (postShipmentCoa) po.postShipmentCoa = mapBackendFileToPrototype(postShipmentCoa);
     } catch (error) {
       po._backendFileError = error?.message || 'QA files unavailable';
@@ -1174,12 +1174,16 @@ async function attachBackendPostShipmentCoa(purchaseOrderId, file) {
   const updated = await apiRequest(`/api/quality/purchase-orders/${encodeURIComponent(purchaseOrderId)}/post-shipment-coa`, {
     method: 'POST',
     body: JSON.stringify({
-      fileId: uploaded?.id || null,
-      postShipmentCoaFileId: uploaded?.id || null,
+      coaFileId: uploaded?.id || null,
       actorUserId: BACKEND_ACTOR_USER_ID
     })
   });
-  mergeBackendPurchaseOrders([updated]);
+  const merged = mergeBackendPurchaseOrders([updated]);
+  const local = merged.find(po => po._backendId === purchaseOrderId) || state.purchaseOrders.find(po => po._backendId === purchaseOrderId);
+  if (local) {
+    local.postShipmentCoaFileId = uploaded?.id || local.postShipmentCoaFileId || '';
+    local.postShipmentCoa = mapBackendFileToPrototype(uploaded);
+  }
   backendQualityState.loaded = false;
   return updated;
 }
@@ -1479,7 +1483,7 @@ function mergeBackendPickPackOrders(records) {
   const remainingLocal = (state.pickPackOrders || []).filter(order => {
     const keys = [order._backendId, order.id, order.poNumber].filter(Boolean).map(String);
     return !keys.some(key => backendKeys.has(key));
-  });
+  }).map(order => employeeBackendSessionActive() ? { ...order, _localOnlyBackendStale: true } : order);
   state.pickPackOrders = [...mapped, ...remainingLocal];
   backendPickPackState.orders = mapped;
   try { saveState(); } catch (err) {}
@@ -2721,7 +2725,9 @@ function mergeBackendPurchaseOrders(records) {
   const backendIds = new Set(backendPos.map(po => po._backendId));
   state.purchaseOrders = [
     ...backendPos,
-    ...state.purchaseOrders.filter(po => !po._backendId || !backendIds.has(po._backendId))
+    ...state.purchaseOrders
+      .filter(po => !po._backendId || !backendIds.has(po._backendId))
+      .map(po => employeeBackendSessionActive() && !po._backendId ? { ...po, _localOnlyBackendStale: true } : po)
   ];
   try { saveState(); } catch (err) {}
   return backendPos;
@@ -4207,7 +4213,9 @@ function renderPurchaseOrders(el) {
         </thead>
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
-            pos.map(p => `
+            pos.map(p => {
+              const localOnly = !!p._localOnlyBackendStale;
+              return `
               <tr>
                 <td><strong>${p.id}</strong></td>
                 <td>${p.brand ? `<span class="pill">${escapeHtml(p.brand)}</span>` : '<span style="color:var(--brown-light);font-size:12px">-</span>'}</td>
@@ -4217,15 +4225,16 @@ function renderPurchaseOrders(el) {
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
                 <td>${poFileLinkHtml(p)}</td>
-                <td>${statusBadge(p.status)}</td>
+                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
                   <button class="btn btn-icon btn-sm" onclick="printPO('${p.id}')">Print</button>
-                  ${p.status === 'pending' || p.status === 'in_supply_chain' ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
-                  ${p.status === 'pending' || p.status === 'in_supply_chain' ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
+                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited or cancelled">Backend required</span>' : ''}
+                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
+                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
                 </td>
               </tr>
-            `).join('')
+            `}).join('')
           }
         </tbody>
       </table></div>
@@ -5503,7 +5512,7 @@ function renderProcCompleted(el) {
               <td>${fmtDate(p.receivedDate)}</td>
               <td class="row-actions">
                 <button class="btn btn-icon btn-sm" onclick="procFormHtml('${p.id}')">View</button>
-                <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteProc('${p.id}')">Delete</button>
+                <span class="pill" title="Received procurement POs are locked from cancellation">Locked</span>
               </td>
             </tr>`;
           }).join('')
@@ -6920,7 +6929,8 @@ function shipPalletRowsHtml(p) {
 function shippingCardHtml(p) {
   const s = p.shipping || {};
   const cust = getCustomer(p.customerId);
-  const hasDocs = !!s.documents;
+  const docState = shippingDocumentState(p);
+  const hasDocs = docState.ready;
   return `
     <div class="card" style="background:var(--beige-light)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -6928,40 +6938,50 @@ function shippingCardHtml(p) {
           <h3 style="margin:0">${p.id} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">${p.brand ? '<span class="pill">'+escapeHtml(p.brand)+'</span> ' : ''}Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
         </div>
-        <div>${statusBadge(p.status)}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${docState.localOnly ? '<span class="badge badge-low">Local only</span>' : ''}${statusBadge(p.status)}</div>
       </div>
       ${productionTotalsHtml(p)}
-      <div class="form-grid" style="margin-top:12px">
-        <div class="form-row"><label>BOL #</label><input id="sh_bol_${p.id}" value="${escapeHtml(s.bol||'')}" /></div>
-        <div class="form-row"><label>Pro #</label><input id="sh_pro_${p.id}" value="${escapeHtml(s.proNumber||'')}" /></div>
-        <div class="form-row"><label>Carrier</label><input id="sh_carrier_${p.id}" value="${escapeHtml(s.carrier||'')}" /></div>
-        <div class="form-row"><label>Freight Class</label><input id="sh_class_${p.id}" value="${escapeHtml(s.freightClass||'')}" /></div>
-      </div>
-      <div style="margin-top:14px;padding:12px;background:var(--white);border:1px solid var(--grey-light);border-radius:8px">
-        <strong style="color:var(--brown);font-size:13px">Pallets</strong>
-        <div class="help-text" style="margin-bottom:6px">Add a line per pallet - each can have its own dimensions and weight.</div>
-        ${shipPalletRowsHtml(p)}
-      </div>
-      <div class="form-row" style="margin-top:14px">
-        <label>Shipment Documents ${hasDocs ? '<span class="badge badge-prod">Uploaded</span>' : '<span class="badge badge-low">Required to ship</span>'}</label>
-        <div class="file-upload">
-          <input type="file" id="sh_docs_input_${p.id}" accept=".pdf,.doc,.docx,image/*" onchange="shipDocsSelected(event,'${p.id}')" />
-          <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
-            ${hasDocs ? `&#128206; ${escapeHtml(s.documents.name)} (${Math.round((s.documents.size||0)/1024)} KB)` : 'No documents uploaded. Required before marking shipped.'}
-          </div>
-          ${hasDocs ? `${shippingFileDownloadHtml(s.documents)}${!s.documents._backendFile ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}` : ''}
+      ${docState.localOnly ? '<div class="inv-check" style="margin-top:10px"><strong>Local-only row.</strong> This shipment is not attached to a backend PO, so live save and ship actions stay disabled.</div>' : ''}
+      <fieldset ${docState.localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+        <div class="form-grid" style="margin-top:12px">
+          <div class="form-row"><label>BOL #</label><input id="sh_bol_${p.id}" value="${escapeHtml(s.bol||'')}" /></div>
+          <div class="form-row"><label>Pro #</label><input id="sh_pro_${p.id}" value="${escapeHtml(s.proNumber||'')}" /></div>
+          <div class="form-row"><label>Carrier</label><input id="sh_carrier_${p.id}" value="${escapeHtml(s.carrier||'')}" /></div>
+          <div class="form-row"><label>Freight Class</label><input id="sh_class_${p.id}" value="${escapeHtml(s.freightClass||'')}" /></div>
         </div>
-      </div>
-      <div class="form-row" style="margin-top:10px">
-        <label>Shipping Notes</label>
-        <textarea id="sh_notes_${p.id}">${escapeHtml(s.notes||'')}</textarea>
-      </div>
+        <div style="margin-top:14px;padding:12px;background:var(--white);border:1px solid var(--grey-light);border-radius:8px">
+          <strong style="color:var(--brown);font-size:13px">Pallets</strong>
+          <div class="help-text" style="margin-bottom:6px">Add a line per pallet - each can have its own dimensions and weight.</div>
+          ${shipPalletRowsHtml(p)}
+        </div>
+        <div class="form-row" style="margin-top:14px">
+          <label>Shipment Documents <span class="badge ${docState.confirmedId ? 'badge-prod' : 'badge-low'}">${docState.confirmedId ? 'Uploaded' : docState.pending ? 'Pending upload' : docState.localOnly ? 'Local only' : 'Required to ship'}</span></label>
+          <div class="file-upload">
+            <input type="file" id="sh_docs_input_${p.id}" accept=".pdf,.doc,.docx,image/*" onchange="shipDocsSelected(event,'${p.id}')" />
+            <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
+              ${docState.confirmedId
+                ? `&#128206; ${escapeHtml(s.documents?.name || 'shipment-document')} (${Math.round((s.documents?.size||0)/1024)} KB)`
+                : docState.pending
+                  ? `&#128206; ${escapeHtml(docState.pending.name)} (${Math.round((docState.pending.size||0)/1024)} KB) pending upload`
+                  : docState.localOnly
+                    ? 'This copy is local only and is not attached to the backend.'
+                    : 'No backend shipment document uploaded. Required before marking shipped.'}
+            </div>
+            ${docState.confirmedId && s.documents ? shippingFileDownloadHtml(s.documents) : ''}
+            ${docState.pending ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:10px">
+          <label>Shipping Notes</label>
+          <textarea id="sh_notes_${p.id}">${escapeHtml(s.notes||'')}</textarea>
+        </div>
+      </fieldset>
       <div class="form-actions" style="flex-wrap:wrap">
         <button class="btn btn-icon" onclick="viewPO('${p.id}')">View PO</button>
         <button class="btn btn-icon" onclick="printPackingSlip('${p.id}')">Print Packing Slip</button>
         <button class="btn btn-dark" onclick="printDocuments('${p.id}')">Print Documents</button>
-        <button class="btn btn-secondary" onclick="saveShipping('${p.id}')">Save</button>
-        <button class="btn" ${hasDocs ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
+        <button class="btn btn-secondary" ${docState.localOnly ? 'disabled title="This shipment is local-only and cannot be saved back to the backend"' : ''} onclick="saveShipping('${p.id}')">Save</button>
+        <button class="btn" ${hasDocs && !docState.localOnly ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
       </div>
     </div>
   `;
@@ -7020,23 +7040,14 @@ function shipDocsSelected(e, id) {
   if (!po) return;
   captureShippingForm(po);
   pendingShipmentDocumentFiles.set(id, f);
-  const reader = new FileReader();
-  reader.onload = () => {
-    po.shipping.documents = { name: f.name, type: f.type, size: f.size, dataUrl: reader.result, uploadedAt: new Date().toISOString() };
-    try { saveState(); }
-    catch(err) { po.shipping.documents = null; toast('Storage full - use a smaller file.'); return; }
-    toast('Shipment documents uploaded.');
-    router('shipping');
-  };
-  reader.readAsDataURL(f);
+  toast('Shipment document selected. Save or mark shipped to upload it to the backend.');
+  router('shipping');
 }
 function clearShipDocs(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
   captureShippingForm(po);
   pendingShipmentDocumentFiles.delete(id);
-  po.shipping.documents = null;
-  saveState();
   router('shipping');
 }
 
@@ -7091,6 +7102,18 @@ function shippingFileDownloadHtml(file) {
     unavailableHtml: `<span class="pill" title="Backend file unavailable">${escapeHtml(name)}</span>`
   });
 }
+
+function shippingDocumentState(po) {
+  const confirmedId = shippingShipmentDocumentFileId(po);
+  const pending = pendingShipmentDocumentFiles.get(po?.id || '') || null;
+  const localOnly = !!po?.shipping?.documents && !confirmedId && !pending;
+  return {
+    confirmedId,
+    pending,
+    localOnly,
+    ready: !!confirmedId || !!pending
+  };
+}
 async function confirmStocked(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   if (!po) return;
@@ -7126,6 +7149,16 @@ async function saveShipping(id) {
   if (!requireEmployeeBackendWrite(backendShippingState)) return;
   if (!po?._backendId) return failBackendRequiredWrite(null, backendShippingState, 'This shipment is not backend-backed. Nothing was saved locally.');
   try {
+    const pendingFile = pendingShipmentDocumentFiles.get(id);
+    if (pendingFile) {
+      const uploaded = await uploadBackendShipmentDocument(shippingPurchaseOrderBackendId(po), pendingFile);
+      shipping.documents = mapBackendFileToPrototype(uploaded);
+      shipping.shipmentDocumentFileId = uploaded?.id || '';
+      pendingShipmentDocumentFiles.delete(id);
+    } else if (shipping.documents && !shippingShipmentDocumentFileId({ ...po, shipping })) {
+      shipping.documents = null;
+      throw new Error('Shipment document must be reselected so it can be uploaded to the backend.');
+    }
     await saveBackendShippingDetails({ ...po, shipping });
     po.shipping = shipping;
     backendShippingState.status = 'connected';
@@ -7142,7 +7175,9 @@ async function completeShipment(id) {
   const po = state.purchaseOrders.find(p=>p.id===id);
   const shipping = readShippingForm(po);
   const s = shipping || {};
-  if (!s.documents) {
+  const pendingFile = pendingShipmentDocumentFiles.get(id);
+  const confirmedDocumentId = shippingShipmentDocumentFileId(po);
+  if (!confirmedDocumentId && !pendingFile) {
     toast('Upload shipment documents before marking shipped.');
     return;
   }
@@ -7160,12 +7195,14 @@ async function completeShipment(id) {
   if (!requireEmployeeBackendWrite(backendShippingState)) return;
   if (!po._backendId) return failBackendRequiredWrite(null, backendShippingState, 'This shipment is not backend-backed. Nothing was saved locally.');
   try {
-    const pendingFile = pendingShipmentDocumentFiles.get(id);
     if (pendingFile) {
       const uploaded = await uploadBackendShipmentDocument(shippingPurchaseOrderBackendId(po), pendingFile);
       shipping.documents = mapBackendFileToPrototype(uploaded);
       shipping.shipmentDocumentFileId = uploaded?.id || '';
       pendingShipmentDocumentFiles.delete(id);
+    } else if (s.documents && !confirmedDocumentId) {
+      shipping.documents = null;
+      throw new Error('Shipment document must be reselected so it can be uploaded to the backend.');
     }
     await saveBackendShippingDetails({ ...po, shipping });
     await markBackendShipped({ ...po, shipping });
@@ -11738,35 +11775,43 @@ async function libDrop(e, targetFolderId) {
   e.stopPropagation();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
-  if (libDragPayload.kind === 'file') {
-    const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: targetFolderId }, { recordId: f._backendId || f.id });
-    toast('File moved.');
-  } else if (libDragPayload.kind === 'folder') {
-    if (libDragPayload.id === targetFolderId) return;
-    const desc = libDescendantFolderIds(libDragPayload.id);
-    if (desc.has(targetFolderId)) { toast("Can't move a folder into itself."); return; }
-    const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: targetFolderId }, { recordId: f._backendId || f.id });
-    toast('Folder moved.');
+  try {
+    if (libDragPayload.kind === 'file') {
+      const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: targetFolderId }, { recordId: f._backendId || f.id });
+      toast('File moved.');
+    } else if (libDragPayload.kind === 'folder') {
+      if (libDragPayload.id === targetFolderId) return;
+      const desc = libDescendantFolderIds(libDragPayload.id);
+      if (desc.has(targetFolderId)) { toast("Can't move a folder into itself."); return; }
+      const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: targetFolderId }, { recordId: f._backendId || f.id });
+      toast('Folder moved.');
+    }
+    libDragPayload = null;
+    router('content-library');
+  } catch (err) {
+    toast(err.message || 'Content Library item could not be moved.');
   }
-  libDragPayload = null;
-  router('content-library');
 }
 async function libDropOnRoot(e) {
   e.preventDefault();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
-  if (libDragPayload.kind === 'file') {
-    const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }, { recordId: f._backendId || f.id });
-  } else if (libDragPayload.kind === 'folder') {
-    const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: null }, { recordId: f._backendId || f.id });
+  try {
+    if (libDragPayload.kind === 'file') {
+      const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }, { recordId: f._backendId || f.id });
+    } else if (libDragPayload.kind === 'folder') {
+      const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: null }, { recordId: f._backendId || f.id });
+    }
+    libDragPayload = null;
+    router('content-library');
+    toast('Moved to root.');
+  } catch (err) {
+    toast(err.message || 'Content Library item could not be moved.');
   }
-  libDragPayload = null;
-  router('content-library');
-  toast('Moved to root.');
 }
 function fileIcon(type, name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
@@ -13796,8 +13841,9 @@ function renderPickPackPOs(el, pos) {
             <th>PP #</th><th>Distributor</th><th>PO #</th><th>Date Submitted</th><th>Date Needed to Ship</th><th>Items</th><th>Stock</th><th>PO File</th><th></th>
           </tr></thead>
           <tbody>
-            ${pos.map(p => {
+          ${pos.map(p => {
               const cust = getCustomer(p.customerId);
+              const localOnly = !!p._localOnlyBackendStale;
               const stockOk = pickPackStockCheck(p);
               const stockBadge = stockOk.ok
                 ? '<span class="badge badge-prod">Available</span>'
@@ -13809,7 +13855,7 @@ function renderPickPackPOs(el, pos) {
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
-                <td>${stockBadge}</td>
+                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
                       className: 'btn btn-icon btn-sm',
@@ -13821,9 +13867,9 @@ function renderPickPackPOs(el, pos) {
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
-                  <button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>
-                  <button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>
-                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>
+                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited, picked, or cancelled">Backend required</span>' : `<button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>`}
+                  ${localOnly ? '' : `<button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>`}
+                  ${localOnly ? '' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>`}
                 </td>
               </tr>`;
             }).join('')}
@@ -13850,6 +13896,7 @@ function renderPickPackShipping(el, list) {
 function pickPackShippingCardHtml(p) {
   const cust = getCustomer(p.customerId);
   const mode = p.shippingMode || 'pallet';
+  const localOnly = !!p._localOnlyBackendStale;
   return `
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -13857,6 +13904,7 @@ function pickPackShippingCardHtml(p) {
           <h3 style="margin:0">${escapeHtml(p.id)} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'-')} &middot; Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} &middot; Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
+        ${localOnly ? '<span class="badge badge-low">Local only</span>' : ''}
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
@@ -13872,21 +13920,24 @@ function pickPackShippingCardHtml(p) {
         <strong style="color:var(--brown);font-size:13px">Shipping Mode</strong>
         <div style="display:flex;gap:14px;margin-top:6px">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
+            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
+            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
           </label>
         </div>
       </div>
-      <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
-      <div class="form-row" style="margin-top:10px">
-        <label>Notes</label>
-        <textarea id="pp_sh_notes_${p.id}" placeholder="Special handling, delivery instructions, etc.">${escapeHtml(p.notes||'')}</textarea>
-      </div>
+      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local-only row.</strong> This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
+      <fieldset ${localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+        <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
+        <div class="form-row" style="margin-top:10px">
+          <label>Notes</label>
+          <textarea id="pp_sh_notes_${p.id}" placeholder="Special handling, delivery instructions, etc.">${escapeHtml(p.notes||'')}</textarea>
+        </div>
+      </fieldset>
       <div class="form-actions">
-        <button class="btn btn-secondary" onclick="savePickPackShippingForm('${p.id}')">Save</button>
-        <button class="btn" style="background:var(--success)" onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
+        <button class="btn btn-secondary" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be saved to the backend"' : ''} onclick="savePickPackShippingForm('${p.id}')">Save</button>
+        <button class="btn" style="background:var(--success)" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be marked shipped"' : ''} onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
       </div>
     </div>
   `;
@@ -13921,9 +13972,12 @@ function pickPackModeFieldsHtml(p, mode) {
 function togglePickPackMode(id, mode) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
-  p.shippingMode = mode;
-  saveState();
-  document.getElementById('pp_mode_fields_'+id).innerHTML = pickPackModeFieldsHtml(p, mode);
+  const preview = { ...p, shippingMode: mode };
+  if (!employeeBackendSessionActive()) {
+    p.shippingMode = mode;
+    saveState();
+  }
+  document.getElementById('pp_mode_fields_'+id).innerHTML = pickPackModeFieldsHtml(preview, mode);
 }
 
 function renderPickPackShipped(el, list) {
@@ -13940,8 +13994,9 @@ function renderPickPackShipped(el, list) {
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
             const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'-') : (p.bol||'-');
+            const localOnly = !!p._localOnlyBackendStale;
             return `<tr>
-              <td><strong>${escapeHtml(p.id)}</strong></td>
+              <td><strong>${escapeHtml(p.id)}</strong>${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
               <td>${escapeHtml(cust?.name||'')}</td>
               <td><span class="pill">${escapeHtml(p.poNumber||'-')}</span></td>
               <td>${fmtDate(p.shippedAt?.slice(0,10)||'')}</td>
@@ -14229,28 +14284,30 @@ async function markPickPackPicked(id) {
 async function savePickPackShippingForm(id) {
   const p = state.pickPackOrders.find(x => x.id === id);
   if (!p) return;
-  const mode = p.shippingMode || 'pallet';
+  const mode = Array.from(document.getElementsByName(`pp_mode_${id}`)).find(input => input.checked)?.value || p.shippingMode || 'pallet';
+  const shippingPatch = { shippingMode: mode };
   if (mode === 'parcel') {
-    p.parcelCarrier = document.getElementById('pp_carrier_'+id).value;
-    p.trackingNumber = document.getElementById('pp_tracking_'+id).value;
-    p.packageWeight = parseFloat(document.getElementById('pp_pkg_weight_'+id).value) || 0;
+    shippingPatch.parcelCarrier = document.getElementById('pp_carrier_'+id).value;
+    shippingPatch.trackingNumber = document.getElementById('pp_tracking_'+id).value;
+    shippingPatch.packageWeight = parseFloat(document.getElementById('pp_pkg_weight_'+id).value) || 0;
   } else {
-    p.carrier = document.getElementById('pp_lcarrier_'+id).value;
-    p.pallets = parseInt(document.getElementById('pp_pal_'+id).value, 10) || 0;
-    p.weight = parseFloat(document.getElementById('pp_wt_'+id).value) || 0;
-    p.bol = document.getElementById('pp_bol_'+id).value;
-    p.length = parseFloat(document.getElementById('pp_l_'+id).value) || 0;
-    p.width = parseFloat(document.getElementById('pp_w_'+id).value) || 0;
-    p.height = parseFloat(document.getElementById('pp_h_'+id).value) || 0;
+    shippingPatch.carrier = document.getElementById('pp_lcarrier_'+id).value;
+    shippingPatch.pallets = parseInt(document.getElementById('pp_pal_'+id).value, 10) || 0;
+    shippingPatch.weight = parseFloat(document.getElementById('pp_wt_'+id).value) || 0;
+    shippingPatch.bol = document.getElementById('pp_bol_'+id).value;
+    shippingPatch.length = parseFloat(document.getElementById('pp_l_'+id).value) || 0;
+    shippingPatch.width = parseFloat(document.getElementById('pp_w_'+id).value) || 0;
+    shippingPatch.height = parseFloat(document.getElementById('pp_h_'+id).value) || 0;
   }
-  p.notes = document.getElementById('pp_sh_notes_'+id).value;
+  shippingPatch.notes = document.getElementById('pp_sh_notes_'+id).value;
   if (!requireEmployeeBackendWrite(backendPickPackState)) return false;
   if (!p._backendId) {
     failBackendRequiredWrite(null, backendPickPackState, 'This Pick & Pack order is not backend-backed. Nothing was saved locally.');
     return false;
   }
   try {
-    await saveBackendPickPackShippingDetails(p);
+    await saveBackendPickPackShippingDetails({ ...p, ...shippingPatch });
+    Object.assign(p, shippingPatch);
     backendPickPackState.status = 'connected';
     backendPickPackState.lastError = '';
     toast('Shipping info saved to backend.');

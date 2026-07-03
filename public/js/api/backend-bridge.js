@@ -573,7 +573,7 @@ async function attachBackendQualityFiles(queue) {
       po._backendFiles = files || [];
       const coa = (files || []).find(file => file.fileCategory === 'coa') || null;
       if (coa) po.coa = mapBackendFileToPrototype(coa);
-      const postShipmentCoa = (files || []).find(file => file.fileCategory === 'post_shipment_coa') || null;
+      const postShipmentCoa = (files || []).find(file => file.id === po.postShipmentCoaFileId) || null;
       if (postShipmentCoa) po.postShipmentCoa = mapBackendFileToPrototype(postShipmentCoa);
     } catch (error) {
       po._backendFileError = error?.message || 'QA files unavailable';
@@ -671,12 +671,16 @@ async function attachBackendPostShipmentCoa(purchaseOrderId, file) {
   const updated = await apiRequest(`/api/quality/purchase-orders/${encodeURIComponent(purchaseOrderId)}/post-shipment-coa`, {
     method: 'POST',
     body: JSON.stringify({
-      fileId: uploaded?.id || null,
-      postShipmentCoaFileId: uploaded?.id || null,
+      coaFileId: uploaded?.id || null,
       actorUserId: BACKEND_ACTOR_USER_ID
     })
   });
-  mergeBackendPurchaseOrders([updated]);
+  const merged = mergeBackendPurchaseOrders([updated]);
+  const local = merged.find(po => po._backendId === purchaseOrderId) || state.purchaseOrders.find(po => po._backendId === purchaseOrderId);
+  if (local) {
+    local.postShipmentCoaFileId = uploaded?.id || local.postShipmentCoaFileId || '';
+    local.postShipmentCoa = mapBackendFileToPrototype(uploaded);
+  }
   backendQualityState.loaded = false;
   return updated;
 }
@@ -976,7 +980,7 @@ function mergeBackendPickPackOrders(records) {
   const remainingLocal = (state.pickPackOrders || []).filter(order => {
     const keys = [order._backendId, order.id, order.poNumber].filter(Boolean).map(String);
     return !keys.some(key => backendKeys.has(key));
-  });
+  }).map(order => employeeBackendSessionActive() ? { ...order, _localOnlyBackendStale: true } : order);
   state.pickPackOrders = [...mapped, ...remainingLocal];
   backendPickPackState.orders = mapped;
   try { saveState(); } catch (err) {}
@@ -2218,7 +2222,9 @@ function mergeBackendPurchaseOrders(records) {
   const backendIds = new Set(backendPos.map(po => po._backendId));
   state.purchaseOrders = [
     ...backendPos,
-    ...state.purchaseOrders.filter(po => !po._backendId || !backendIds.has(po._backendId))
+    ...state.purchaseOrders
+      .filter(po => !po._backendId || !backendIds.has(po._backendId))
+      .map(po => employeeBackendSessionActive() && !po._backendId ? { ...po, _localOnlyBackendStale: true } : po)
   ];
   try { saveState(); } catch (err) {}
   return backendPos;

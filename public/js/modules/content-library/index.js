@@ -153,35 +153,43 @@ async function libDrop(e, targetFolderId) {
   e.stopPropagation();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
-  if (libDragPayload.kind === 'file') {
-    const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: targetFolderId }, { recordId: f._backendId || f.id });
-    toast('File moved.');
-  } else if (libDragPayload.kind === 'folder') {
-    if (libDragPayload.id === targetFolderId) return;
-    const desc = libDescendantFolderIds(libDragPayload.id);
-    if (desc.has(targetFolderId)) { toast("Can't move a folder into itself."); return; }
-    const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: targetFolderId }, { recordId: f._backendId || f.id });
-    toast('Folder moved.');
+  try {
+    if (libDragPayload.kind === 'file') {
+      const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: targetFolderId }, { recordId: f._backendId || f.id });
+      toast('File moved.');
+    } else if (libDragPayload.kind === 'folder') {
+      if (libDragPayload.id === targetFolderId) return;
+      const desc = libDescendantFolderIds(libDragPayload.id);
+      if (desc.has(targetFolderId)) { toast("Can't move a folder into itself."); return; }
+      const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: targetFolderId }, { recordId: f._backendId || f.id });
+      toast('Folder moved.');
+    }
+    libDragPayload = null;
+    router('content-library');
+  } catch (err) {
+    toast(err.message || 'Content Library item could not be moved.');
   }
-  libDragPayload = null;
-  router('content-library');
 }
 async function libDropOnRoot(e) {
   e.preventDefault();
   e.currentTarget.style.background = '';
   if (!libDragPayload) return;
-  if (libDragPayload.kind === 'file') {
-    const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }, { recordId: f._backendId || f.id });
-  } else if (libDragPayload.kind === 'folder') {
-    const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
-    if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: null }, { recordId: f._backendId || f.id });
+  try {
+    if (libDragPayload.kind === 'file') {
+      const f = state.libraryFiles.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }, { recordId: f._backendId || f.id });
+    } else if (libDragPayload.kind === 'folder') {
+      const f = state.libraryFolders.find(x => x.id === libDragPayload.id);
+      if (f) await saveA10DataRecord('contentLibrary', 'folder', { ...f, parentId: null }, { recordId: f._backendId || f.id });
+    }
+    libDragPayload = null;
+    router('content-library');
+    toast('Moved to root.');
+  } catch (err) {
+    toast(err.message || 'Content Library item could not be moved.');
   }
-  libDragPayload = null;
-  router('content-library');
-  toast('Moved to root.');
 }
 function fileIcon(type, name) {
   const ext = (name.split('.').pop() || '').toLowerCase();

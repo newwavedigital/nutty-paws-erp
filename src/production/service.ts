@@ -249,6 +249,7 @@ export async function finalizeProductionRun(
   const po = await requirePurchaseOrder(store, run.purchaseOrderId);
   const runLines = buildRunLines(run, po, input.lines);
   const materials = await buildRunMaterials(store, run, po, runLines, input.materialActuals);
+  await assertFinishedGoodInventoryReady(store, runLines);
 
   await reverseExistingEffects(store, run.id, input.actorUserId);
   await store.replaceRunLines(run.id, runLines);
@@ -505,7 +506,12 @@ async function applyFinishedGoodEffects(
     const bom = await store.listProductBomItems(line.productId);
     if (!bom.some((item) => item.productIsOwnBrand)) continue;
     const inventoryItem = await store.findFinishedGoodInventoryItem(line.productId);
-    if (!inventoryItem) continue;
+    if (!inventoryItem) {
+      throw new ProductionError(
+        "FINISHED_GOOD_INVENTORY_NOT_FOUND",
+        "Finished-good inventory item is required before finalizing own-brand production",
+      );
+    }
     const quantityDelta = line.quantityProduced;
     await store.adjustInventory({
       inventoryItemId: inventoryItem.id,
@@ -530,6 +536,23 @@ async function applyFinishedGoodEffects(
       productionDate: run.productionDate,
       quantityProduced: line.quantityProduced,
     });
+  }
+}
+
+async function assertFinishedGoodInventoryReady(store: ProductionStore, lines: ProductionRunLineRecord[]) {
+  const checked = new Set<string>();
+  for (const line of lines) {
+    if (!line.productId || checked.has(line.productId)) continue;
+    checked.add(line.productId);
+    const bom = await store.listProductBomItems(line.productId);
+    if (!bom.some((item) => item.productIsOwnBrand)) continue;
+    const inventoryItem = await store.findFinishedGoodInventoryItem(line.productId);
+    if (!inventoryItem) {
+      throw new ProductionError(
+        "FINISHED_GOOD_INVENTORY_NOT_FOUND",
+        "Finished-good inventory item is required before finalizing own-brand production",
+      );
+    }
   }
 }
 
@@ -581,7 +604,8 @@ function productionStatusFor(code: string) {
   if (
     code === "INVALID_PRODUCTION_STATUS" ||
     code === "PRODUCTION_ALREADY_FINALIZED" ||
-    code === "PRODUCTION_NOT_FINALIZED"
+    code === "PRODUCTION_NOT_FINALIZED" ||
+    code === "FINISHED_GOOD_INVENTORY_NOT_FOUND"
   ) return 409;
   return 400;
 }

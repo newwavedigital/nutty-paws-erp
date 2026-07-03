@@ -124,6 +124,7 @@ export type InventoryReservationRecord = {
 };
 
 export type InventoryMovementInput = {
+  id?: string;
   inventoryItemId: string;
   movementType: "received" | "adjusted" | "reserved" | "released" | "consumed";
   quantityDelta: number;
@@ -182,6 +183,7 @@ export type InventoryStore = {
   getActiveReservation(id: string): Promise<InventoryReservationRecord | null>;
   releaseReservationRecord(id: string): Promise<boolean>;
   releaseInventoryItemAllocation(id: string, quantity: number): Promise<boolean>;
+  deleteMovement?(id: string): Promise<boolean>;
   listInventoryItems?(): Promise<InventoryItemSetupRecord[]>;
   createInventoryItem?(input: InventoryItemInput): Promise<InventoryItemSetupRecord>;
   updateInventoryItem?(id: string, input: InventoryItemInput): Promise<InventoryItemSetupRecord | null>;
@@ -604,33 +606,51 @@ export async function reserveInventory(
   }
 
   const reservationId = `reservation_${crypto.randomUUID()}`;
+  const movementId = `movement_${crypto.randomUUID()}`;
+  let reservationCreated = false;
+  let movementCreated = false;
 
-  await store.createReservation({
-    id: reservationId,
-    inventoryItemId: input.inventoryItemId,
-    purchaseOrderLineId: input.purchaseOrderLineId,
-    quantity: input.quantity,
-    actorUserId: input.actorUserId,
-  });
-  await store.createMovement({
-    inventoryItemId: input.inventoryItemId,
-    movementType: "reserved",
-    quantityDelta: input.quantity,
-    referenceType: "inventory_reservation",
-    referenceId: reservationId,
-    actorUserId: input.actorUserId,
-  });
-  await store.createAuditEvent({
-    actorUserId: input.actorUserId,
-    entityType: "inventory_reservation",
-    entityId: reservationId,
-    action: "inventory.reserved",
-    metadata: {
+  try {
+    await store.createReservation({
+      id: reservationId,
       inventoryItemId: input.inventoryItemId,
       purchaseOrderLineId: input.purchaseOrderLineId,
       quantity: input.quantity,
-    },
-  });
+      actorUserId: input.actorUserId,
+    });
+    reservationCreated = true;
+    await store.createMovement({
+      id: movementId,
+      inventoryItemId: input.inventoryItemId,
+      movementType: "reserved",
+      quantityDelta: input.quantity,
+      referenceType: "inventory_reservation",
+      referenceId: reservationId,
+      actorUserId: input.actorUserId,
+    });
+    movementCreated = true;
+    await store.createAuditEvent({
+      actorUserId: input.actorUserId,
+      entityType: "inventory_reservation",
+      entityId: reservationId,
+      action: "inventory.reserved",
+      metadata: {
+        inventoryItemId: input.inventoryItemId,
+        purchaseOrderLineId: input.purchaseOrderLineId,
+        quantity: input.quantity,
+      },
+    });
+  } catch (error) {
+    await rollbackReservationSetup(store, {
+      reservationId,
+      movementId,
+      inventoryItemId: input.inventoryItemId,
+      quantity: input.quantity,
+      reservationCreated,
+      movementCreated,
+    });
+    throw error;
+  }
 
   return {
     reservationId,
@@ -639,6 +659,28 @@ export async function reserveInventory(
     quantity: input.quantity,
     status: "active" as const,
   };
+}
+
+async function rollbackReservationSetup(
+  store: InventoryStore,
+  input: {
+    reservationId: string;
+    movementId: string;
+    inventoryItemId: string;
+    quantity: number;
+    reservationCreated: boolean;
+    movementCreated: boolean;
+  },
+) {
+  const rollbackTasks: Promise<unknown>[] = [];
+  if (input.movementCreated && store.deleteMovement) {
+    rollbackTasks.push(store.deleteMovement(input.movementId));
+  }
+  if (input.reservationCreated) {
+    rollbackTasks.push(store.releaseReservationRecord(input.reservationId));
+  }
+  rollbackTasks.push(store.releaseInventoryItemAllocation(input.inventoryItemId, input.quantity));
+  await Promise.allSettled(rollbackTasks);
 }
 
 export async function releaseInventoryReservation(
@@ -664,6 +706,7 @@ export async function releaseInventoryReservation(
     throw new InventoryError("RESERVATION_RELEASE_FAILED", "Reservation could not be released");
   }
   await store.createMovement({
+    id: `movement_${crypto.randomUUID()}`,
     inventoryItemId: reservation.inventoryItemId,
     movementType: "released",
     quantityDelta: -reservation.quantity,
