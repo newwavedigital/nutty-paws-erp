@@ -1700,7 +1700,7 @@ async function persistQualitySkip(poId) {
 async function persistQualityPostShipmentCoa(poId, file) {
   if (!file) return;
   const po = state.purchaseOrders.find(x => x.id === poId);
-  if (!qualityBackendIsConnected() || !po?._backendId) {
+  if (!employeeBackendSessionActive() || !po?._backendId) {
     failBackendRequiredWrite(null, backendQualityState, 'Post-shipment COA uploads require backend confirmation. Nothing was saved locally.');
     return false;
   }
