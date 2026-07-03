@@ -201,7 +201,13 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
   const token = await ensureAdmin(request);
   const authHeaders = { authorization: `Bearer ${token}` };
   const suffix = Date.now().toString(36);
-  const po = await seedShippingPurchaseOrder(request, authHeaders, suffix);
+  const po = process.env.STAGE2_E2E_EXISTING_PO_ID && process.env.STAGE2_E2E_EXISTING_PO_NUMBER
+    ? {
+        id: process.env.STAGE2_E2E_EXISTING_PO_ID,
+        poNumber: process.env.STAGE2_E2E_EXISTING_PO_NUMBER,
+        lines: [],
+      }
+    : await seedShippingPurchaseOrder(request, authHeaders, suffix);
   const olderShipmentDocument = await uploadPurchaseOrderFile(
     request,
     authHeaders,
