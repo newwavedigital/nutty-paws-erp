@@ -572,9 +572,11 @@ async function attachBackendQualityFiles(queue) {
       const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
       po._backendFiles = files || [];
       const coa = (files || []).find(file => file.fileCategory === 'coa') || null;
-      if (coa) po.coa = mapBackendFileToPrototype(coa);
-      const postShipmentCoa = (files || []).find(file => file.id === po.postShipmentCoaFileId) || null;
-      if (postShipmentCoa) po.postShipmentCoa = mapBackendFileToPrototype(postShipmentCoa);
+      po.coa = coa ? mapBackendFileToPrototype(coa) : null;
+      const postShipmentCoa = po.postShipmentCoaFileId
+        ? (files || []).find(file => file.id === po.postShipmentCoaFileId && file.fileCategory === 'coa') || null
+        : null;
+      po.postShipmentCoa = postShipmentCoa ? mapBackendFileToPrototype(postShipmentCoa) : null;
     } catch (error) {
       po._backendFileError = error?.message || 'QA files unavailable';
     }
@@ -587,7 +589,9 @@ async function loadBackendQualityQueue() {
   try {
     const records = await apiRequest('/api/quality/queue');
     const queue = mergeBackendQualityQueue(records || []);
-    await attachBackendQualityFiles(queue);
+    await attachBackendQualityFiles(state.purchaseOrders.filter(po =>
+      po.status === 'qa_review' || po.status === 'shipping' || po.status === 'completed'
+    ));
     backendQualityState.status = 'connected';
     backendQualityState.lastError = '';
     backendQualityState.loaded = true;
@@ -758,11 +762,17 @@ async function attachBackendShipmentDocuments(queue) {
     try {
       const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
       po._backendFiles = files || [];
-      const shipmentDocument = (files || []).find(file => file.fileCategory === 'shipment_document') || null;
+      const savedFileId = shippingShipmentDocumentFileId(po);
+      const shipmentDocument = savedFileId
+        ? (files || []).find(file => file.id === savedFileId && file.fileCategory === 'shipment_document') || null
+        : null;
+      po.shipping = po.shipping || {};
       if (shipmentDocument) {
-        po.shipping = po.shipping || {};
         po.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
         po.shipping.shipmentDocumentFileId = shipmentDocument.id;
+      } else {
+        po.shipping.documents = null;
+        po.shipping.shipmentDocumentFileId = '';
       }
     } catch (error) {
       po._backendFileError = error?.message || 'Shipment documents unavailable';
@@ -2243,7 +2253,8 @@ function mapBackendPurchaseOrderToPrototype(po) {
     freightClass: shippingDetails.freightClass || existing.shipping?.freightClass || '',
     notes: shippingDetails.notes || po.shippingNotes || existing.shipping?.notes || '',
     palletList: shippingPalletList.length ? shippingPalletList : existing.shipping?.palletList,
-    shipmentDocumentFileId: po.shipmentDocumentFileId || shippingDetails.shipmentDocumentFileId || existing.shipping?.shipmentDocumentFileId || ''
+    documents: null,
+    shipmentDocumentFileId: po.shipmentDocumentFileId || shippingDetails.shipmentDocumentFileId || ''
   };
   const prototypeStatus = backendStatus === 'approved_for_production'
     ? 'approved_for_production'
@@ -2295,7 +2306,8 @@ function mapBackendPurchaseOrderToPrototype(po) {
     qaSkippedAt: po.qaSkippedAt || existing?.qaSkippedAt || '',
     qaSkippedByUserId: po.qaSkippedByUserId || existing?.qaSkippedByUserId || '',
     qaSkipReason: po.qaSkipReason || existing?.qaSkipReason || '',
-    postShipmentCoaFileId: po.postShipmentCoaFileId || existing?.postShipmentCoaFileId || '',
+    postShipmentCoa: null,
+    postShipmentCoaFileId: po.postShipmentCoaFileId || '',
     shipping: backendShipping,
     shippedAt: po.shippedAt || existing?.shippedAt || '',
     stockedAt: po.stockedAt || existing?.stockedAt || ''

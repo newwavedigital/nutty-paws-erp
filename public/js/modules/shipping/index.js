@@ -368,6 +368,7 @@ async function saveShipping(id) {
     backendShippingState.status = 'connected';
     backendShippingState.lastError = '';
     saveState();
+    router('shipping');
     toast(`Shipping info saved to backend for ${id}.`);
     return;
   } catch (error) {

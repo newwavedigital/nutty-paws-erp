@@ -136,7 +136,9 @@ async function qualityCoaFileSelected(e, poId) {
     if (qualityBackendIsConnected() && qualityPurchaseOrderBackendId(po)) {
       await uploadBackendQualityCoa(qualityPurchaseOrderBackendId(po), file);
       const files = await loadBackendPurchaseOrderFiles(qualityPurchaseOrderBackendId(po));
-      po.coa = mapBackendFileToPrototype((files || []).find(item => item.fileCategory === 'coa') || files?.[0] || null);
+      const coa = (files || []).find(item => item.fileCategory === 'coa') || null;
+      if (!coa) throw new Error('Uploaded COA could not be confirmed from backend file metadata.');
+      po.coa = mapBackendFileToPrototype(coa);
       backendQualityState.loaded = false;
     } else {
       failBackendRequiredWrite(null, backendQualityState, 'QA COA uploads require backend confirmation. Nothing was saved locally.');
