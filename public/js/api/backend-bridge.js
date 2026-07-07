@@ -431,13 +431,44 @@ function renderInlineFieldError(id, message = '') {
   return `<div class="field-error" id="${escapeAttr(id)}">${escapeHtml(message)}</div>`;
 }
 
+function inventoryDisplayNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function inventoryOnHandQuantity(item) {
+  return inventoryDisplayNumber(item?.stock ?? item?.onHandQuantity);
+}
+
+function inventoryAllocatedQuantity(item) {
+  return inventoryDisplayNumber(item?.allocatedQuantity);
+}
+
+function inventoryNetAvailableQuantity(item) {
+  const explicit = Number(item?.netAvailableQuantity);
+  if (Number.isFinite(explicit)) return explicit;
+  return inventoryOnHandQuantity(item) - inventoryAllocatedQuantity(item);
+}
+
+function inventoryReorderPointQuantity(item) {
+  return inventoryDisplayNumber(item?.reorderLevel ?? item?.reorderPointQuantity);
+}
+
+function inventoryLowStockRowsForDisplay() {
+  const signals = backendInventoryState.signals;
+  if (signals && Array.isArray(signals.items)) return signals.items.filter(item => item.lowStock);
+  if (!!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected') return [];
+  return state.ingredients.filter(item => inventoryNetAvailableQuantity(item) <= inventoryReorderPointQuantity(item));
+}
+
 function inventorySummaryHtml() {
   const signals = backendInventoryState.signals;
-  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected';
+  const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !signals && backendInventoryState.status !== 'connected';
   const conflicts = protectedInventoryUnavailable ? [] : inventoryConflicts();
-  const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => (i.stock || 0) <= (i.reorderLevel || 0)).length;
+  const lowStockRows = protectedInventoryUnavailable ? [] : inventoryLowStockRowsForDisplay();
+  const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : lowStockRows.length;
   const over = signals && !protectedInventoryUnavailable ? signals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
-  const netIssues = protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => ((i.stock || 0) - ((supplyChainDemand()[i.id] || 0) + (allocatedInventory()[i.id] || 0))) <= (i.reorderLevel || 0)).length;
+  const netIssues = protectedInventoryUnavailable ? 0 : lowStockRows.length;
   const today = new Date().toISOString().slice(0,10);
   const receiptsToday = protectedInventoryUnavailable ? 0 : (state.receivingLog || []).filter(r => r.date === today).length;
   const movesToday = protectedInventoryUnavailable ? 0 : (state.moveLog || []).filter(m => m.date === today).length;

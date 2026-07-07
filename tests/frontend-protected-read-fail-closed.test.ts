@@ -82,10 +82,15 @@ describe("protected frontend reads fail closed", () => {
   });
 
   test("blocks inventory low-stock fallback from browser-local ingredients after backend error", () => {
-    expect(publicApp).toContain("const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status !== 'connected';");
-    expect(publicApp).toContain("const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter");
+    expect(publicApp).toContain("function inventoryLowStockRowsForDisplay");
+    expect(publicApp).toContain("return state.ingredients.filter(item => inventoryNetAvailableQuantity(item) <= inventoryReorderPointQuantity(item));");
+    expect(publicApp).toContain("const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !signals && backendInventoryState.status !== 'connected';");
+    expect(publicApp).toContain("const low = signals && !protectedInventoryUnavailable ? signals.lowStockCount : lowStockRows.length;");
+    expect(publicApp).toContain("const netIssues = protectedInventoryUnavailable ? 0 : lowStockRows.length;");
     expect(publicApp).toContain("const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';");
-    expect(publicApp).toContain("const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter");
+    expect(publicApp).toContain("const lowStockRows = protectedInventoryUnavailable ? [] : inventoryLowStockRowsForDisplay();");
+    expect(publicApp).toContain("const lowStock = backendSignals ? backendSignals.lowStockCount : lowStockRows.length;");
+    expect(publicApp).toContain("Net below reorder");
     expect(publicApp).toContain("Open Inventory after backend records load to view item details.");
     expect(publicApp).toContain("clearProtectedBackendRows('inventory');");
     expect(publicApp).toContain("setBackendReadFailed(backendInventoryState);");

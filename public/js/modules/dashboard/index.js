@@ -26,7 +26,8 @@ function renderDashboard(el) {
   const protectedInventoryError = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && backendInventoryState.status === 'error';
   const protectedInventoryUnavailable = !!backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendSignals && backendInventoryState.status !== 'connected';
   const inventoryRowsReady = !backendAuthState.token || backendAuthState.user?.userType === 'customer' || backendInventoryState.status === 'connected';
-  const lowStock = backendSignals ? backendSignals.lowStockCount : protectedInventoryUnavailable ? 0 : state.ingredients.filter(i => i.stock <= i.reorderLevel).length;
+  const lowStockRows = protectedInventoryUnavailable ? [] : inventoryLowStockRowsForDisplay();
+  const lowStock = backendSignals ? backendSignals.lowStockCount : lowStockRows.length;
   const qaBlocked = pos.filter(p => p.status === 'qa_review' && !p.coa).length;
   const shipmentDocsMissing = pos.filter(p => p.status === 'shipping' && !p.shipping?.documents && !isInternalBrand(p)).length;
 
@@ -151,19 +152,34 @@ function renderDashboard(el) {
       </div>
       ${lowStock === 0
         ? `<div class="empty">${protectedInventoryError || protectedInventoryUnavailable ? BACKEND_READ_FAILED_MESSAGE : 'All ingredients are above reorder levels.'}</div>`
-        : !inventoryRowsReady
+        : lowStockRows.length === 0
           ? `<div class="empty">Backend inventory signals report ${lowStock} low stock item${lowStock===1?'':'s'}. Open Inventory after backend records load to view item details.</div>`
         : `<div class="table-wrap"><table>
-            <thead><tr><th>Ingredient</th><th>On Hand</th><th>Reorder At</th><th>Supplier</th></tr></thead>
+            <thead><tr><th>Item</th><th>On Hand</th><th>Allocated</th><th>Net Available</th><th>Reorder At</th><th>Reason</th></tr></thead>
             <tbody>
-            ${state.ingredients.filter(i=>i.stock<=i.reorderLevel).map(i => `
+            ${lowStockRows.map(i => {
+              const localItem = state.ingredients.find(row => row.id === i.id || row._backendId === i.id) || {};
+              const name = i.name || i.masterItemName || localItem.name || i.masterItemId || i.id;
+              const unit = i.unit || i.unitOfMeasure || localItem.unit || '';
+              const onHand = inventoryOnHandQuantity(i);
+              const allocated = inventoryAllocatedQuantity(i);
+              const netAvailable = inventoryNetAvailableQuantity(i);
+              const reorder = inventoryReorderPointQuantity(i);
+              const reason = netAvailable < 0
+                ? 'Over-allocated'
+                : onHand > reorder
+                  ? 'Net below reorder'
+                  : 'Low';
+              return `
               <tr>
-                <td>${escapeHtml(i.name)} <span class="badge badge-low">Low</span></td>
-                <td>${i.stock} ${escapeHtml(i.unit)}</td>
-                <td>${i.reorderLevel} ${escapeHtml(i.unit)}</td>
-                <td>${escapeHtml(getSupplier(i.supplierId)?.name || '-')}</td>
-              </tr>
-            `).join('')}
+                <td>${escapeHtml(name)} <span class="badge badge-low">${escapeHtml(reason)}</span></td>
+                <td>${onHand} ${escapeHtml(unit)}</td>
+                <td>${allocated || '-'}${allocated ? ' ' + escapeHtml(unit) : ''}</td>
+                <td><strong>${netAvailable} ${escapeHtml(unit)}</strong></td>
+                <td>${reorder} ${escapeHtml(unit)}</td>
+                <td>${escapeHtml(reason)}</td>
+              </tr>`;
+            }).join('')}
             </tbody>
           </table></div>`
       }
