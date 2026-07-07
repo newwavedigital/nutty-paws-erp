@@ -98,7 +98,18 @@ const DEFAULT_CACHE_TTLS = {
 
 const workingStore = createWorkingStore(loadState());
 let state = workingStore.data;
-const backendApiState = { status: 'unknown', lastError: '', loadedPurchaseOrders: false, loadingPurchaseOrders: false };
+const backendApiState = {
+  status: 'unknown',
+  lastError: '',
+  loadedPurchaseOrders: false,
+  loadingPurchaseOrders: false,
+  purchaseOrdersError: '',
+  hydratingPurchaseOrderFiles: false,
+  purchaseOrderFilesHydrated: false,
+  purchaseOrderLoadPromise: null,
+  purchaseOrderFileHydrationPromise: null,
+  purchaseOrderLoadRequestId: 0
+};
 const AUTH_STORAGE_KEY = `${STORAGE_KEY}_auth`;
 const backendUserState = { status: 'local', lastError: '', loadingUsers: false };
 const backendCustomerState = { status: 'local', lastError: '', loading: false, loaded: false };
@@ -404,6 +415,16 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
+  backendApiState.status = 'unknown';
+  backendApiState.lastError = '';
+  backendApiState.loadedPurchaseOrders = false;
+  backendApiState.loadingPurchaseOrders = false;
+  backendApiState.purchaseOrdersError = '';
+  backendApiState.hydratingPurchaseOrderFiles = false;
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.purchaseOrderLoadPromise = null;
+  backendApiState.purchaseOrderFileHydrationPromise = null;
+  backendApiState.purchaseOrderLoadRequestId++;
   [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState, backendPickPackState, backendResearchState].forEach(s => {
     s.status = 'local';
     s.lastError = '';
@@ -740,6 +761,7 @@ hydrateA10DataRecordCaches();
 function markBackendUnavailable(error) {
   backendApiState.status = 'error';
   backendApiState.lastError = BACKEND_READ_FAILED_MESSAGE;
+  backendApiState.purchaseOrdersError = error?.message || BACKEND_READ_FAILED_MESSAGE;
 }
 
 function failBackendRequiredWrite(error, stateRef = null, fallbackMessage = 'Backend save failed. Nothing was saved locally.') {
@@ -828,17 +850,22 @@ function clearProtectedBackendRows(area) {
 }
 
 function renderBackendStatusBanner(context = 'purchase-orders') {
-  const connected = backendApiState.status === 'connected';
+  const connected = backendApiState.status === 'connected' && backendApiState.loadedPurchaseOrders;
   const loading = backendApiState.loadingPurchaseOrders;
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
   const authWaiting = backendApiState.lastError === 'Authentication is required';
   return renderDataStateBanner({
     kind: context,
     state: connected ? 'connected' : loading ? 'loading' : authWaiting ? 'auth' : backendApiState.status === 'error' ? 'error' : 'auth',
     detail: connected
       ? 'This screen is reading protected backend records when available.'
+      : loading
+        ? 'Loading protected purchase order records. Counts and empty states will appear after the backend responds.'
       : authWaiting
         ? 'Sign in from Account Management to connect this screen to protected backend data.'
-        : backendApiState.lastError || 'Sign in to load protected backend records.'
+        : signedIn
+          ? (backendApiState.purchaseOrdersError || backendApiState.lastError || 'Purchase order records are unavailable right now.')
+          : backendApiState.lastError || 'Sign in to load protected backend records.'
   });
 }
 
@@ -867,6 +894,7 @@ function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' }
     loading: ['Checking backend...', '', 'var(--orange)'],
     auth: ['Sign in required', '', 'var(--orange)'],
     error: ['Backend unavailable', 'bad', 'var(--danger)'],
+    restricted: ['Restricted', '', 'var(--orange)'],
     local: ['Sign in required', '', 'var(--orange)']
   }[state] || ['Sign in required', '', 'var(--orange)'];
   return `<div class="inv-check ${config[1]}" data-backend-status="${escapeAttr(kind)}" style="border-left-color:${config[2]}">
@@ -1013,10 +1041,24 @@ function renderBackendProductionBanner() {
 function renderBackendQualityBanner() {
   const connected = backendQualityState.status === 'connected';
   if (connected) return '';
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const restricted = signedIn && backendAuthState.user?.userType === 'customer';
   const loading = backendQualityState.loading;
   const error = backendQualityState.status === 'error';
-  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
-  const detail = backendQualityState.lastError || 'Sign in to load protected QA records.';
+  const title = restricted
+    ? 'Restricted'
+    : error
+      ? 'Backend unavailable'
+      : loading || signedIn
+        ? 'Loading backend records'
+        : 'Sign in required';
+  const detail = restricted
+    ? 'QA records are restricted to employee roles.'
+    : error
+      ? (backendQualityState.lastError || 'Backend QA records are unavailable right now.')
+      : signedIn
+        ? 'Loading protected QA records. Visible rows may update after the backend responds.'
+        : 'Sign in to load protected QA records.';
   return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="quality" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
@@ -1026,10 +1068,24 @@ function renderBackendQualityBanner() {
 function renderBackendShippingBanner() {
   const connected = backendShippingState.status === 'connected';
   if (connected) return '';
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const restricted = signedIn && backendAuthState.user?.userType === 'customer';
   const loading = backendShippingState.loading;
   const error = backendShippingState.status === 'error';
-  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
-  const detail = backendShippingState.lastError || 'Sign in to load protected shipping records.';
+  const title = restricted
+    ? 'Restricted'
+    : error
+      ? 'Backend unavailable'
+      : loading || signedIn
+        ? 'Loading backend records'
+        : 'Sign in required';
+  const detail = restricted
+    ? 'Shipping records are restricted to employee roles.'
+    : error
+      ? (backendShippingState.lastError || 'Backend shipping records are unavailable right now.')
+      : signedIn
+        ? 'Loading protected shipping records. Visible rows may update after the backend responds.'
+        : 'Sign in to load protected shipping records.';
   return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="shipping" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
@@ -2884,13 +2940,149 @@ async function attachBackendFilesToPurchaseOrder(localPo) {
 }
 
 async function hydrateBackendPurchaseOrderFiles(localPos) {
-  for (const po of localPos || []) {
-    try {
-      await attachBackendFilesToPurchaseOrder(po);
-    } catch (error) {
-      po._backendFileError = error?.message || 'PO files unavailable';
+  backendApiState.hydratingPurchaseOrderFiles = true;
+  backendApiState.purchaseOrderFilesHydrated = false;
+  const queue = [...(localPos || [])];
+  const workers = Array.from({ length: Math.min(6, Math.max(queue.length, 1)) }, async () => {
+    while (queue.length) {
+      const po = queue.shift();
+      if (!po) continue;
+      try {
+        await attachBackendFilesToPurchaseOrder(po);
+      } catch (error) {
+        po._backendFileError = error?.message || 'PO files unavailable';
+      }
+    }
+  });
+  try {
+    await Promise.all(workers);
+    backendApiState.purchaseOrderFilesHydrated = true;
+  } finally {
+    backendApiState.hydratingPurchaseOrderFiles = false;
+  }
+}
+
+function rerenderPurchaseOrderConsumers() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  if (currentPage === 'dashboard') renderDashboard(content);
+  if (currentPage === 'purchase-orders') renderPurchaseOrders(content);
+  if (currentPage === 'supply-chain') renderSupplyChain(content);
+  if (currentPage === 'customer-portal') renderSignedInCustomerPortalPage(content);
+  if (currentPage === 'profile-settings') renderProfileSettings(content);
+}
+
+function beginBackendPurchaseOrderFileHydration(backendPos, requestId) {
+  if (!backendPos?.length) {
+    backendApiState.purchaseOrderFilesHydrated = true;
+    backendApiState.hydratingPurchaseOrderFiles = false;
+    return Promise.resolve([]);
+  }
+  const hydration = hydrateBackendPurchaseOrderFiles(backendPos)
+    .then(() => {
+      if (requestId !== backendApiState.purchaseOrderLoadRequestId) return backendPos;
+      try { saveState(); } catch (err) {}
+      rerenderPurchaseOrderConsumers();
+      return backendPos;
+    })
+    .catch(error => {
+      if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+        backendApiState.purchaseOrdersError = error?.message || 'PO files unavailable';
+        rerenderPurchaseOrderConsumers();
+      }
+      return backendPos;
+    });
+  backendApiState.purchaseOrderFileHydrationPromise = hydration;
+  return hydration;
+}
+
+async function loadBackendPurchaseOrderRecords(requestId) {
+  backendApiState.loadingPurchaseOrders = true;
+  backendApiState.purchaseOrdersError = '';
+  backendApiState.lastError = '';
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.hydratingPurchaseOrderFiles = false;
+  try {
+    const records = await apiRequest('/api/purchase-orders');
+    if (requestId !== backendApiState.purchaseOrderLoadRequestId) return state.purchaseOrders;
+    const backendPos = mergeBackendPurchaseOrders(records);
+    backendApiState.loadedPurchaseOrders = true;
+    backendApiState.loadingPurchaseOrders = false;
+    backendApiState.status = 'connected';
+    backendApiState.lastError = '';
+    rerenderPurchaseOrderConsumers();
+    beginBackendPurchaseOrderFileHydration(backendPos, requestId);
+    return backendPos;
+  } catch (error) {
+    if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+      markBackendUnavailable(error);
+      clearProtectedBackendRows('purchase-orders');
+      backendApiState.loadedPurchaseOrders = false;
+      backendApiState.loadingPurchaseOrders = false;
+      rerenderPurchaseOrderConsumers();
+    }
+    throw error;
+  } finally {
+    if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+      backendApiState.loadingPurchaseOrders = false;
+      backendApiState.purchaseOrderLoadPromise = null;
     }
   }
+}
+
+function purchaseOrdersReadyForEmptyState() {
+  return !backendAuthState.token || backendApiState.loadedPurchaseOrders;
+}
+
+function purchaseOrdersLoadingForDisplay() {
+  return !!backendAuthState.token && backendApiState.loadingPurchaseOrders && !backendApiState.loadedPurchaseOrders;
+}
+
+function purchaseOrdersUnavailableForDisplay() {
+  return !!backendAuthState.token && backendApiState.status === 'error' && !backendApiState.loadedPurchaseOrders;
+}
+
+function customerPurchaseOrders(customerId) {
+  return (state.purchaseOrders || []).filter(p => p.customerId === customerId);
+}
+
+function isCompletedPurchaseOrder(po) {
+  return po?.status === 'completed';
+}
+
+function isOpenPurchaseOrder(po) {
+  return !isCompletedPurchaseOrder(po);
+}
+
+async function bootstrapSharedAppData() {
+  if (!backendAuthState.token) return;
+  const loaders = [ensureBackendPurchaseOrdersLoaded()];
+  if (backendAuthState.user?.userType === 'customer') {
+    try {
+      loaders.push(loadBackendCustomerProfile());
+    } catch (error) {
+      // Keep bootstrap resilient; page renderers show per-dataset failures.
+    }
+  } else {
+    loaders.push(loadBackendCustomers());
+  }
+  loaders.push(loadBackendProducts());
+  await Promise.allSettled(loaders);
+}
+
+function startSharedAppDataBootstrap() {
+  bootstrapSharedAppData().then(() => {
+    if (currentPage === 'dashboard') router('dashboard');
+  }).catch(() => {});
+}
+
+async function ensureBackendPurchaseOrdersLoaded() {
+  if (!backendAuthState.token) return [];
+  if (backendApiState.loadedPurchaseOrders) return state.purchaseOrders;
+  if (backendApiState.purchaseOrderLoadPromise) return backendApiState.purchaseOrderLoadPromise;
+  const requestId = ++backendApiState.purchaseOrderLoadRequestId;
+  backendApiState.purchaseOrderLoadPromise = loadBackendPurchaseOrderRecords(requestId);
+  return backendApiState.purchaseOrderLoadPromise;
 }
 
 function mapBackendFileToPrototype(file) {
@@ -2996,30 +3188,13 @@ async function handleBackendFileAction(button) {
   }
 }
 
-async function ensureBackendPurchaseOrdersLoaded() {
-  if (backendApiState.loadedPurchaseOrders || backendApiState.loadingPurchaseOrders) return;
-  backendApiState.loadingPurchaseOrders = true;
-  try {
-    const records = await apiRequest('/api/purchase-orders');
-    const backendPos = mergeBackendPurchaseOrders(records);
-    await hydrateBackendPurchaseOrderFiles(backendPos);
-    backendApiState.loadedPurchaseOrders = true;
-    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
-    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
-  } catch (error) {
-    markBackendUnavailable(error);
-    clearProtectedBackendRows('purchase-orders');
-    backendApiState.loadedPurchaseOrders = true;
-  } finally {
-    backendApiState.loadingPurchaseOrders = false;
-    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
-    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
-  }
-}
-
 async function refreshBackendPurchaseOrders() {
+  backendApiState.purchaseOrderLoadRequestId++;
   backendApiState.loadedPurchaseOrders = false;
-  await ensureBackendPurchaseOrdersLoaded();
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.purchaseOrderLoadPromise = null;
+  backendApiState.purchaseOrderFileHydrationPromise = null;
+  return ensureBackendPurchaseOrdersLoaded();
 }
 
 async function createBackendPurchaseOrder(localPo) {
@@ -3558,11 +3733,11 @@ const ROLE_LANDING_PAGES = {
   Customer: 'customer-portal'
 };
 const PARTIAL_LOCAL_PAGE_LIMITS = {
-  'content-library': 'Content Library has backend file paths, but some folder/file preview records and generated notes are partial local-only.',
-  slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
-  'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
-  machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.',
-  assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'
+  'content-library': 'Basic document-library records are available, but this is not the complete future document-management workflow.',
+  slack: 'Basic team notes and channel history are available, but this is not the complete future team-chat workflow.',
+  'food-safety': 'Basic food-safety records and mock-recall support are available, but this is not the complete future food-safety workflow.',
+  machinery: 'Basic equipment and maintenance records are available, but this is not the complete future machinery workflow.',
+  assignments: 'Assignments are not implemented yet. This placeholder keeps the requested navigation visible without implying a working task assignment workflow.'
 };
 let authGateSetupRequestId = 0;
 
@@ -3728,9 +3903,10 @@ function renderRestrictedPage(el, page) {
 function partialLocalBannerHtml(page) {
   const message = PARTIAL_LOCAL_PAGE_LIMITS[page];
   if (!message) return '';
+  const heading = page === 'assignments' ? 'Future Scope' : 'Limited workflow / Future Scope';
   return `
     <div class="partial-local-banner" data-partial-local-banner="${escapeHtml(page)}">
-      <strong>Partial local-only</strong>
+      <strong>${escapeHtml(heading)}</strong>
       <span>${escapeHtml(message)}</span>
     </div>`;
 }
@@ -3838,6 +4014,7 @@ function enterAuthenticatedApp(page = roleLandingPageForCurrentUser()) {
   updateTopbarAccount();
   updateSidebarNavigationForRole();
   showAppShell();
+  startSharedAppDataBootstrap();
   router(page);
 }
 
@@ -4027,6 +4204,9 @@ document.getElementById('modal').addEventListener('keydown', trapModalFocus);
    DASHBOARD
    ========================================================================= */
 function renderDashboard(el) {
+  if (backendAuthState.token && !backendApiState.loadedPurchaseOrders && !backendApiState.loadingPurchaseOrders && !backendApiState.purchaseOrderLoadPromise) {
+    ensureBackendPurchaseOrdersLoaded().catch(() => {});
+  }
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.signals && !backendInventoryState.loading) {
     loadBackendInventorySignals()
       .then(() => { if (currentPage === 'dashboard') router('dashboard'); })
@@ -4037,6 +4217,9 @@ function renderDashboard(el) {
       });
   }
   const pos = state.purchaseOrders;
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
   const open = pos.filter(p => p.status !== 'completed');
   const inSC = pos.filter(p => p.status === 'pending' || p.status === 'in_supply_chain').length;
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
@@ -4070,6 +4253,28 @@ function renderDashboard(el) {
     { label: 'QA waiting on COA', count: qaBlocked, route: 'quality-assurance', detail: 'Production-complete POs that need COA upload or QA release.' },
     { label: 'Shipment docs missing', count: shipmentDocsMissing, route: 'shipping', detail: 'External shipments cannot complete until required documents are attached.' }
   ].filter(row => row.count > 0);
+  const poStat = value => poLoading ? '...' : poUnavailable ? '-' : String(value);
+  const poDependentEmpty = poLoading
+    ? renderEmptyState('Loading operational blockers', 'Purchase order records are still loading.')
+    : poUnavailable
+      ? renderEmptyState('Purchase order blockers unavailable', 'Purchase order records are unavailable right now.')
+      : renderEmptyState('No active blockers', 'Supply Chain, QA, shipping documents, and inventory conflict signals are clear.');
+  const recentPoRows = !poReady
+    ? `<tr><td colspan="6" class="empty">${poLoading ? 'Loading purchase orders...' : 'Checking purchase order records...'}</td></tr>`
+    : poUnavailable
+      ? '<tr><td colspan="6" class="empty">Purchase orders are unavailable right now.</td></tr>'
+      : pos.length === 0
+        ? '<tr><td colspan="6" class="empty">No purchase orders found.</td></tr>'
+        : pos.slice().sort((a,b)=>b.poDate.localeCompare(a.poDate)).slice(0,8).map(p => `
+            <tr>
+              <td><strong>${p.id}</strong></td>
+              <td>${escapeHtml(getCustomer(p.customerId)?.name || '')}</td>
+              <td>${fmtDate(p.poDate)}</td>
+              <td>${p.lines.length}</td>
+              <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
+              <td>${statusBadge(p.status)}</td>
+            </tr>
+          `).join('');
   const conflictBanner = conflicts.length === 0 ? '' : `
     <div style="background:#fcd7d3;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
@@ -4093,10 +4298,10 @@ function renderDashboard(el) {
   el.innerHTML = `
     ${conflictBanner}
     <div class="ops-summary" style="margin-bottom:16px">
-      <div class="stat brown"><div class="label">Open POs</div><div class="value">${open.length}</div></div>
-      <div class="stat"><div class="label">In Supply Chain Review</div><div class="value">${inSC}</div></div>
-      <div class="stat ok"><div class="label">In Production</div><div class="value">${inProd}</div></div>
-      <div class="stat"><div class="label">Ready to Ship</div><div class="value">${inShipping}</div></div>
+      <div class="stat brown"><div class="label">Open POs</div><div class="value">${poStat(open.length)}</div></div>
+      <div class="stat"><div class="label">In Supply Chain Review</div><div class="value">${poStat(inSC)}</div></div>
+      <div class="stat ok"><div class="label">In Production</div><div class="value">${poStat(inProd)}</div></div>
+      <div class="stat"><div class="label">Ready to Ship</div><div class="value">${poStat(inShipping)}</div></div>
       <div class="stat ${backendOverAllocationCount ? 'warn' : (lowStock ? 'warn' : 'ok')}"><div class="label">Inventory Status</div><div class="value">${backendOverAllocationCount ? backendOverAllocationCount+' conflict'+(backendOverAllocationCount===1?'':'s') : (lowStock ? lowStock+' low' : 'OK')}</div></div>
     </div>
 
@@ -4105,7 +4310,7 @@ function renderDashboard(el) {
       kicker: 'Needs attention',
       actions: "<button class=\"btn btn-secondary btn-sm\" onclick=\"router('inventory')\">View Inventory</button>",
       body: blockerRows.length === 0
-        ? renderEmptyState('No active blockers', 'Supply Chain, QA, shipping documents, and inventory conflict signals are clear.')
+        ? poDependentEmpty
         : `<div class="table-wrap"><table>
             <thead><tr><th>Area</th><th>Count</th><th>Why it matters</th><th></th></tr></thead>
             <tbody>${blockerRows.map(row => `<tr>
@@ -4174,16 +4379,7 @@ function renderDashboard(el) {
       <div class="table-wrap"><table>
         <thead><tr><th>PO #</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
         <tbody>
-          ${pos.slice().sort((a,b)=>b.poDate.localeCompare(a.poDate)).slice(0,8).map(p => `
-            <tr>
-              <td><strong>${p.id}</strong></td>
-              <td>${escapeHtml(getCustomer(p.customerId)?.name || '')}</td>
-              <td>${fmtDate(p.poDate)}</td>
-              <td>${p.lines.length}</td>
-              <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
-              <td>${statusBadge(p.status)}</td>
-            </tr>
-          `).join('')}
+          ${recentPoRows}
         </tbody>
       </table></div>
       </div>
@@ -4194,9 +4390,9 @@ function renderDashboard(el) {
 function renderAssignments(el) {
   el.innerHTML = renderOpsPanel({
     title: 'Assignments',
-    kicker: 'Records',
+    kicker: 'Future Scope',
     body: renderEmptyState(
-      'Assignments will be implemented in a future scope.',
+      'Assignments are future scope.',
       'This placeholder keeps the requested navigation structure visible without adding the full task assignment workflow yet.'
     )
   });
@@ -4215,6 +4411,18 @@ function renderPurchaseOrders(el) {
   const open = all.filter(p => p.status !== 'completed');
   const completed = all.filter(p => p.status === 'completed');
   const pos = poTab === 'completed' ? completed : open;
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const emptyMessage = poLoading
+    ? 'Loading purchase orders...'
+    : poUnavailable
+      ? 'Purchase orders are unavailable right now.'
+      : !poReady
+        ? 'Checking purchase order records...'
+        : poTab === 'completed'
+          ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.'
+          : 'No open purchase orders.';
 
   el.innerHTML = `
     <div class="card">
@@ -4238,7 +4446,7 @@ function renderPurchaseOrders(el) {
           </tr>
         </thead>
         <tbody>
-          ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
+          ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${emptyMessage}</td></tr>` :
             pos.map(p => {
             const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
@@ -4286,6 +4494,12 @@ function exportPOs() {
 }
 
 function poFileLinkHtml(po) {
+  if (po?._backendId && backendApiState.hydratingPurchaseOrderFiles && !po.poFile && !po._backendFileError) {
+    return '<span style="color:var(--brown-light);font-size:12px">Loading files...</span>';
+  }
+  if (po?._backendFileError && !po.poFile) {
+    return '<span style="color:var(--brown-light);font-size:12px" title="PO file metadata unavailable">File unavailable</span>';
+  }
   if (!po?.poFile) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
   const file = po.poFile;
   return backendFileActionHtml(file, {
@@ -9378,9 +9592,9 @@ function viewCustomerPortalPreview(customerId) {
   const cust = getCustomer(customerId);
   if (!cust) { toast('Customer not found.'); return; }
   // POs for this customer
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   // Products linked to this customer
   const myProducts = state.products.filter(p => p.customerId === customerId);
 
@@ -9471,7 +9685,7 @@ async function loadCustomerPortalData(customerId) {
         await loadBackendCustomers();
       }
       await loadBackendProducts();
-      await refreshBackendPurchaseOrders();
+      await ensureBackendPurchaseOrdersLoaded();
       cust = getCustomer(customerId) || cust;
       backendConnected = backendApiState.status === 'connected';
     } catch (error) {
@@ -9516,9 +9730,12 @@ async function renderSignedInCustomerPortalPage(el) {
 function customerPortalContentHtml(customerId, cust, backendConnected, portalError = '', { showCloseButton = true } = {}) {
   customerPortalDirty = false;
   customerPortalSubmitting = false;
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   const myProducts = state.products.filter(p => p.customerId === customerId);
   const uploadPanel = customerPortalUploadPanelHtml(backendConnected);
 
@@ -9530,11 +9747,11 @@ function customerPortalContentHtml(customerId, cust, backendConnected, portalErr
       </div>
       <section class="portal-panel portal-orders-panel">
         <div class="portal-panel-header"><h3>Open Purchase Orders (${openPos.length})</h3></div>
-        <div class="portal-panel-body">${customerPortalPoTableHtml(openPos, false)}</div>
+        <div class="portal-panel-body">${customerPortalPoSectionHtml(openPos, false, poLoading, poUnavailable, poReady)}</div>
       </section>
       <section class="portal-panel portal-orders-panel">
         <div class="portal-panel-header"><h3>Completed Purchase Orders (${donePos.length})</h3></div>
-        <div class="portal-panel-body">${customerPortalPoTableHtml(donePos, true)}</div>
+        <div class="portal-panel-body">${customerPortalPoSectionHtml(donePos, true, poLoading, poUnavailable, poReady)}</div>
       </section>
       <section class="portal-panel">
         <div class="portal-panel-header"><h3>Finished Goods</h3></div>
@@ -9543,6 +9760,13 @@ function customerPortalContentHtml(customerId, cust, backendConnected, portalErr
       ${showCloseButton ? '<div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close Portal</button></div>' : ''}
     </div>
   `;
+}
+
+function customerPortalPoSectionHtml(rows, completed, poLoading, poUnavailable, poReady) {
+  if (poLoading) return '<div class="empty" style="padding:14px">Loading purchase orders...</div>';
+  if (poUnavailable) return '<div class="empty" style="padding:14px">Purchase orders are unavailable right now.</div>';
+  if (!poReady) return '<div class="empty" style="padding:14px">Checking purchase order records...</div>';
+  return customerPortalPoTableHtml(rows, completed);
 }
 
 function renderCustomerPortalInline(el, customerId, cust, backendConnected, portalError = '') {
@@ -9623,9 +9847,12 @@ function profileSettingsAccountSummaryHtml(customerId, cust) {
       </div>
     </section>`;
   }
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   const myProducts = state.products.filter(p => p.customerId === customerId);
   return `<section class="portal-panel profile-settings-summary">
     <div class="portal-panel-header"><h3>Account Summary</h3></div>
@@ -9633,17 +9860,19 @@ function profileSettingsAccountSummaryHtml(customerId, cust) {
       <div class="profile-settings-metric-row">
         <div class="profile-settings-metric">
           <span>Open POs</span>
-          <strong>${openPos.length}</strong>
+          <strong>${poReady && !poUnavailable ? openPos.length : '-'}</strong>
         </div>
         <div class="profile-settings-metric">
           <span>Completed POs</span>
-          <strong>${donePos.length}</strong>
+          <strong>${poReady && !poUnavailable ? donePos.length : '-'}</strong>
         </div>
         <div class="profile-settings-metric">
           <span>Products available</span>
           <strong>${myProducts.length}</strong>
         </div>
       </div>
+      ${poLoading ? '<div class="help-text" style="margin-top:8px">Loading purchase order counts...</div>' : ''}
+      ${poUnavailable ? '<div class="help-text" style="margin-top:8px">Purchase order counts are unavailable right now.</div>' : ''}
       <table class="portal-kv"><tbody>
         <tr><td>Company</td><td>${escapeHtml(cust.name || '-')}</td></tr>
         <tr><td>Contact</td><td>${escapeHtml(cust.contact||'-')}</td></tr>

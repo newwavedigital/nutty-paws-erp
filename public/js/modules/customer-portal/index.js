@@ -5,9 +5,9 @@ function viewCustomerPortalPreview(customerId) {
   const cust = getCustomer(customerId);
   if (!cust) { toast('Customer not found.'); return; }
   // POs for this customer
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   // Products linked to this customer
   const myProducts = state.products.filter(p => p.customerId === customerId);
 
@@ -98,7 +98,7 @@ async function loadCustomerPortalData(customerId) {
         await loadBackendCustomers();
       }
       await loadBackendProducts();
-      await refreshBackendPurchaseOrders();
+      await ensureBackendPurchaseOrdersLoaded();
       cust = getCustomer(customerId) || cust;
       backendConnected = backendApiState.status === 'connected';
     } catch (error) {
@@ -143,9 +143,12 @@ async function renderSignedInCustomerPortalPage(el) {
 function customerPortalContentHtml(customerId, cust, backendConnected, portalError = '', { showCloseButton = true } = {}) {
   customerPortalDirty = false;
   customerPortalSubmitting = false;
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   const myProducts = state.products.filter(p => p.customerId === customerId);
   const uploadPanel = customerPortalUploadPanelHtml(backendConnected);
 
@@ -157,11 +160,11 @@ function customerPortalContentHtml(customerId, cust, backendConnected, portalErr
       </div>
       <section class="portal-panel portal-orders-panel">
         <div class="portal-panel-header"><h3>Open Purchase Orders (${openPos.length})</h3></div>
-        <div class="portal-panel-body">${customerPortalPoTableHtml(openPos, false)}</div>
+        <div class="portal-panel-body">${customerPortalPoSectionHtml(openPos, false, poLoading, poUnavailable, poReady)}</div>
       </section>
       <section class="portal-panel portal-orders-panel">
         <div class="portal-panel-header"><h3>Completed Purchase Orders (${donePos.length})</h3></div>
-        <div class="portal-panel-body">${customerPortalPoTableHtml(donePos, true)}</div>
+        <div class="portal-panel-body">${customerPortalPoSectionHtml(donePos, true, poLoading, poUnavailable, poReady)}</div>
       </section>
       <section class="portal-panel">
         <div class="portal-panel-header"><h3>Finished Goods</h3></div>
@@ -170,6 +173,13 @@ function customerPortalContentHtml(customerId, cust, backendConnected, portalErr
       ${showCloseButton ? '<div class="form-actions"><button class="btn btn-secondary" onclick="closeModal()">Close Portal</button></div>' : ''}
     </div>
   `;
+}
+
+function customerPortalPoSectionHtml(rows, completed, poLoading, poUnavailable, poReady) {
+  if (poLoading) return '<div class="empty" style="padding:14px">Loading purchase orders...</div>';
+  if (poUnavailable) return '<div class="empty" style="padding:14px">Purchase orders are unavailable right now.</div>';
+  if (!poReady) return '<div class="empty" style="padding:14px">Checking purchase order records...</div>';
+  return customerPortalPoTableHtml(rows, completed);
 }
 
 function renderCustomerPortalInline(el, customerId, cust, backendConnected, portalError = '') {
@@ -250,9 +260,12 @@ function profileSettingsAccountSummaryHtml(customerId, cust) {
       </div>
     </section>`;
   }
-  const myPos = state.purchaseOrders.filter(p => p.customerId === customerId);
-  const openPos = myPos.filter(p => p.status !== 'completed');
-  const donePos = myPos.filter(p => p.status === 'completed');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const myPos = customerPurchaseOrders(customerId);
+  const openPos = myPos.filter(isOpenPurchaseOrder);
+  const donePos = myPos.filter(isCompletedPurchaseOrder);
   const myProducts = state.products.filter(p => p.customerId === customerId);
   return `<section class="portal-panel profile-settings-summary">
     <div class="portal-panel-header"><h3>Account Summary</h3></div>
@@ -260,17 +273,19 @@ function profileSettingsAccountSummaryHtml(customerId, cust) {
       <div class="profile-settings-metric-row">
         <div class="profile-settings-metric">
           <span>Open POs</span>
-          <strong>${openPos.length}</strong>
+          <strong>${poReady && !poUnavailable ? openPos.length : '-'}</strong>
         </div>
         <div class="profile-settings-metric">
           <span>Completed POs</span>
-          <strong>${donePos.length}</strong>
+          <strong>${poReady && !poUnavailable ? donePos.length : '-'}</strong>
         </div>
         <div class="profile-settings-metric">
           <span>Products available</span>
           <strong>${myProducts.length}</strong>
         </div>
       </div>
+      ${poLoading ? '<div class="help-text" style="margin-top:8px">Loading purchase order counts...</div>' : ''}
+      ${poUnavailable ? '<div class="help-text" style="margin-top:8px">Purchase order counts are unavailable right now.</div>' : ''}
       <table class="portal-kv"><tbody>
         <tr><td>Company</td><td>${escapeHtml(cust.name || '-')}</td></tr>
         <tr><td>Contact</td><td>${escapeHtml(cust.contact||'-')}</td></tr>

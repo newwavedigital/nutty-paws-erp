@@ -43,13 +43,15 @@ describe("Login-first ERP shell and role access cleanup", () => {
 
   test("keeps partial-local banner markers on the expected pages", () => {
     expect(publicApp).toContain("const PARTIAL_LOCAL_PAGE_LIMITS = {");
+    expect(publicApp).toContain("Limited workflow / Future Scope");
+    expect(publicApp).toContain("page === 'assignments' ? 'Future Scope'");
     expect(publicApp).not.toContain("Customer Portal is a protected preview. Some customer-facing records and generated notes are partial local-only");
     for (const marker of [
-      "'content-library': 'Content Library has backend file paths, but some folder/file preview records and generated notes are partial local-only.'",
-      "slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.'",
-      "'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.'",
-      "machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.'",
-      "assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'",
+      "'content-library': 'Basic document-library records are available, but this is not the complete future document-management workflow.'",
+      "slack: 'Basic team notes and channel history are available, but this is not the complete future team-chat workflow.'",
+      "'food-safety': 'Basic food-safety records and mock-recall support are available, but this is not the complete future food-safety workflow.'",
+      "machinery: 'Basic equipment and maintenance records are available, but this is not the complete future machinery workflow.'",
+      "assignments: 'Assignments are not implemented yet. This placeholder keeps the requested navigation visible without implying a working task assignment workflow.'",
     ]) {
       expect(publicApp).toContain(marker);
     }

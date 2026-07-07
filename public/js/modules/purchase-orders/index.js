@@ -10,6 +10,18 @@ function renderPurchaseOrders(el) {
   const open = all.filter(p => p.status !== 'completed');
   const completed = all.filter(p => p.status === 'completed');
   const pos = poTab === 'completed' ? completed : open;
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const emptyMessage = poLoading
+    ? 'Loading purchase orders...'
+    : poUnavailable
+      ? 'Purchase orders are unavailable right now.'
+      : !poReady
+        ? 'Checking purchase order records...'
+        : poTab === 'completed'
+          ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.'
+          : 'No open purchase orders.';
 
   el.innerHTML = `
     <div class="card">
@@ -33,7 +45,7 @@ function renderPurchaseOrders(el) {
           </tr>
         </thead>
         <tbody>
-          ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${poTab==='completed' ? 'No completed POs yet. POs that are shipped from the Shipping page appear here.' : 'No open purchase orders.'}</td></tr>` :
+          ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${emptyMessage}</td></tr>` :
             pos.map(p => {
             const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
@@ -81,6 +93,12 @@ function exportPOs() {
 }
 
 function poFileLinkHtml(po) {
+  if (po?._backendId && backendApiState.hydratingPurchaseOrderFiles && !po.poFile && !po._backendFileError) {
+    return '<span style="color:var(--brown-light);font-size:12px">Loading files...</span>';
+  }
+  if (po?._backendFileError && !po.poFile) {
+    return '<span style="color:var(--brown-light);font-size:12px" title="PO file metadata unavailable">File unavailable</span>';
+  }
   if (!po?.poFile) return '<span style="color:var(--brown-light);font-size:12px">-</span>';
   const file = po.poFile;
   return backendFileActionHtml(file, {

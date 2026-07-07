@@ -93,7 +93,18 @@ const DEFAULT_CACHE_TTLS = {
 
 const workingStore = createWorkingStore(loadState());
 let state = workingStore.data;
-const backendApiState = { status: 'unknown', lastError: '', loadedPurchaseOrders: false, loadingPurchaseOrders: false };
+const backendApiState = {
+  status: 'unknown',
+  lastError: '',
+  loadedPurchaseOrders: false,
+  loadingPurchaseOrders: false,
+  purchaseOrdersError: '',
+  hydratingPurchaseOrderFiles: false,
+  purchaseOrderFilesHydrated: false,
+  purchaseOrderLoadPromise: null,
+  purchaseOrderFileHydrationPromise: null,
+  purchaseOrderLoadRequestId: 0
+};
 const AUTH_STORAGE_KEY = `${STORAGE_KEY}_auth`;
 const backendUserState = { status: 'local', lastError: '', loadingUsers: false };
 const backendCustomerState = { status: 'local', lastError: '', loading: false, loaded: false };
@@ -399,6 +410,16 @@ function clearBackendAuth() {
 }
 
 function resetBackendDataStates() {
+  backendApiState.status = 'unknown';
+  backendApiState.lastError = '';
+  backendApiState.loadedPurchaseOrders = false;
+  backendApiState.loadingPurchaseOrders = false;
+  backendApiState.purchaseOrdersError = '';
+  backendApiState.hydratingPurchaseOrderFiles = false;
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.purchaseOrderLoadPromise = null;
+  backendApiState.purchaseOrderFileHydrationPromise = null;
+  backendApiState.purchaseOrderLoadRequestId++;
   [backendCustomerState, backendProductState, backendMasterItemState, backendInventoryState, backendProcurementState, backendProductionState, backendQualityState, backendShippingState, backendPickPackState, backendResearchState].forEach(s => {
     s.status = 'local';
     s.lastError = '';

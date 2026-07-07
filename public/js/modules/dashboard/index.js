@@ -2,6 +2,9 @@
    DASHBOARD
    ========================================================================= */
 function renderDashboard(el) {
+  if (backendAuthState.token && !backendApiState.loadedPurchaseOrders && !backendApiState.loadingPurchaseOrders && !backendApiState.purchaseOrderLoadPromise) {
+    ensureBackendPurchaseOrdersLoaded().catch(() => {});
+  }
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.signals && !backendInventoryState.loading) {
     loadBackendInventorySignals()
       .then(() => { if (currentPage === 'dashboard') router('dashboard'); })
@@ -12,6 +15,9 @@ function renderDashboard(el) {
       });
   }
   const pos = state.purchaseOrders;
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
   const open = pos.filter(p => p.status !== 'completed');
   const inSC = pos.filter(p => p.status === 'pending' || p.status === 'in_supply_chain').length;
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
@@ -45,6 +51,28 @@ function renderDashboard(el) {
     { label: 'QA waiting on COA', count: qaBlocked, route: 'quality-assurance', detail: 'Production-complete POs that need COA upload or QA release.' },
     { label: 'Shipment docs missing', count: shipmentDocsMissing, route: 'shipping', detail: 'External shipments cannot complete until required documents are attached.' }
   ].filter(row => row.count > 0);
+  const poStat = value => poLoading ? '...' : poUnavailable ? '-' : String(value);
+  const poDependentEmpty = poLoading
+    ? renderEmptyState('Loading operational blockers', 'Purchase order records are still loading.')
+    : poUnavailable
+      ? renderEmptyState('Purchase order blockers unavailable', 'Purchase order records are unavailable right now.')
+      : renderEmptyState('No active blockers', 'Supply Chain, QA, shipping documents, and inventory conflict signals are clear.');
+  const recentPoRows = !poReady
+    ? `<tr><td colspan="6" class="empty">${poLoading ? 'Loading purchase orders...' : 'Checking purchase order records...'}</td></tr>`
+    : poUnavailable
+      ? '<tr><td colspan="6" class="empty">Purchase orders are unavailable right now.</td></tr>'
+      : pos.length === 0
+        ? '<tr><td colspan="6" class="empty">No purchase orders found.</td></tr>'
+        : pos.slice().sort((a,b)=>b.poDate.localeCompare(a.poDate)).slice(0,8).map(p => `
+            <tr>
+              <td><strong>${p.id}</strong></td>
+              <td>${escapeHtml(getCustomer(p.customerId)?.name || '')}</td>
+              <td>${fmtDate(p.poDate)}</td>
+              <td>${p.lines.length}</td>
+              <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
+              <td>${statusBadge(p.status)}</td>
+            </tr>
+          `).join('');
   const conflictBanner = conflicts.length === 0 ? '' : `
     <div style="background:#fcd7d3;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
@@ -68,10 +96,10 @@ function renderDashboard(el) {
   el.innerHTML = `
     ${conflictBanner}
     <div class="ops-summary" style="margin-bottom:16px">
-      <div class="stat brown"><div class="label">Open POs</div><div class="value">${open.length}</div></div>
-      <div class="stat"><div class="label">In Supply Chain Review</div><div class="value">${inSC}</div></div>
-      <div class="stat ok"><div class="label">In Production</div><div class="value">${inProd}</div></div>
-      <div class="stat"><div class="label">Ready to Ship</div><div class="value">${inShipping}</div></div>
+      <div class="stat brown"><div class="label">Open POs</div><div class="value">${poStat(open.length)}</div></div>
+      <div class="stat"><div class="label">In Supply Chain Review</div><div class="value">${poStat(inSC)}</div></div>
+      <div class="stat ok"><div class="label">In Production</div><div class="value">${poStat(inProd)}</div></div>
+      <div class="stat"><div class="label">Ready to Ship</div><div class="value">${poStat(inShipping)}</div></div>
       <div class="stat ${backendOverAllocationCount ? 'warn' : (lowStock ? 'warn' : 'ok')}"><div class="label">Inventory Status</div><div class="value">${backendOverAllocationCount ? backendOverAllocationCount+' conflict'+(backendOverAllocationCount===1?'':'s') : (lowStock ? lowStock+' low' : 'OK')}</div></div>
     </div>
 
@@ -80,7 +108,7 @@ function renderDashboard(el) {
       kicker: 'Needs attention',
       actions: "<button class=\"btn btn-secondary btn-sm\" onclick=\"router('inventory')\">View Inventory</button>",
       body: blockerRows.length === 0
-        ? renderEmptyState('No active blockers', 'Supply Chain, QA, shipping documents, and inventory conflict signals are clear.')
+        ? poDependentEmpty
         : `<div class="table-wrap"><table>
             <thead><tr><th>Area</th><th>Count</th><th>Why it matters</th><th></th></tr></thead>
             <tbody>${blockerRows.map(row => `<tr>
@@ -149,16 +177,7 @@ function renderDashboard(el) {
       <div class="table-wrap"><table>
         <thead><tr><th>PO #</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
         <tbody>
-          ${pos.slice().sort((a,b)=>b.poDate.localeCompare(a.poDate)).slice(0,8).map(p => `
-            <tr>
-              <td><strong>${p.id}</strong></td>
-              <td>${escapeHtml(getCustomer(p.customerId)?.name || '')}</td>
-              <td>${fmtDate(p.poDate)}</td>
-              <td>${p.lines.length}</td>
-              <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
-              <td>${statusBadge(p.status)}</td>
-            </tr>
-          `).join('')}
+          ${recentPoRows}
         </tbody>
       </table></div>
       </div>
@@ -169,9 +188,9 @@ function renderDashboard(el) {
 function renderAssignments(el) {
   el.innerHTML = renderOpsPanel({
     title: 'Assignments',
-    kicker: 'Records',
+    kicker: 'Future Scope',
     body: renderEmptyState(
-      'Assignments will be implemented in a future scope.',
+      'Assignments are future scope.',
       'This placeholder keeps the requested navigation structure visible without adding the full task assignment workflow yet.'
     )
   });

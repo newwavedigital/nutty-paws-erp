@@ -237,6 +237,7 @@ hydrateA10DataRecordCaches();
 function markBackendUnavailable(error) {
   backendApiState.status = 'error';
   backendApiState.lastError = BACKEND_READ_FAILED_MESSAGE;
+  backendApiState.purchaseOrdersError = error?.message || BACKEND_READ_FAILED_MESSAGE;
 }
 
 function failBackendRequiredWrite(error, stateRef = null, fallbackMessage = 'Backend save failed. Nothing was saved locally.') {
@@ -325,17 +326,22 @@ function clearProtectedBackendRows(area) {
 }
 
 function renderBackendStatusBanner(context = 'purchase-orders') {
-  const connected = backendApiState.status === 'connected';
+  const connected = backendApiState.status === 'connected' && backendApiState.loadedPurchaseOrders;
   const loading = backendApiState.loadingPurchaseOrders;
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
   const authWaiting = backendApiState.lastError === 'Authentication is required';
   return renderDataStateBanner({
     kind: context,
     state: connected ? 'connected' : loading ? 'loading' : authWaiting ? 'auth' : backendApiState.status === 'error' ? 'error' : 'auth',
     detail: connected
       ? 'This screen is reading protected backend records when available.'
+      : loading
+        ? 'Loading protected purchase order records. Counts and empty states will appear after the backend responds.'
       : authWaiting
         ? 'Sign in from Account Management to connect this screen to protected backend data.'
-        : backendApiState.lastError || 'Sign in to load protected backend records.'
+        : signedIn
+          ? (backendApiState.purchaseOrdersError || backendApiState.lastError || 'Purchase order records are unavailable right now.')
+          : backendApiState.lastError || 'Sign in to load protected backend records.'
   });
 }
 
@@ -364,6 +370,7 @@ function renderDataStateBanner({ kind = 'screen', state = 'local', detail = '' }
     loading: ['Checking backend...', '', 'var(--orange)'],
     auth: ['Sign in required', '', 'var(--orange)'],
     error: ['Backend unavailable', 'bad', 'var(--danger)'],
+    restricted: ['Restricted', '', 'var(--orange)'],
     local: ['Sign in required', '', 'var(--orange)']
   }[state] || ['Sign in required', '', 'var(--orange)'];
   return `<div class="inv-check ${config[1]}" data-backend-status="${escapeAttr(kind)}" style="border-left-color:${config[2]}">
@@ -510,10 +517,24 @@ function renderBackendProductionBanner() {
 function renderBackendQualityBanner() {
   const connected = backendQualityState.status === 'connected';
   if (connected) return '';
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const restricted = signedIn && backendAuthState.user?.userType === 'customer';
   const loading = backendQualityState.loading;
   const error = backendQualityState.status === 'error';
-  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
-  const detail = backendQualityState.lastError || 'Sign in to load protected QA records.';
+  const title = restricted
+    ? 'Restricted'
+    : error
+      ? 'Backend unavailable'
+      : loading || signedIn
+        ? 'Loading backend records'
+        : 'Sign in required';
+  const detail = restricted
+    ? 'QA records are restricted to employee roles.'
+    : error
+      ? (backendQualityState.lastError || 'Backend QA records are unavailable right now.')
+      : signedIn
+        ? 'Loading protected QA records. Visible rows may update after the backend responds.'
+        : 'Sign in to load protected QA records.';
   return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="quality" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
@@ -523,10 +544,24 @@ function renderBackendQualityBanner() {
 function renderBackendShippingBanner() {
   const connected = backendShippingState.status === 'connected';
   if (connected) return '';
+  const signedIn = !!backendAuthState.token && !!backendAuthState.user;
+  const restricted = signedIn && backendAuthState.user?.userType === 'customer';
   const loading = backendShippingState.loading;
   const error = backendShippingState.status === 'error';
-  const title = loading ? 'Checking backend...' : error ? 'Backend unavailable' : 'Sign in required';
-  const detail = backendShippingState.lastError || 'Sign in to load protected shipping records.';
+  const title = restricted
+    ? 'Restricted'
+    : error
+      ? 'Backend unavailable'
+      : loading || signedIn
+        ? 'Loading backend records'
+        : 'Sign in required';
+  const detail = restricted
+    ? 'Shipping records are restricted to employee roles.'
+    : error
+      ? (backendShippingState.lastError || 'Backend shipping records are unavailable right now.')
+      : signedIn
+        ? 'Loading protected shipping records. Visible rows may update after the backend responds.'
+        : 'Sign in to load protected shipping records.';
   return `<div class="inv-check ${error ? 'bad' : ''}" data-backend-status="shipping" style="border-left-color:${error ? 'var(--danger)' : 'var(--orange)'}">
     <strong>${title}</strong>
     <div style="font-size:12px;color:var(--brown-light);margin-top:3px">${escapeHtml(detail)}</div>
@@ -2381,13 +2416,149 @@ async function attachBackendFilesToPurchaseOrder(localPo) {
 }
 
 async function hydrateBackendPurchaseOrderFiles(localPos) {
-  for (const po of localPos || []) {
-    try {
-      await attachBackendFilesToPurchaseOrder(po);
-    } catch (error) {
-      po._backendFileError = error?.message || 'PO files unavailable';
+  backendApiState.hydratingPurchaseOrderFiles = true;
+  backendApiState.purchaseOrderFilesHydrated = false;
+  const queue = [...(localPos || [])];
+  const workers = Array.from({ length: Math.min(6, Math.max(queue.length, 1)) }, async () => {
+    while (queue.length) {
+      const po = queue.shift();
+      if (!po) continue;
+      try {
+        await attachBackendFilesToPurchaseOrder(po);
+      } catch (error) {
+        po._backendFileError = error?.message || 'PO files unavailable';
+      }
+    }
+  });
+  try {
+    await Promise.all(workers);
+    backendApiState.purchaseOrderFilesHydrated = true;
+  } finally {
+    backendApiState.hydratingPurchaseOrderFiles = false;
+  }
+}
+
+function rerenderPurchaseOrderConsumers() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  if (currentPage === 'dashboard') renderDashboard(content);
+  if (currentPage === 'purchase-orders') renderPurchaseOrders(content);
+  if (currentPage === 'supply-chain') renderSupplyChain(content);
+  if (currentPage === 'customer-portal') renderSignedInCustomerPortalPage(content);
+  if (currentPage === 'profile-settings') renderProfileSettings(content);
+}
+
+function beginBackendPurchaseOrderFileHydration(backendPos, requestId) {
+  if (!backendPos?.length) {
+    backendApiState.purchaseOrderFilesHydrated = true;
+    backendApiState.hydratingPurchaseOrderFiles = false;
+    return Promise.resolve([]);
+  }
+  const hydration = hydrateBackendPurchaseOrderFiles(backendPos)
+    .then(() => {
+      if (requestId !== backendApiState.purchaseOrderLoadRequestId) return backendPos;
+      try { saveState(); } catch (err) {}
+      rerenderPurchaseOrderConsumers();
+      return backendPos;
+    })
+    .catch(error => {
+      if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+        backendApiState.purchaseOrdersError = error?.message || 'PO files unavailable';
+        rerenderPurchaseOrderConsumers();
+      }
+      return backendPos;
+    });
+  backendApiState.purchaseOrderFileHydrationPromise = hydration;
+  return hydration;
+}
+
+async function loadBackendPurchaseOrderRecords(requestId) {
+  backendApiState.loadingPurchaseOrders = true;
+  backendApiState.purchaseOrdersError = '';
+  backendApiState.lastError = '';
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.hydratingPurchaseOrderFiles = false;
+  try {
+    const records = await apiRequest('/api/purchase-orders');
+    if (requestId !== backendApiState.purchaseOrderLoadRequestId) return state.purchaseOrders;
+    const backendPos = mergeBackendPurchaseOrders(records);
+    backendApiState.loadedPurchaseOrders = true;
+    backendApiState.loadingPurchaseOrders = false;
+    backendApiState.status = 'connected';
+    backendApiState.lastError = '';
+    rerenderPurchaseOrderConsumers();
+    beginBackendPurchaseOrderFileHydration(backendPos, requestId);
+    return backendPos;
+  } catch (error) {
+    if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+      markBackendUnavailable(error);
+      clearProtectedBackendRows('purchase-orders');
+      backendApiState.loadedPurchaseOrders = false;
+      backendApiState.loadingPurchaseOrders = false;
+      rerenderPurchaseOrderConsumers();
+    }
+    throw error;
+  } finally {
+    if (requestId === backendApiState.purchaseOrderLoadRequestId) {
+      backendApiState.loadingPurchaseOrders = false;
+      backendApiState.purchaseOrderLoadPromise = null;
     }
   }
+}
+
+function purchaseOrdersReadyForEmptyState() {
+  return !backendAuthState.token || backendApiState.loadedPurchaseOrders;
+}
+
+function purchaseOrdersLoadingForDisplay() {
+  return !!backendAuthState.token && backendApiState.loadingPurchaseOrders && !backendApiState.loadedPurchaseOrders;
+}
+
+function purchaseOrdersUnavailableForDisplay() {
+  return !!backendAuthState.token && backendApiState.status === 'error' && !backendApiState.loadedPurchaseOrders;
+}
+
+function customerPurchaseOrders(customerId) {
+  return (state.purchaseOrders || []).filter(p => p.customerId === customerId);
+}
+
+function isCompletedPurchaseOrder(po) {
+  return po?.status === 'completed';
+}
+
+function isOpenPurchaseOrder(po) {
+  return !isCompletedPurchaseOrder(po);
+}
+
+async function bootstrapSharedAppData() {
+  if (!backendAuthState.token) return;
+  const loaders = [ensureBackendPurchaseOrdersLoaded()];
+  if (backendAuthState.user?.userType === 'customer') {
+    try {
+      loaders.push(loadBackendCustomerProfile());
+    } catch (error) {
+      // Keep bootstrap resilient; page renderers show per-dataset failures.
+    }
+  } else {
+    loaders.push(loadBackendCustomers());
+  }
+  loaders.push(loadBackendProducts());
+  await Promise.allSettled(loaders);
+}
+
+function startSharedAppDataBootstrap() {
+  bootstrapSharedAppData().then(() => {
+    if (currentPage === 'dashboard') router('dashboard');
+  }).catch(() => {});
+}
+
+async function ensureBackendPurchaseOrdersLoaded() {
+  if (!backendAuthState.token) return [];
+  if (backendApiState.loadedPurchaseOrders) return state.purchaseOrders;
+  if (backendApiState.purchaseOrderLoadPromise) return backendApiState.purchaseOrderLoadPromise;
+  const requestId = ++backendApiState.purchaseOrderLoadRequestId;
+  backendApiState.purchaseOrderLoadPromise = loadBackendPurchaseOrderRecords(requestId);
+  return backendApiState.purchaseOrderLoadPromise;
 }
 
 function mapBackendFileToPrototype(file) {
@@ -2493,30 +2664,13 @@ async function handleBackendFileAction(button) {
   }
 }
 
-async function ensureBackendPurchaseOrdersLoaded() {
-  if (backendApiState.loadedPurchaseOrders || backendApiState.loadingPurchaseOrders) return;
-  backendApiState.loadingPurchaseOrders = true;
-  try {
-    const records = await apiRequest('/api/purchase-orders');
-    const backendPos = mergeBackendPurchaseOrders(records);
-    await hydrateBackendPurchaseOrderFiles(backendPos);
-    backendApiState.loadedPurchaseOrders = true;
-    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
-    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
-  } catch (error) {
-    markBackendUnavailable(error);
-    clearProtectedBackendRows('purchase-orders');
-    backendApiState.loadedPurchaseOrders = true;
-  } finally {
-    backendApiState.loadingPurchaseOrders = false;
-    if (currentPage === 'purchase-orders') renderPurchaseOrders(document.getElementById('content'));
-    if (currentPage === 'supply-chain') renderSupplyChain(document.getElementById('content'));
-  }
-}
-
 async function refreshBackendPurchaseOrders() {
+  backendApiState.purchaseOrderLoadRequestId++;
   backendApiState.loadedPurchaseOrders = false;
-  await ensureBackendPurchaseOrdersLoaded();
+  backendApiState.purchaseOrderFilesHydrated = false;
+  backendApiState.purchaseOrderLoadPromise = null;
+  backendApiState.purchaseOrderFileHydrationPromise = null;
+  return ensureBackendPurchaseOrdersLoaded();
 }
 
 async function createBackendPurchaseOrder(localPo) {

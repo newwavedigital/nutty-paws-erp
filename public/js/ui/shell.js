@@ -71,11 +71,11 @@ const ROLE_LANDING_PAGES = {
   Customer: 'customer-portal'
 };
 const PARTIAL_LOCAL_PAGE_LIMITS = {
-  'content-library': 'Content Library has backend file paths, but some folder/file preview records and generated notes are partial local-only.',
-  slack: 'Team Chat is not fully implemented yet. Channel history and generated local notes are partial local-only.',
-  'food-safety': 'Food Safety sublogs are not fully implemented yet. Swabs, complaints, sanitation, CCP/HACCP, NCR/CAPA, and mock recall notes may remain partial local-only.',
-  machinery: 'Machinery maintenance and equipment issue logs are not fully implemented yet. Local generated entries do not represent confirmed backend persistence.',
-  assignments: 'Assignments are not implemented yet. This placeholder is retained so scope is visible without implying a working workflow.'
+  'content-library': 'Basic document-library records are available, but this is not the complete future document-management workflow.',
+  slack: 'Basic team notes and channel history are available, but this is not the complete future team-chat workflow.',
+  'food-safety': 'Basic food-safety records and mock-recall support are available, but this is not the complete future food-safety workflow.',
+  machinery: 'Basic equipment and maintenance records are available, but this is not the complete future machinery workflow.',
+  assignments: 'Assignments are not implemented yet. This placeholder keeps the requested navigation visible without implying a working task assignment workflow.'
 };
 let authGateSetupRequestId = 0;
 
@@ -241,9 +241,10 @@ function renderRestrictedPage(el, page) {
 function partialLocalBannerHtml(page) {
   const message = PARTIAL_LOCAL_PAGE_LIMITS[page];
   if (!message) return '';
+  const heading = page === 'assignments' ? 'Future Scope' : 'Limited workflow / Future Scope';
   return `
     <div class="partial-local-banner" data-partial-local-banner="${escapeHtml(page)}">
-      <strong>Partial local-only</strong>
+      <strong>${escapeHtml(heading)}</strong>
       <span>${escapeHtml(message)}</span>
     </div>`;
 }
@@ -351,6 +352,7 @@ function enterAuthenticatedApp(page = roleLandingPageForCurrentUser()) {
   updateTopbarAccount();
   updateSidebarNavigationForRole();
   showAppShell();
+  startSharedAppDataBootstrap();
   router(page);
 }
 

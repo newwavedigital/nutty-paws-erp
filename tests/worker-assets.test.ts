@@ -112,7 +112,7 @@ describe("Worker staging frontend assets", () => {
     ]) {
       expect(publicIndex + publicApp).toContain(marker);
     }
-    expect(publicApp).toContain("Assignments will be implemented in a future scope.");
+    expect(publicApp).toContain("Assignments are future scope.");
     expect(publicApp).not.toContain("portal-status");
     expect(publicApp).not.toContain("Checking API...");
     expect(publicApp).not.toContain("API check OK");
