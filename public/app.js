@@ -1155,22 +1155,28 @@ function mergeBackendQualityQueue(records) {
 }
 
 async function attachBackendQualityFiles(queue) {
-  for (const po of queue || []) {
-    const purchaseOrderId = qualityPurchaseOrderBackendId(po);
-    if (!purchaseOrderId) continue;
-    try {
-      const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
-      po._backendFiles = files || [];
-      const coa = (files || []).find(file => file.fileCategory === 'coa') || null;
-      po.coa = coa ? mapBackendFileToPrototype(coa) : null;
-      const postShipmentCoa = po.postShipmentCoaFileId
-        ? (files || []).find(file => file.id === po.postShipmentCoaFileId && file.fileCategory === 'coa') || null
-        : null;
-      po.postShipmentCoa = postShipmentCoa ? mapBackendFileToPrototype(postShipmentCoa) : null;
-    } catch (error) {
-      po._backendFileError = error?.message || 'QA files unavailable';
+  const pending = [...(queue || [])];
+  const workers = Array.from({ length: Math.min(6, Math.max(pending.length, 1)) }, async () => {
+    while (pending.length) {
+      const po = pending.shift();
+      if (!po) continue;
+      const purchaseOrderId = qualityPurchaseOrderBackendId(po);
+      if (!purchaseOrderId) continue;
+      try {
+        const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
+        po._backendFiles = files || [];
+        const coa = (files || []).find(file => file.fileCategory === 'coa') || null;
+        po.coa = coa ? mapBackendFileToPrototype(coa) : null;
+        const postShipmentCoa = po.postShipmentCoaFileId
+          ? (files || []).find(file => file.id === po.postShipmentCoaFileId && file.fileCategory === 'coa') || null
+          : null;
+        po.postShipmentCoa = postShipmentCoa ? mapBackendFileToPrototype(postShipmentCoa) : null;
+      } catch (error) {
+        po._backendFileError = error?.message || 'QA files unavailable';
+      }
     }
-  }
+  });
+  await Promise.all(workers);
 }
 
 async function loadBackendQualityQueue() {
@@ -1361,28 +1367,34 @@ function mergeBackendShippingLogs(logs) {
 }
 
 async function attachBackendShipmentDocuments(queue) {
-  for (const po of queue || []) {
-    const purchaseOrderId = shippingPurchaseOrderBackendId(po);
-    if (!purchaseOrderId) continue;
-    try {
-      const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
-      po._backendFiles = files || [];
-      const savedFileId = shippingShipmentDocumentFileId(po);
-      const shipmentDocument = savedFileId
-        ? (files || []).find(file => file.id === savedFileId && file.fileCategory === 'shipment_document') || null
-        : null;
-      po.shipping = po.shipping || {};
-      if (shipmentDocument) {
-        po.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
-        po.shipping.shipmentDocumentFileId = shipmentDocument.id;
-      } else {
-        po.shipping.documents = null;
-        po.shipping.shipmentDocumentFileId = '';
+  const pending = [...(queue || [])];
+  const workers = Array.from({ length: Math.min(6, Math.max(pending.length, 1)) }, async () => {
+    while (pending.length) {
+      const po = pending.shift();
+      if (!po) continue;
+      const purchaseOrderId = shippingPurchaseOrderBackendId(po);
+      if (!purchaseOrderId) continue;
+      try {
+        const files = await loadBackendPurchaseOrderFiles(purchaseOrderId);
+        po._backendFiles = files || [];
+        const savedFileId = shippingShipmentDocumentFileId(po);
+        const shipmentDocument = savedFileId
+          ? (files || []).find(file => file.id === savedFileId && file.fileCategory === 'shipment_document') || null
+          : null;
+        po.shipping = po.shipping || {};
+        if (shipmentDocument) {
+          po.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
+          po.shipping.shipmentDocumentFileId = shipmentDocument.id;
+        } else {
+          po.shipping.documents = null;
+          po.shipping.shipmentDocumentFileId = '';
+        }
+      } catch (error) {
+        po._backendFileError = error?.message || 'Shipment documents unavailable';
       }
-    } catch (error) {
-      po._backendFileError = error?.message || 'Shipment documents unavailable';
     }
-  }
+  });
+  await Promise.all(workers);
 }
 
 async function loadBackendShippingQueue() {

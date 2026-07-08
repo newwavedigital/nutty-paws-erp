@@ -87,6 +87,7 @@ async function openQualityAssurance(page: Page) {
   await page.getByRole("button", { name: /Quality Assurance/ }).click();
   await qualityLoad;
   await expect(page.getByText("Checking backend...")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText("Loading protected QA records.")).toHaveCount(0, { timeout: 60_000 });
 }
 
 async function openShipping(page: Page) {
@@ -98,6 +99,8 @@ async function openShipping(page: Page) {
   await page.getByRole("button", { name: /Shipping/ }).click();
   await shippingLoad;
   await expect(page.getByText("Checking backend...")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText("Loading protected shipping records.")).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.getByText("Loading purchase order records...")).toHaveCount(0, { timeout: 60_000 });
 }
 
 async function openPurchaseOrdersAndWaitForPo(page: Page, poNumber: string) {
