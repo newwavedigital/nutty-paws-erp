@@ -362,14 +362,15 @@ function procFormHtml(id, prefill) {
         </div>
         <div class="form-row"><label>Date Ordered</label><input type="date" id="prc_date" value="${p.dateOrdered||''}" /></div>
         <div class="form-row"><label>Expected Delivery</label><input type="date" id="prc_exp" value="${p.expectedDate||''}" /></div>
-        <div class="form-row"><label>Status</label>
+        ${isNew ? `<div class="form-row"><label>Status</label>
           <select id="prc_status">
             <option ${p.status==='Draft'?'selected':''}>Draft</option>
             <option ${p.status==='In Order'?'selected':''}>In Order</option>
-            <option ${p.status==='Partial Receipt'?'selected':''}>Partial Receipt</option>
-            <option ${p.status==='Received'?'selected':''}>Received</option>
           </select>
-        </div>
+        </div>` : `<div class="form-row"><label>Status</label>
+          <input value="${escapeHtml(p.status || '')}" readonly title="Use Submit, Receive, or Cancel actions to change procurement status." />
+          <div class="help-text">Use Submit, Receive, or Cancel actions to change status.</div>
+        </div>`}
       </div>
       <div style="margin-top:18px">
         <label style="font-weight:600;color:var(--brown);font-size:13px">Items</label>
@@ -469,7 +470,7 @@ async function saveProc(id, isNew) {
     supplierId: document.getElementById('prc_sup').value,
     dateOrdered: document.getElementById('prc_date').value,
     expectedDate: document.getElementById('prc_exp').value,
-    status: document.getElementById('prc_status').value,
+    status: document.getElementById('prc_status')?.value || state.procurementOrders.find(p => p.id === id)?.status || 'Draft',
     notes: document.getElementById('prc_notes').value,
     items
   };

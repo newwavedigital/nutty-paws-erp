@@ -57,6 +57,8 @@ describe("frontend truth hardening", () => {
   test("Requested PO's tab discloses unsupported backend status and disables signed-in fake actions", () => {
     expect(pickPackModule).toContain("function productionRequestsUnsupportedHtml");
     expect(pickPackModule).toContain("Requested PO's are not included in the backend automations yet");
+    expect(pickPackModule).toContain("No local request rows are shown in signed-in sessions");
+    expect(pickPackModule).toContain("const reqs = actionsDisabled");
     expect(pickPackModule).toContain("disabled title=\"Backend automation not confirmed yet\"");
     expect(pickPackModule).toContain("productionRequestActionsDisabled()");
   });
@@ -65,6 +67,8 @@ describe("frontend truth hardening", () => {
     const completedBlock = sliceBlock(procurementModule, "function renderProcCompleted(el)", "function procFormHtml");
     expect(completedBlock).toContain("Locked");
     expect(completedBlock).not.toContain("deleteProc('${p.id}')");
+    expect(procurementModule).toContain('readonly title="Use Submit, Receive, or Cancel actions to change procurement status."');
+    expect(procurementModule).toContain("document.getElementById('prc_status')?.value");
   });
 
   test("content library drag/drop move failures surface backend errors instead of failing silently", () => {
@@ -96,19 +100,18 @@ describe("frontend truth hardening", () => {
     expect(purchaseOrdersModule).toContain("if (employeeBackendSessionActive())");
   });
 
-  test("stale local purchase orders and Pick & Pack rows are visibly local-only in signed-in sessions", () => {
-    expect(purchaseOrdersModule).toContain("Local draft");
-    expect(purchaseOrdersModule).toContain("Not saved to backend");
-    expect(purchaseOrdersModule).toContain("p._localOnlyBackendStale");
-    expect(purchaseOrdersModule).toContain("employeeBackendSessionActive() && !p._backendId");
-    expect(backendBridgeModule).toContain("function markLocalOnlyPurchaseOrdersForBackendSession");
-    expect(backendBridgeModule).toContain("markLocalOnlyPurchaseOrdersForBackendSession();");
-    expect(pickPackModule).toContain("Local draft");
-    expect(pickPackModule).toContain("Not saved to backend");
-    expect(pickPackModule).toContain("employeeBackendSessionActive() && !p._backendId");
-    expect(pickPackModule).toContain("Backend required");
-    expect(pickPackModule).toContain("This shipping draft is local-only and cannot be saved to the backend");
-    expect(pickPackModule).toContain("This shipping draft is local-only and cannot be marked shipped");
+  test("stale local purchase orders and Pick & Pack rows are removed from signed-in sessions", () => {
+    expect(backendBridgeModule).toContain("function removeLocalOnlyPurchaseOrdersForBackendSession");
+    expect(backendBridgeModule).toContain("function removeLocalOnlyPickPackOrdersForBackendSession");
+    expect(backendBridgeModule).toContain("removeLocalOnlyPurchaseOrdersForBackendSession();");
+    expect(backendBridgeModule).toContain("removeLocalOnlyPickPackOrdersForBackendSession();");
+    expect(backendBridgeModule).toContain("function mergeBackendPurchaseOrders(records, options = {})");
+    expect(backendBridgeModule).toContain("options.replaceAll ? [] : existingRows");
+    expect(backendBridgeModule).toContain("mergeBackendPurchaseOrders(records, { replaceAll: true })");
+    expect(purchaseOrdersModule).not.toContain("_localOnlyBackendStale");
+    expect(purchaseOrdersModule).not.toContain("Local draft");
+    expect(pickPackModule).not.toContain("_localOnlyBackendStale");
+    expect(pickPackModule).not.toContain("Local draft");
   });
 
   test("pick-pack shipping mode changes do not persist local backend-session mutations before save succeeds", () => {
@@ -120,6 +123,14 @@ describe("frontend truth hardening", () => {
     expect(saveBlock).toContain("const shippingPatch = { shippingMode: mode };");
     expect(saveBlock).toContain("await saveBackendPickPackShippingDetails({ ...p, ...shippingPatch });");
     expect(saveBlock).toContain("Object.assign(p, shippingPatch);");
+  });
+
+  test("signed-in Pick & Pack cannot create local-only finished goods shortcuts", () => {
+    const quickAddBlock = sliceBlock(pickPackModule, "function quickAddFinishedGood(customerId)", "function addPickPackLine()");
+    expect(quickAddBlock).toContain("if (employeeBackendSessionActive())");
+    expect(quickAddBlock).toContain("Finished Goods must be created through backend Inventory records. Nothing was saved locally.");
+    expect(quickAddBlock.indexOf("if (employeeBackendSessionActive())")).toBeLessThan(quickAddBlock.indexOf("state.ingredients.push(fg)"));
+    expect(publicApp).toContain("if (signedIn) return null;");
   });
 
   test("customer and product media are rehydrated from backend file metadata", () => {
@@ -162,6 +173,10 @@ describe("frontend truth hardening", () => {
     expect(foodSafetyModule).toContain("function foodSafetyLotsAreBackendLocked");
     expect(foodSafetyModule).toContain("Lot Tracking is read-only for signed-in sessions.");
     expect(foodSafetyModule).toContain("Food Safety lot tracking is not backend-backed yet. Nothing was saved locally.");
+    expect(foodSafetyModule).toContain("const lots = signedInLocked ? [] : (state.lots || [])");
+    expect(foodSafetyModule).toContain("No local lot rows are shown in signed-in sessions.");
     expect(foodSafetyModule).toContain("disabled title=\"Backend lot tracking workflow not connected yet\"");
+    expect(productionModule).toContain("Signed-in lot tracking must come from backend records");
+    expect(productionModule).toContain("if (!backendAuthSessionActive())");
   });
 });

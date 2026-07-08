@@ -146,11 +146,8 @@ function actorUserId(auth: AuthContext | null, body: Record<string, unknown>) {
 }
 
 async function optionalJsonObject(c: Context<AppBindings>) {
-  try {
-    return await parseJsonObject(c);
-  } catch {
-    return {};
-  }
+  if (!c.req.header("content-type")) return {};
+  return parseJsonObject(c);
 }
 
 function parseLines(value: unknown) {

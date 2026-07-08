@@ -1,4 +1,4 @@
-import { ProcurementError, calculateNeedToOrderRows, type NeedToOrderInventoryItem, type ProcurementInventorySnapshot, type ProcurementOrderInput, type ProcurementOrderLineInput, type ProcurementOrderLineRecord, type ProcurementOrderRecord, type ProcurementOrderStatus, type ProcurementReceiptTransactionInput, type ProcurementStore, type SupplyChainDemand } from "./service";
+import { ProcurementError, calculateNeedToOrderRows, type NeedToOrderInventoryItem, type ProcurementDraftTransactionInput, type ProcurementInventorySnapshot, type ProcurementOrderInput, type ProcurementOrderLineInput, type ProcurementOrderLineRecord, type ProcurementOrderRecord, type ProcurementOrderStatus, type ProcurementReceiptTransactionInput, type ProcurementStore, type SupplyChainDemand } from "./service";
 
 type ProcurementOrderRow = {
   id: string;
@@ -207,6 +207,90 @@ export class D1ProcurementStore implements ProcurementStore {
         input.sourcePurchaseOrderLineId,
       )
       .run();
+  }
+
+  async createDraftOrderTransaction(input: ProcurementDraftTransactionInput) {
+    const statements = [
+      this.db
+        .prepare(
+          `
+            INSERT INTO procurement_orders (
+              id, procurement_order_number, quickbooks_po_number, supplier_id,
+              supplier_name_snapshot, status, date_ordered, expected_date,
+              received_date, notes, created_by_user_id, submitted_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          input.order.id,
+          input.order.procurementOrderNumber,
+          input.order.quickBooksPoNumber,
+          input.order.supplierId,
+          input.order.supplierNameSnapshot,
+          input.order.status,
+          input.order.dateOrdered,
+          input.order.expectedDate,
+          input.order.receivedDate,
+          input.order.notes,
+          input.order.createdByUserId ?? null,
+          input.order.submittedByUserId ?? null,
+        ),
+    ];
+
+    for (const line of input.lines) {
+      statements.push(
+        this.db
+          .prepare(
+            `
+              INSERT INTO procurement_order_lines (
+                id, procurement_order_id, line_number, master_item_id,
+                inventory_item_id, description, quantity_ordered,
+                quantity_received, unit_of_measure, unit_cost_cents,
+                suggested_quantity, source_reason, source_purchase_order_line_id
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+          )
+          .bind(
+            line.id,
+            line.procurementOrderId,
+            line.lineNumber,
+            line.masterItemId,
+            line.inventoryItemId,
+            line.description,
+            line.quantityOrdered,
+            line.quantityReceived,
+            line.unitOfMeasure,
+            line.unitCostCents,
+            line.suggestedQuantity,
+            line.sourceReason,
+            line.sourcePurchaseOrderLineId,
+          ),
+      );
+    }
+
+    statements.push(
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          input.audit.entityType,
+          input.audit.entityId,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    );
+
+    await this.db.batch(statements);
   }
 
   async listOrders() {

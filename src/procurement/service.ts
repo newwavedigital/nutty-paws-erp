@@ -109,6 +109,18 @@ export type ProcurementReceiptTransactionInput = {
   };
 };
 
+export type ProcurementDraftTransactionInput = {
+  order: ProcurementOrderInput;
+  lines: ProcurementOrderLineInput[];
+  audit: {
+    actorUserId?: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    metadata: Record<string, unknown>;
+  };
+};
+
 export type ProcurementInventorySnapshot = {
   id: string;
   onHandQuantity: number;
@@ -165,6 +177,7 @@ export type ProcurementStore = {
     location?: string | null;
   }): Promise<void>;
   receiveOrderTransaction?(input: ProcurementReceiptTransactionInput): Promise<void>;
+  createDraftOrderTransaction?(input: ProcurementDraftTransactionInput): Promise<void>;
   createAuditEvent(input: {
     actorUserId?: string;
     entityType: string;
@@ -295,18 +308,31 @@ export async function createDraftProcurementOrder(store: ProcurementStore, input
     })),
   };
 
-  await store.createOrder({ ...order, createdByUserId: input.actorUserId });
   for (const line of order.lines) {
     assertPositiveQuantity(line.quantityOrdered);
-    await store.createOrderLine(line);
   }
-  await store.createAuditEvent({
+
+  const transaction = {
+    order: { ...order, createdByUserId: input.actorUserId },
+    lines: order.lines,
+    audit: {
     actorUserId: input.actorUserId,
     entityType: "procurement_order",
     entityId: order.id,
     action: "procurement_order.created",
     metadata: { procurementOrderNumber: order.procurementOrderNumber, lineCount: order.lines.length },
-  });
+    },
+  } satisfies ProcurementDraftTransactionInput;
+
+  if (store.createDraftOrderTransaction) {
+    await store.createDraftOrderTransaction(transaction);
+  } else {
+    await store.createOrder(transaction.order);
+    for (const line of transaction.lines) {
+      await store.createOrderLine(line);
+    }
+    await store.createAuditEvent(transaction.audit);
+  }
 
   return order;
 }

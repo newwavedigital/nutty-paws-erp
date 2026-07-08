@@ -6,7 +6,7 @@ function setPoTab(t) { poTab = t; renderPurchaseOrders(document.getElementById('
 
 function renderPurchaseOrders(el) {
   ensureBackendPurchaseOrdersLoaded();
-  const all = state.purchaseOrders.slice().sort((a,b)=>(b.poDate || '').localeCompare(a.poDate || ''));
+  const all = backendBackedRowsOnly(state.purchaseOrders).slice().sort((a,b)=>(b.poDate || '').localeCompare(a.poDate || ''));
   const open = all.filter(p => p.status !== 'completed');
   const completed = all.filter(p => p.status === 'completed');
   const pos = poTab === 'completed' ? completed : open;
@@ -47,7 +47,6 @@ function renderPurchaseOrders(el) {
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${emptyMessage}</td></tr>` :
             pos.map(p => {
-            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
               <tr>
                 <td><strong>${p.id}</strong></td>
@@ -58,13 +57,12 @@ function renderPurchaseOrders(el) {
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
                 <td>${poFileLinkHtml(p)}</td>
-                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
+                <td>${statusBadge(p.status)}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
                   <button class="btn btn-icon btn-sm" onclick="printPO('${p.id}')">Print</button>
-                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited or cancelled">Backend required</span>' : ''}
-                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
-                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
+                  ${(p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
+                  ${(p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
                 </td>
               </tr>
             `}).join('')
@@ -76,7 +74,7 @@ function renderPurchaseOrders(el) {
 }
 
 function exportPOs() {
-  const rows = state.purchaseOrders.map(p => ({
+  const rows = backendBackedRowsOnly(state.purchaseOrders).map(p => ({
     PO: p.id,
     Brand: p.brand || '',
     Customer: getCustomer(p.customerId)?.name || '',

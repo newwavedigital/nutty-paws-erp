@@ -5,8 +5,10 @@ const GATES = [
   { name: "npm run frontend:check", cmd: "npm", args: ["run", "frontend:check"] },
   { name: "npm test", cmd: "npm", args: ["test"] },
   { name: "npm run typecheck", cmd: "npm", args: ["run", "typecheck"] },
+  { name: "npm run test:e2e", cmd: "npm", args: ["run", "test:e2e"] },
   { name: "npm run check:deploy-config", cmd: "npm", args: ["run", "check:deploy-config"] },
-  { name: "npx wrangler deploy --dry-run", cmd: "npx", args: ["wrangler", "deploy", "--dry-run"] },
+  { name: "npx wrangler deploy --env staging --dry-run", cmd: "npx", args: ["wrangler", "deploy", "--env", "staging", "--dry-run"] },
+  { name: "npx wrangler deploy --env production --dry-run", cmd: "npx", args: ["wrangler", "deploy", "--env", "production", "--dry-run"] },
 ];
 
 const results = [];

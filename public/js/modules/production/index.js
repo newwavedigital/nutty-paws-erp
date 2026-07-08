@@ -26,8 +26,23 @@ function renderProduction(el) {
     loadBackendProduction().then(() => { if (currentPage === 'production') router('production'); });
   }
   if (prodTab === 'Production Log') { el.innerHTML = productionTabsHtml() + renderBackendProductionBanner() + productionLogInnerHtml(); return; }
-  const unscheduled = state.purchaseOrders.filter(p => p.status === 'approved_for_production' && !p.productionDate);
-  const active = state.purchaseOrders.filter(p => p.productionDate && p.status !== 'qa_review' && p.status !== 'shipping' && p.status !== 'completed');
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const unscheduled = pos.filter(p => p.status === 'approved_for_production' && !p.productionDate);
+  const active = pos.filter(p => p.productionDate && p.status !== 'qa_review' && p.status !== 'shipping' && p.status !== 'completed');
+  const emptyProductionMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No active production runs. Schedule an approved PO from the calendar or the list below.';
+  const emptyScheduleMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No approved POs are waiting to be scheduled.';
   el.innerHTML = `
     ${productionTabsHtml()}
     ${renderBackendProductionBanner()}
@@ -48,7 +63,7 @@ function renderProduction(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">All POs currently scheduled on the calendar. Click <strong>Mark Complete</strong> to deduct inventory and send the PO to Quality Assurance for COA upload before shipping.</div>
       ${active.length === 0
-        ? '<div class="empty">No active production runs. Schedule an approved PO from the calendar or the list below.</div>'
+        ? `<div class="empty">${emptyProductionMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Brand / Customer</th><th>Room</th><th>Dates</th><th>Units</th><th></th></tr></thead>
             <tbody>
@@ -80,7 +95,7 @@ function renderProduction(el) {
         <span style="font-size:13px;color:var(--brown-light)">${unscheduled.length} approved order(s)</span>
       </div>
       ${unscheduled.length === 0
-        ? '<div class="empty">No approved POs are waiting to be scheduled.</div>'
+        ? `<div class="empty">${emptyScheduleMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Customer</th><th>Items</th><th>Suggested Room</th><th></th></tr></thead>
             <tbody>
@@ -305,7 +320,7 @@ function drawCalendar() {
 
   // build a map of date -> events; multi-day POs appear on every day in their range
   const events = {};
-  state.purchaseOrders.forEach(p => {
+  backendBackedRowsOnly(state.purchaseOrders).forEach(p => {
     if (!p.productionDate) return;
     const start = new Date(p.productionDate + 'T00:00:00');
     const endStr = p.productionEndDate || p.productionDate;
@@ -367,7 +382,15 @@ function drawCalendar() {
   cal.innerHTML = html;
 }
 function dayClick(dStr) {
-  const unsched = state.purchaseOrders.filter(p => p.status === 'approved_for_production');
+  if (!purchaseOrdersReadyForEmptyState()) {
+    toast('Loading purchase order records. Try scheduling again once data has loaded.');
+    return;
+  }
+  if (purchaseOrdersUnavailableForDisplay()) {
+    toast('Purchase order records are unavailable right now.');
+    return;
+  }
+  const unsched = backendBackedRowsOnly(state.purchaseOrders).filter(p => p.status === 'approved_for_production');
   if (unsched.length === 0) {
     toast('No approved POs to schedule. Approve some in Supply Chain.');
     return;
@@ -896,30 +919,31 @@ async function finalizeMarkComplete(id) {
     }
   }
 
-  // auto-create lot records on Food Safety Lot Tracking
-  state.lots = state.lots || [];
-  po.lines.forEach(l => {
-    if (!l.lotNumber) return;
-    const existing = state.lots.find(x => x.lotNumber === l.lotNumber);
-    if (existing) {
-      // update existing
-      existing.productId = l.productId;
-      existing.poId = po.id;
-      existing.productionDate = po.productionDate;
-      existing.quantity = l.actualQty;
-      existing.status = existing.status || 'Released';
-    } else {
-      state.lots.push({
-        id: uid('lt'),
-        lotNumber: l.lotNumber,
-        productId: l.productId,
-        poId: po.id,
-        productionDate: po.productionDate,
-        quantity: l.actualQty,
-        status: 'Released'
-      });
-    }
-  });
+  // Signed-in lot tracking must come from backend records; keep legacy local lots signed-out only.
+  if (!backendAuthSessionActive()) {
+    state.lots = state.lots || [];
+    po.lines.forEach(l => {
+      if (!l.lotNumber) return;
+      const existing = state.lots.find(x => x.lotNumber === l.lotNumber);
+      if (existing) {
+        existing.productId = l.productId;
+        existing.poId = po.id;
+        existing.productionDate = po.productionDate;
+        existing.quantity = l.actualQty;
+        existing.status = existing.status || 'Released';
+      } else {
+        state.lots.push({
+          id: uid('lt'),
+          lotNumber: l.lotNumber,
+          productId: l.productId,
+          poId: po.id,
+          productionDate: po.productionDate,
+          quantity: l.actualQty,
+          status: 'Released'
+        });
+      }
+    });
+  }
 
   // Production finalized -> goes to QA Review (not directly to Shipping). Already-shipped/completed POs stay where they are.
   if (po.status !== 'shipping' && po.status !== 'completed') po.status = 'qa_review';

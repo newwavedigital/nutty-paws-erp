@@ -23,8 +23,14 @@ describe("frontend/backend truth regression fixes", () => {
   test("shipment documents distinguish pending browser selection from backend upload", () => {
     expect(shippingModule).toContain("Shipment document selected. Save or mark shipped to upload it to the backend.");
     expect(shippingModule).toContain("const pending = pendingShipmentDocumentFiles.get(po?.id || '') || null");
-    expect(shippingModule).toContain("const localOnly = !!po?.shipping?.documents && !confirmedId && !pending");
     expect(shippingModule).toContain("ready: !!confirmedId || !!pending");
+    expect(shippingModule).not.toContain("localOnly");
+    expect(shippingModule).not.toContain("Local only");
+    expect(shippingModule).toContain("if (!backendAuthSessionActive()) saveState();");
+    expect(backendBridge).toContain("const existingShipping = backendAuthSessionActive() ? {} : (existing.shipping || {})");
+    expect(backendBridge).not.toContain("shippingDetails.bolNumber || existing.shipping?.bol");
+    expect(backendBridge).toContain("const shipmentDocumentFileId = shippingShipmentDocumentFileId(localPo)");
+    expect(backendBridge).toContain("localPo.shipping.documents = mapBackendFileToPrototype(shipmentDocument)");
     expect(shippingModule).toContain("const confirmedDocumentId = shippingShipmentDocumentFileId(po)");
     expect(shippingModule).toContain("if (!confirmedDocumentId && !pendingFile)");
     expect(shippingModule).toContain("Shipment document must be reselected so it can be uploaded to the backend.");
@@ -42,10 +48,12 @@ describe("frontend/backend truth regression fixes", () => {
     expect(contentLibraryModule).toContain("try {\n    if (libDragPayload.kind === 'file') {\n      const f = state.libraryFiles.find(x => x.id === libDragPayload.id);\n      if (f) await saveA10DataRecord('contentLibrary', 'file', { ...f, folderId: null }");
   });
 
-  test("signed-in backend sessions mark stale local PO rows instead of presenting live backend actions", () => {
-    expect(backendBridge).toContain("_localOnlyBackendStale: true");
-    expect(purchaseOrdersModule).toContain("Backend session active; local-only rows cannot be edited or cancelled");
-    expect(pickPackModule).toContain("Backend session active; local-only rows cannot be edited, picked, or cancelled");
+  test("signed-in backend sessions remove stale local PO rows instead of presenting live or draft actions", () => {
+    expect(backendBridge).toContain("removeLocalOnlyPurchaseOrdersForBackendSession();");
+    expect(backendBridge).toContain("removeLocalOnlyPickPackOrdersForBackendSession();");
+    expect(backendBridge).not.toContain("_localOnlyBackendStale: true");
+    expect(purchaseOrdersModule).not.toContain("Backend session active; local-only rows cannot be edited or cancelled");
+    expect(pickPackModule).not.toContain("Backend session active; local-only rows cannot be edited, picked, or cancelled");
   });
 
   test("pick-pack shipping form state is applied only after backend save succeeds", () => {

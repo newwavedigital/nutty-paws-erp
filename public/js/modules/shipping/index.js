@@ -5,11 +5,31 @@ function renderShipping(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendShippingState.loaded && !backendShippingState.loading) {
     loadBackendShipping().then(() => { if (currentPage === 'shipping') router('shipping'); });
   }
-  const ship = state.purchaseOrders.filter(p => p.status === 'shipping' || p.status === 'completed');
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const ship = pos.filter(p => p.status === 'shipping' || p.status === 'completed');
   const open = ship.filter(p => p.status === 'shipping');
   const done = ship.filter(p => p.status === 'completed');
   const openExternal = open.filter(p => !isInternalBrand(p));
   const openInternal = open.filter(p => isInternalBrand(p));
+  const emptyExternalMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No external POs awaiting shipment.';
+  const emptyInternalMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No internal-brand runs to stock.';
+  const emptyDoneMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No completed orders yet.';
   el.innerHTML = `
     ${renderBackendShippingBanner()}
     <div class="card">
@@ -18,7 +38,7 @@ function renderShipping(el) {
         <span style="font-size:13px;color:var(--brown-light)">${openExternal.length} order(s) for external customers</span>
       </div>
       ${openExternal.length === 0
-        ? '<div class="empty">No external POs awaiting shipment.</div>'
+        ? `<div class="empty">${emptyExternalMessage}</div>`
         : openExternal.map(p => shippingCardHtml(p)).join('')
       }
     </div>
@@ -30,7 +50,7 @@ function renderShipping(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">Internal-brand POs (Bnutty, Dilly's, Poochie Butter) don't ship &mdash; they go to the warehouse to stock the shelves. Confirm to mark complete.</div>
       ${openInternal.length === 0
-        ? '<div class="empty">No internal-brand runs to stock.</div>'
+        ? `<div class="empty">${emptyInternalMessage}</div>`
         : openInternal.map(p => warehouseStockCardHtml(p)).join('')
       }
     </div>
@@ -41,7 +61,7 @@ function renderShipping(el) {
         <button class="btn btn-secondary btn-sm" onclick="exportShipments()">Export CSV</button>
       </div>
       ${done.length === 0
-        ? '<div class="empty">No completed orders yet.</div>'
+        ? `<div class="empty">${emptyDoneMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO</th><th>Type</th><th>Customer / Brand</th><th>Units</th><th>Cases</th><th>BOL #</th><th>Carrier</th><th>Pallets</th><th></th></tr></thead>
             <tbody>
@@ -142,11 +162,10 @@ function shippingCardHtml(p) {
           <h3 style="margin:0">${p.id} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">${p.brand ? '<span class="pill">'+escapeHtml(p.brand)+'</span> ' : ''}Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${docState.localOnly ? '<span class="badge badge-low">Local only</span>' : ''}${statusBadge(p.status)}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${statusBadge(p.status)}</div>
       </div>
       ${productionTotalsHtml(p)}
-      ${docState.localOnly ? '<div class="inv-check" style="margin-top:10px"><strong>Local-only row.</strong> This shipment is not attached to a backend PO, so live save and ship actions stay disabled.</div>' : ''}
-      <fieldset ${docState.localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+      <fieldset style="border:0;padding:0;margin:0">
         <div class="form-grid" style="margin-top:12px">
           <div class="form-row"><label>BOL #</label><input id="sh_bol_${p.id}" value="${escapeHtml(s.bol||'')}" /></div>
           <div class="form-row"><label>Pro #</label><input id="sh_pro_${p.id}" value="${escapeHtml(s.proNumber||'')}" /></div>
@@ -159,7 +178,7 @@ function shippingCardHtml(p) {
           ${shipPalletRowsHtml(p)}
         </div>
         <div class="form-row" style="margin-top:14px">
-          <label>Shipment Documents <span class="badge ${docState.confirmedId ? 'badge-prod' : 'badge-low'}">${docState.confirmedId ? 'Uploaded' : docState.pending ? 'Pending upload' : docState.localOnly ? 'Local only' : 'Required to ship'}</span></label>
+          <label>Shipment Documents <span class="badge ${docState.confirmedId ? 'badge-prod' : 'badge-low'}">${docState.confirmedId ? 'Uploaded' : docState.pending ? 'Pending upload' : 'Required to ship'}</span></label>
           <div class="file-upload">
             <input type="file" id="sh_docs_input_${p.id}" accept=".pdf,.doc,.docx,image/*" onchange="shipDocsSelected(event,'${p.id}')" />
             <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
@@ -167,9 +186,7 @@ function shippingCardHtml(p) {
                 ? `&#128206; ${escapeHtml(s.documents?.name || 'shipment-document')} (${Math.round((s.documents?.size||0)/1024)} KB)`
                 : docState.pending
                   ? `&#128206; ${escapeHtml(docState.pending.name)} (${Math.round((docState.pending.size||0)/1024)} KB) pending upload`
-                  : docState.localOnly
-                    ? 'This copy is local only and is not attached to the backend.'
-                    : 'No backend shipment document uploaded. Required before marking shipped.'}
+                  : 'No backend shipment document uploaded. Required before marking shipped.'}
             </div>
             ${docState.confirmedId && s.documents ? shippingFileDownloadHtml(s.documents) : ''}
             ${docState.pending ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}
@@ -184,8 +201,8 @@ function shippingCardHtml(p) {
         <button class="btn btn-icon" onclick="viewPO('${p.id}')">View PO</button>
         <button class="btn btn-icon" onclick="printPackingSlip('${p.id}')">Print Packing Slip</button>
         <button class="btn btn-dark" onclick="printDocuments('${p.id}')">Print Documents</button>
-        <button class="btn btn-secondary" ${docState.localOnly ? 'disabled title="This shipment is local-only and cannot be saved back to the backend"' : ''} onclick="saveShipping('${p.id}')">Save</button>
-        <button class="btn" ${hasDocs && !docState.localOnly ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
+        <button class="btn btn-secondary" onclick="saveShipping('${p.id}')">Save</button>
+        <button class="btn" ${hasDocs ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
       </div>
     </div>
   `;
@@ -195,7 +212,7 @@ function addShippingPallet(id) {
   if (!po) return;
   captureShippingForm(po);          // preserve current input
   shipPalletList(po).push({ length:0, width:0, height:0, weight:0 });
-  saveState();
+  if (!backendAuthSessionActive()) saveState();
   router('shipping');
 }
 function removeShippingPallet(id, idx) {
@@ -204,7 +221,7 @@ function removeShippingPallet(id, idx) {
   captureShippingForm(po);
   const list = shipPalletList(po);
   if (list.length > 1) list.splice(idx, 1);
-  saveState();
+  if (!backendAuthSessionActive()) saveState();
   router('shipping');
 }
 function readShippingForm(po) {
@@ -310,11 +327,9 @@ function shippingFileDownloadHtml(file) {
 function shippingDocumentState(po) {
   const confirmedId = shippingShipmentDocumentFileId(po);
   const pending = pendingShipmentDocumentFiles.get(po?.id || '') || null;
-  const localOnly = !!po?.shipping?.documents && !confirmedId && !pending;
   return {
     confirmedId,
     pending,
-    localOnly,
     ready: !!confirmedId || !!pending
   };
 }
@@ -448,7 +463,7 @@ async function completeShipment(id) {
 function shipTotalWeight(s) { return (s?.palletList||[]).reduce((sum,pl)=>sum+(parseFloat(pl.weight)||0),0); }
 function shipPalletCount(s) { return (s?.palletList||[]).length; }
 function exportShipments() {
-  const rows = state.purchaseOrders
+  const rows = backendBackedRowsOnly(state.purchaseOrders)
     .filter(p => p.status === 'completed' || p.status === 'shipping')
     .map(p => ({
       PO: p.id,

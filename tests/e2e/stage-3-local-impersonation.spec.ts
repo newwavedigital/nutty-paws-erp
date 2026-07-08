@@ -176,13 +176,7 @@ test("Stage 3 stale local rows cannot impersonate backend records in signed-in m
   );
   await page.getByRole("button", { name: /Purchase Orders/ }).click();
   await purchaseOrdersLoad;
-  const stalePoRow = page.locator("tr", { hasText: "STAGE3-LOCAL-PO" });
-  await expect(stalePoRow).toBeVisible();
-  await expect(stalePoRow.getByText("Local draft")).toBeVisible();
-  await expect(stalePoRow.getByText("Backend required")).toBeVisible();
-  await expect(stalePoRow.getByRole("button", { name: "Edit" })).toHaveCount(0);
-  await expect(stalePoRow.getByRole("button", { name: "Delete" })).toHaveCount(0);
-  await expect(stalePoRow.locator('[title="Not saved to backend"]')).toHaveCount(1);
+  await expect(page.getByText("STAGE3-LOCAL-PO")).toHaveCount(0);
 
   const pickPackLoad = page.waitForResponse((response) =>
     response.request().method() === "GET" &&
@@ -191,21 +185,10 @@ test("Stage 3 stale local rows cannot impersonate backend records in signed-in m
   );
   await page.getByRole("button", { name: /Pick & Pack/ }).click();
   await pickPackLoad;
-  const stalePickRow = page.locator("tr", { hasText: "STAGE3-LOCAL-PICK" });
-  await expect(stalePickRow).toBeVisible();
-  await expect(stalePickRow.getByText("Local draft")).toBeVisible();
-  await expect(stalePickRow.getByText("Backend required")).toBeVisible();
-  await expect(stalePickRow.getByRole("button", { name: "Edit" })).toHaveCount(0);
-  await expect(stalePickRow.getByRole("button", { name: /Mark Picked/ })).toHaveCount(0);
-  await expect(stalePickRow.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  await expect(page.getByText("STAGE3-LOCAL-PICK")).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Shipping/ }).click();
-  const staleShippingCard = page.locator(".card", { hasText: "STAGE3-LOCAL-SHIP" }).first();
-  await expect(staleShippingCard).toBeVisible();
-  await expect(staleShippingCard.locator('[title="Not saved to backend"]').getByText("Local draft")).toBeVisible();
-  await expect(staleShippingCard.getByText("Not saved to backend.")).toBeVisible();
-  await expect(page.locator(`button[onclick="savePickPackShippingForm('PP-STAGE3-SHIP')"]`)).toBeDisabled();
-  await expect(page.locator(`button[onclick="markPickPackShipped('PP-STAGE3-SHIP')"]`)).toBeDisabled();
+  await expect(page.getByText("STAGE3-LOCAL-SHIP")).toHaveCount(0);
 
   expect(consoleErrors).toEqual([]);
 });

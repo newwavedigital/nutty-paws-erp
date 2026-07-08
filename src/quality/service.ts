@@ -38,6 +38,34 @@ export type QualityCoaFileRecord = {
   fileName: string;
 };
 
+export type QualityReleaseTransactionInput = {
+  purchaseOrderId: string;
+  mode: "release" | "skip";
+  routeStatus: "shipping" | "completed";
+  releaseType?: QualityReleaseType;
+  releasedAt?: string;
+  releasedByUserId?: string;
+  skippedAt?: string;
+  skippedByUserId?: string;
+  skipReason?: string;
+  notes?: string | null;
+  statusEvent: {
+    purchaseOrderId: string;
+    fromStatus: string | null;
+    toStatus: string;
+    eventType: string;
+    actorUserId?: string;
+    note?: string;
+  };
+  audit: {
+    actorUserId?: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    metadata: Record<string, unknown>;
+  };
+};
+
 export type QualityStore = {
   listQualityQueue(): Promise<QualityPurchaseOrderRecord[]>;
   getPurchaseOrder(id: string): Promise<QualityPurchaseOrderRecord | null>;
@@ -59,6 +87,7 @@ export type QualityStore = {
     skipReason: string;
     notes?: string | null;
   }): Promise<QualityPurchaseOrderRecord | null>;
+  releaseQualityTransaction?(input: QualityReleaseTransactionInput): Promise<QualityPurchaseOrderRecord | null>;
   attachPostShipmentCoaFile(input: {
     purchaseOrderId: string;
     fileId: string;
@@ -110,6 +139,44 @@ export async function releaseQualityPurchaseOrder(
   const routeStatus = determineRouteStatus(po);
   const releaseType = routeStatus === "completed" ? "internal_own_brand" : "external_co_pack";
   const releasedAt = new Date().toISOString();
+  const statusEvent = {
+    purchaseOrderId: po.id,
+    fromStatus: po.status,
+    toStatus: routeStatus,
+    eventType: "purchase_order.qa_released",
+    actorUserId: input.actorUserId,
+    note: input.notes ?? coaFile.fileName,
+  };
+  const audit = {
+    actorUserId: input.actorUserId,
+    entityType: "purchase_order",
+    entityId: po.id,
+    action: "purchase_order.qa_released",
+    metadata: {
+      coaFileId: coaFile.id,
+      routeStatus,
+      releaseType,
+      notes: input.notes ?? null,
+    },
+  };
+
+  if (store.releaseQualityTransaction) {
+    const updated = await store.releaseQualityTransaction({
+      purchaseOrderId: po.id,
+      mode: "release",
+      routeStatus,
+      releaseType,
+      releasedAt,
+      releasedByUserId: input.actorUserId,
+      notes: input.notes ?? null,
+      statusEvent,
+      audit,
+    });
+    if (!updated) {
+      throw new QualityError("QUALITY_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+    }
+    return updated;
+  }
 
   const updated = await store.updatePurchaseOrderQualityRelease({
     purchaseOrderId: po.id,
@@ -125,25 +192,12 @@ export async function releaseQualityPurchaseOrder(
 
   const releasedLotCount = await store.releaseInventoryLots(po.id);
 
-  await store.createStatusEvent({
-    purchaseOrderId: po.id,
-    fromStatus: po.status,
-    toStatus: routeStatus,
-    eventType: "purchase_order.qa_released",
-    actorUserId: input.actorUserId,
-    note: input.notes ?? coaFile.fileName,
-  });
+  await store.createStatusEvent(statusEvent);
   await store.createAuditEvent({
-    actorUserId: input.actorUserId,
-    entityType: "purchase_order",
-    entityId: po.id,
-    action: "purchase_order.qa_released",
+    ...audit,
     metadata: {
-      coaFileId: coaFile.id,
-      routeStatus,
-      releaseType,
+      ...audit.metadata,
       releasedLotCount,
-      notes: input.notes ?? null,
     },
   });
 
@@ -164,6 +218,43 @@ export async function skipQualityPurchaseOrder(
   const reason = requireReason(input.reason);
   const routeStatus = determineRouteStatus(po);
   const skippedAt = new Date().toISOString();
+  const statusEvent = {
+    purchaseOrderId: po.id,
+    fromStatus: po.status,
+    toStatus: routeStatus,
+    eventType: "purchase_order.qa_skipped",
+    actorUserId: input.actorUserId,
+    note: reason,
+  };
+  const audit = {
+    actorUserId: input.actorUserId,
+    entityType: "purchase_order",
+    entityId: po.id,
+    action: "purchase_order.qa_skipped",
+    metadata: {
+      routeStatus,
+      skipReason: reason,
+      notes: input.notes ?? null,
+    },
+  };
+
+  if (store.releaseQualityTransaction) {
+    const updated = await store.releaseQualityTransaction({
+      purchaseOrderId: po.id,
+      mode: "skip",
+      routeStatus,
+      skippedAt,
+      skippedByUserId: input.actorUserId,
+      skipReason: reason,
+      notes: input.notes ?? reason,
+      statusEvent,
+      audit,
+    });
+    if (!updated) {
+      throw new QualityError("QUALITY_PURCHASE_ORDER_NOT_FOUND", "Purchase order not found");
+    }
+    return updated;
+  }
 
   const updated = await store.updatePurchaseOrderQualitySkip({
     purchaseOrderId: po.id,
@@ -179,24 +270,12 @@ export async function skipQualityPurchaseOrder(
 
   const releasedLotCount = await store.releaseInventoryLots(po.id);
 
-  await store.createStatusEvent({
-    purchaseOrderId: po.id,
-    fromStatus: po.status,
-    toStatus: routeStatus,
-    eventType: "purchase_order.qa_skipped",
-    actorUserId: input.actorUserId,
-    note: reason,
-  });
+  await store.createStatusEvent(statusEvent);
   await store.createAuditEvent({
-    actorUserId: input.actorUserId,
-    entityType: "purchase_order",
-    entityId: po.id,
-    action: "purchase_order.qa_skipped",
+    ...audit,
     metadata: {
-      routeStatus,
-      skipReason: reason,
+      ...audit.metadata,
       releasedLotCount,
-      notes: input.notes ?? null,
     },
   });
 

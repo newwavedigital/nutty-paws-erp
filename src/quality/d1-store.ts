@@ -2,6 +2,7 @@ import type {
   QualityCoaFileRecord,
   QualityPurchaseOrderLineRecord,
   QualityPurchaseOrderRecord,
+  QualityReleaseTransactionInput,
   QualityReleaseType,
   QualityStore,
 } from "./service";
@@ -183,6 +184,117 @@ export class D1QualityStore implements QualityStore {
     return this.getPurchaseOrder(input.purchaseOrderId);
   }
 
+  async releaseQualityTransaction(input: QualityReleaseTransactionInput): Promise<QualityPurchaseOrderRecord | null> {
+    const lotCount = input.mode === "release"
+      ? await this.countQaReviewLots(input.purchaseOrderId)
+      : 0;
+    const updateStatement = input.mode === "release"
+      ? this.db
+          .prepare(
+            `
+              UPDATE purchase_orders
+              SET status = ?,
+                  qa_released_at = ?,
+                  qa_released_by_user_id = ?,
+                  qa_release_type = ?,
+                  qa_notes = ?,
+                  qa_skipped_at = NULL,
+                  qa_skipped_by_user_id = NULL,
+                  qa_skip_reason = NULL,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `,
+          )
+          .bind(
+            input.routeStatus,
+            input.releasedAt ?? null,
+            input.releasedByUserId ?? null,
+            input.releaseType ?? null,
+            input.notes ?? null,
+            input.purchaseOrderId,
+          )
+      : this.db
+          .prepare(
+            `
+              UPDATE purchase_orders
+              SET status = ?,
+                  qa_released_at = NULL,
+                  qa_released_by_user_id = NULL,
+                  qa_release_type = NULL,
+                  qa_notes = ?,
+                  qa_skipped_at = ?,
+                  qa_skipped_by_user_id = ?,
+                  qa_skip_reason = ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `,
+          )
+          .bind(
+            input.routeStatus,
+            input.notes ?? null,
+            input.skippedAt ?? null,
+            input.skippedByUserId ?? null,
+            input.skipReason ?? null,
+            input.purchaseOrderId,
+          );
+
+    const metadata = input.mode === "release"
+      ? { ...input.audit.metadata, releasedLotCount: lotCount }
+      : { ...input.audit.metadata, releasedLotCount: lotCount };
+
+    await this.db.batch([
+      updateStatement,
+      this.db
+        .prepare(
+          `
+            UPDATE inventory_lots
+            SET status = 'released',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE purchase_order_id = ?
+              AND status = 'qa_review'
+          `,
+        )
+        .bind(input.purchaseOrderId),
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_order_status_events (
+              id, purchase_order_id, from_status, to_status, event_type, note, created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `po_status_event_${crypto.randomUUID()}`,
+          input.statusEvent.purchaseOrderId,
+          input.statusEvent.fromStatus,
+          input.statusEvent.toStatus,
+          input.statusEvent.eventType,
+          input.statusEvent.note ?? null,
+          input.statusEvent.actorUserId ?? null,
+        ),
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id, actor_user_id, entity_type, entity_id, action, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          input.audit.entityType,
+          input.audit.entityId,
+          input.audit.action,
+          JSON.stringify(metadata),
+        ),
+    ]);
+
+    return this.getPurchaseOrder(input.purchaseOrderId);
+  }
+
   async attachPostShipmentCoaFile(input: { purchaseOrderId: string; fileId: string }): Promise<QualityPurchaseOrderRecord | null> {
     await this.db
       .prepare(
@@ -304,6 +416,21 @@ export class D1QualityStore implements QualityStore {
       postShipmentCoaFileId: row.post_shipment_coa_file_id,
       lines: (lines.results ?? []).map(mapLineRow),
     };
+  }
+
+  private async countQaReviewLots(purchaseOrderId: string): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM inventory_lots
+          WHERE purchase_order_id = ?
+            AND status = 'qa_review'
+        `,
+      )
+      .bind(purchaseOrderId)
+      .first<{ count: number }>();
+    return row?.count ?? 0;
   }
 }
 

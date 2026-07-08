@@ -277,11 +277,15 @@ function foodSafetyLotsNoticeHtml() {
 
 function renderFsLots(el) {
   const signedInLocked = foodSafetyLotsAreBackendLocked();
+  const lots = signedInLocked ? [] : (state.lots || []);
+  const emptyMessage = signedInLocked
+    ? 'Backend lot tracking is not connected yet. No local lot rows are shown in signed-in sessions.'
+    : 'No lots logged.';
   el.innerHTML = `
     <div class="card-header">
       <h2>Lot Tracking</h2>
       <div>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', ${signedInLocked ? '[]' : "state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''}))"})">Export CSV</button>
         <button class="btn" onclick="editLot()" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>+ New Lot</button>
       </div>
     </div>
@@ -290,8 +294,8 @@ function renderFsLots(el) {
     <div class="table-wrap"><table>
       <thead><tr><th>Lot #</th><th>Product</th><th>PO</th><th>Production Date</th><th>Qty</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${state.lots.length === 0 ? `<tr><td colspan="7" class="empty">No lots logged.</td></tr>` :
-          state.lots.slice().sort((a,b)=>b.productionDate.localeCompare(a.productionDate)).map(l => `
+        ${lots.length === 0 ? `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>` :
+          lots.slice().sort((a,b)=>b.productionDate.localeCompare(a.productionDate)).map(l => `
             <tr>
               <td><strong>${escapeHtml(l.lotNumber)}</strong></td>
               <td>${escapeHtml(getProduct(l.productId)?.name || '-')}</td>

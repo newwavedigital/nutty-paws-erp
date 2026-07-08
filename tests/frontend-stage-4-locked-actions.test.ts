@@ -26,14 +26,20 @@ describe("Stage 4 locked actions and role/page access", () => {
     expect(publicApp).toContain("Production: new Set(['dashboard', 'production', 'food-safety', 'quality-assurance', 'pick-pack', 'inventory', 'feedback'])");
   });
 
-  test("keeps purchase-order and pick-pack local/stale rows visibly locked", () => {
-    expect(purchaseOrdersModule).toContain("!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain')");
-    expect(purchaseOrdersModule).toContain("Backend session active; local-only rows cannot be edited or cancelled");
+  test("drops stale local purchase-order and pick-pack rows from signed-in backend sessions", () => {
+    expect(publicApp).toContain("function backendBackedRowsOnly");
+    expect(publicApp).toContain("return backendAuthSessionActive() ? rows.filter(row => row._backendId) : rows;");
+    expect(publicApp).toContain("function removeLocalOnlyPurchaseOrdersForBackendSession");
+    expect(publicApp).toContain("function removeLocalOnlyPickPackOrdersForBackendSession");
+    expect(purchaseOrdersModule).not.toContain("_localOnlyBackendStale");
+    expect(purchaseOrdersModule).not.toContain("Local draft");
+    expect(purchaseOrdersModule).not.toContain("Backend session active; local-only rows cannot be edited or cancelled");
     expect(purchaseOrdersModule).toContain("Purchase order cancellation requires backend confirmation. Nothing was saved locally.");
 
-    expect(pickPackModule).toContain("Backend session active; local-only rows cannot be edited, picked, or cancelled");
+    expect(pickPackModule).not.toContain("_localOnlyBackendStale");
+    expect(pickPackModule).not.toContain("Local draft");
+    expect(pickPackModule).not.toContain("Backend session active; local-only rows cannot be edited, picked, or cancelled");
     expect(pickPackModule).toContain("Pick & Pack PO cancellation requires backend confirmation. Nothing was saved locally.");
-    expect(pickPackModule).toContain("This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.");
   });
 
   test("keeps received procurement rows and backend production/food-safety records locked", () => {

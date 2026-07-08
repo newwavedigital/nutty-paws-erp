@@ -20,10 +20,13 @@ function renderPickPack(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendPickPackState.loaded && !backendPickPackState.loading) {
     loadBackendPickPack().then(() => { if (currentPage === 'pick-pack') router('pick-pack'); }).catch(() => {});
   }
-  const open = (state.pickPackOrders || []).filter(p => p.status === 'open');
-  const ship = (state.pickPackOrders || []).filter(p => p.status === 'picked');
-  const done = (state.pickPackOrders || []).filter(p => p.status === 'shipped');
-  const openReqs = (state.productionRequests||[]).filter(r => r.status !== 'Fulfilled' && r.status !== 'Declined').length;
+  const visiblePickPackOrders = backendBackedRowsOnly(state.pickPackOrders);
+  const open = visiblePickPackOrders.filter(p => p.status === 'open');
+  const ship = visiblePickPackOrders.filter(p => p.status === 'picked');
+  const done = visiblePickPackOrders.filter(p => p.status === 'shipped');
+  const openReqs = productionRequestActionsDisabled()
+    ? 0
+    : (state.productionRequests||[]).filter(r => r.status !== 'Fulfilled' && r.status !== 'Declined').length;
   el.innerHTML = `
     ${renderBackendPickPackBanner()}
     <div class="card">
@@ -56,13 +59,18 @@ function prodReqStatusClass(s) {
   }
 }
 function renderProductionRequests(el) {
-  const reqs = (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const actionsDisabled = productionRequestActionsDisabled();
+  const reqs = actionsDisabled
+    ? []
+    : (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const emptyMessage = actionsDisabled
+    ? "Backend replenishment requests are not connected yet. No local request rows are shown in signed-in sessions."
+    : "No production requests yet.";
   el.innerHTML = `
     <div class="card-header">
       <h2>Requested Production Orders</h2>
       <div>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', ${actionsDisabled ? '[]' : "state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes}))"})">Export CSV</button>
         <button class="btn" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : 'onclick="editProductionRequest()"'}>+ Request Production</button>
       </div>
     </div>
@@ -71,7 +79,7 @@ function renderProductionRequests(el) {
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Distributor</th><th>Product</th><th>Qty Requested</th><th>On Hand</th><th>Needed By</th><th>Requested By</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${reqs.length === 0 ? `<tr><td colspan="9" class="empty">No production requests yet.</td></tr>` :
+        ${reqs.length === 0 ? `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>` :
           reqs.map(r => {
             const fg = state.ingredients.find(i=>i.id===r.ingredientId);
             const onHand = fg?.stock || 0;
@@ -109,7 +117,7 @@ function productionRequestsUnsupportedHtml() {
   return `
     <div class="inv-check" style="margin-bottom:10px">
       <strong>Requested PO's are not included in the backend automations yet.</strong>
-      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. Signed-in users can view existing rows only; request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
+      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. No local request rows are shown in signed-in sessions, and request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
     </div>
   `;
 }
@@ -241,7 +249,6 @@ function renderPickPackPOs(el, pos) {
           <tbody>
           ${pos.map(p => {
               const cust = getCustomer(p.customerId);
-              const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               const stockOk = pickPackStockCheck(p);
               const stockBadge = stockOk.ok
                 ? '<span class="badge badge-prod">Available</span>'
@@ -253,7 +260,7 @@ function renderPickPackPOs(el, pos) {
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
-                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
+                <td>${stockBadge}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
                       className: 'btn btn-icon btn-sm',
@@ -265,9 +272,9 @@ function renderPickPackPOs(el, pos) {
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
-                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited, picked, or cancelled">Backend required</span>' : `<button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>`}
-                  ${localOnly ? '' : `<button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>`}
-                  ${localOnly ? '' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>`}
+                  <button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>
+                  <button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>
+                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>
                 </td>
               </tr>`;
             }).join('')}
@@ -294,7 +301,6 @@ function renderPickPackShipping(el, list) {
 function pickPackShippingCardHtml(p) {
   const cust = getCustomer(p.customerId);
   const mode = p.shippingMode || 'pallet';
-  const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
   return `
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -302,7 +308,6 @@ function pickPackShippingCardHtml(p) {
           <h3 style="margin:0">${escapeHtml(p.id)} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'-')} &middot; Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} &middot; Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
-        ${localOnly ? '<span class="badge badge-low" title="Not saved to backend">Local draft</span>' : ''}
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
@@ -318,15 +323,14 @@ function pickPackShippingCardHtml(p) {
         <strong style="color:var(--brown);font-size:13px">Shipping Mode</strong>
         <div style="display:flex;gap:14px;margin-top:6px">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
+            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
+            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
           </label>
         </div>
       </div>
-      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local draft.</strong> Not saved to backend. This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
-      <fieldset ${localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+      <fieldset style="border:0;padding:0;margin:0">
         <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
         <div class="form-row" style="margin-top:10px">
           <label>Notes</label>
@@ -334,8 +338,8 @@ function pickPackShippingCardHtml(p) {
         </div>
       </fieldset>
       <div class="form-actions">
-        <button class="btn btn-secondary" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be saved to the backend"' : ''} onclick="savePickPackShippingForm('${p.id}')">Save</button>
-        <button class="btn" style="background:var(--success)" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be marked shipped"' : ''} onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
+        <button class="btn btn-secondary" onclick="savePickPackShippingForm('${p.id}')">Save</button>
+        <button class="btn" style="background:var(--success)" onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
       </div>
     </div>
   `;
@@ -392,9 +396,8 @@ function renderPickPackShipped(el, list) {
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
             const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'-') : (p.bol||'-');
-            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
             return `<tr>
-              <td><strong>${escapeHtml(p.id)}</strong>${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
+              <td><strong>${escapeHtml(p.id)}</strong></td>
               <td>${escapeHtml(cust?.name||'')}</td>
               <td><span class="pill">${escapeHtml(p.poNumber||'-')}</span></td>
               <td>${fmtDate(p.shippedAt?.slice(0,10)||'')}</td>
@@ -514,6 +517,10 @@ function rerenderPickPackLines() {
 }
 // Quick-create a Finished Good for a pick-pack distributor without leaving the flow
 function quickAddFinishedGood(customerId) {
+  if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendPickPackState, 'Finished Goods must be created through backend Inventory records. Nothing was saved locally.');
+    return;
+  }
   const cust = getCustomer(customerId);
   const name = prompt(`New Finished Good name for ${cust?.name||'distributor'}:`);
   if (!name || !name.trim()) return;

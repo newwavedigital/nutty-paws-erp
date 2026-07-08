@@ -741,6 +741,15 @@ function employeeBackendSessionActive() {
   return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer';
 }
 
+function backendAuthSessionActive() {
+  return !!backendAuthState.token;
+}
+
+function backendBackedRowsOnly(rows) {
+  rows = Array.isArray(rows) ? rows : [];
+  return backendAuthSessionActive() ? rows.filter(row => row._backendId) : rows;
+}
+
 async function attachBackendPostShipmentCoa(purchaseOrderId, file) {
   if (!file) return null;
   const uploaded = await uploadBackendQualityCoa(purchaseOrderId, file, 'coa');
@@ -1054,15 +1063,16 @@ function backendPickPackOrderToLocal(order, existing = {}) {
 }
 
 function mergeBackendPickPackOrders(records) {
+  removeLocalOnlyPickPackOrdersForBackendSession();
   const mapped = (records || []).map(order => backendPickPackOrderToLocal(order, (state.pickPackOrders || []).find(local => local._backendId === order.id || local.id === order.pickPackNumber || local.id === order.id) || {}));
   const backendKeys = new Set();
   mapped.forEach(order => {
     [order._backendId, order.id, order.poNumber].filter(Boolean).forEach(key => backendKeys.add(String(key)));
   });
-  const remainingLocal = (state.pickPackOrders || []).filter(order => {
+  const remainingLocal = backendAuthSessionActive() ? [] : (state.pickPackOrders || []).filter(order => {
     const keys = [order._backendId, order.id, order.poNumber].filter(Boolean).map(String);
     return !keys.some(key => backendKeys.has(key));
-  }).map(order => employeeBackendSessionActive() ? { ...order, _localOnlyBackendStale: true } : order);
+  });
   state.pickPackOrders = [...mapped, ...remainingLocal];
   backendPickPackState.orders = mapped;
   try { saveState(); } catch (err) {}
@@ -2299,22 +2309,26 @@ function backendPurchaseOrderId(po) {
   return po?._backendId || po?.id || '';
 }
 
-function markLocalOnlyPurchaseOrdersForBackendSession() {
-  if (!employeeBackendSessionActive()) return;
-  state.purchaseOrders = (state.purchaseOrders || []).map(po =>
-    !po._backendId ? { ...po, _localOnlyBackendStale: true } : po
-  );
+function removeLocalOnlyPurchaseOrdersForBackendSession() {
+  if (!backendAuthSessionActive()) return;
+  state.purchaseOrders = backendBackedRowsOnly(state.purchaseOrders);
 }
 
-function mergeBackendPurchaseOrders(records) {
+function removeLocalOnlyPickPackOrdersForBackendSession() {
+  if (!backendAuthSessionActive()) return;
+  state.pickPackOrders = backendBackedRowsOnly(state.pickPackOrders);
+}
+
+function mergeBackendPurchaseOrders(records, options = {}) {
+  removeLocalOnlyPurchaseOrdersForBackendSession();
   const backendPos = (records || []).map(mapBackendPurchaseOrderToPrototype);
   const backendIds = new Set(backendPos.map(po => po._backendId));
-  markLocalOnlyPurchaseOrdersForBackendSession();
+  const existingRows = backendBackedRowsOnly(state.purchaseOrders);
   state.purchaseOrders = [
     ...backendPos,
-    ...state.purchaseOrders
+    ...(options.replaceAll ? [] : existingRows
       .filter(po => !po._backendId || !backendIds.has(po._backendId))
-      .map(po => employeeBackendSessionActive() && !po._backendId ? { ...po, _localOnlyBackendStale: true } : po)
+    )
   ];
   try { saveState(); } catch (err) {}
   return backendPos;
@@ -2325,14 +2339,15 @@ function mapBackendPurchaseOrderToPrototype(po) {
   const existing = (state.purchaseOrders || []).find(local => local._backendId === po.id || local.id === po.poNumber || local.id === po.id) || {};
   const shippingDetails = po.shippingDetails || {};
   const shippingPalletList = parseJsonFallback(shippingDetails.palletListJson, []);
+  const existingShipping = backendAuthSessionActive() ? {} : (existing.shipping || {});
   const backendShipping = {
-    ...(existing.shipping || {}),
-    bol: shippingDetails.bolNumber || existing.shipping?.bol || '',
-    proNumber: shippingDetails.proNumber || existing.shipping?.proNumber || '',
-    carrier: shippingDetails.carrier || existing.shipping?.carrier || '',
-    freightClass: shippingDetails.freightClass || existing.shipping?.freightClass || '',
-    notes: shippingDetails.notes || po.shippingNotes || existing.shipping?.notes || '',
-    palletList: shippingPalletList.length ? shippingPalletList : existing.shipping?.palletList,
+    ...existingShipping,
+    bol: shippingDetails.bolNumber || existingShipping.bol || '',
+    proNumber: shippingDetails.proNumber || existingShipping.proNumber || '',
+    carrier: shippingDetails.carrier || existingShipping.carrier || '',
+    freightClass: shippingDetails.freightClass || existingShipping.freightClass || '',
+    notes: shippingDetails.notes || po.shippingNotes || existingShipping.notes || '',
+    palletList: shippingPalletList.length ? shippingPalletList : existingShipping.palletList,
     documents: null,
     shipmentDocumentFileId: po.shipmentDocumentFileId || shippingDetails.shipmentDocumentFileId || ''
   };
@@ -2443,6 +2458,15 @@ async function attachBackendFilesToPurchaseOrder(localPo) {
   localPo._backendFiles = files || [];
   const firstPoFile = (files || []).find(file => file.fileCategory === 'po_file') || files?.[0] || null;
   localPo.poFile = firstPoFile ? mapBackendFileToPrototype(firstPoFile) : localPo.poFile || null;
+  const shipmentDocumentFileId = shippingShipmentDocumentFileId(localPo);
+  const shipmentDocument = shipmentDocumentFileId
+    ? (files || []).find(file => file.id === shipmentDocumentFileId && file.fileCategory === 'shipment_document') || null
+    : null;
+  if (shipmentDocument) {
+    localPo.shipping = localPo.shipping || {};
+    localPo.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
+    localPo.shipping.shipmentDocumentFileId = shipmentDocument.id;
+  }
   return localPo;
 }
 
@@ -2512,7 +2536,7 @@ async function loadBackendPurchaseOrderRecords(requestId) {
   try {
     const records = await apiRequest('/api/purchase-orders');
     if (requestId !== backendApiState.purchaseOrderLoadRequestId) return state.purchaseOrders;
-    const backendPos = mergeBackendPurchaseOrders(records);
+    const backendPos = mergeBackendPurchaseOrders(records, { replaceAll: true });
     backendApiState.loadedPurchaseOrders = true;
     backendApiState.loadingPurchaseOrders = false;
     backendApiState.status = 'connected';

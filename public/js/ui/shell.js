@@ -137,12 +137,13 @@ function ensureFinishedGoodForProduct(product, brand) {
     candidateNames.includes(i.name) &&
     (!brandCustId || !i.customerId || i.customerId === brandCustId)
   );
+  const signedIn = !!backendAuthState.token;
   if (fg) {
     product.finishedGoodId = fg.id;
-    // make sure it's properly tagged to the brand customer
-    if (brandCustId && !fg.customerId) fg.customerId = brandCustId;
+    if (brandCustId && !fg.customerId && !signedIn) fg.customerId = brandCustId;
     return fg;
   }
+  if (signedIn) return null;
   // Auto-create a new Finished Good row
   fg = {
     id: uid('i'),

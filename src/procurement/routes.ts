@@ -122,11 +122,9 @@ function actorUserId(auth: AuthContext | null, body: Record<string, unknown>) {
 }
 
 async function optionalJsonObject(c: Context<AppBindings>) {
-  try {
-    return await parseJsonObject(c);
-  } catch {
-    return {};
-  }
+  const contentType = c.req.header("content-type");
+  if (!contentType) return {};
+  return parseJsonObject(c);
 }
 
 function asNeedRows(value: unknown): NeedToOrderRow[] {

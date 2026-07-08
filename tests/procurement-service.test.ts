@@ -306,6 +306,90 @@ describe("Sprint 6 procurement service", () => {
     ]);
   });
 
+  it("uses an atomic draft creation transaction hook when the store supports it", async () => {
+    const { store, calls } = createStore();
+    const transactionalStore = store as ProcurementStore & {
+      createDraftOrderTransaction(input: {
+        order: Parameters<ProcurementStore["createOrder"]>[0];
+        lines: Array<Parameters<ProcurementStore["createOrderLine"]>[0]>;
+        audit: Parameters<ProcurementStore["createAuditEvent"]>[0];
+      }): Promise<void>;
+    };
+    transactionalStore.createDraftOrderTransaction = async (input) => {
+      calls.push(`createDraftOrderTransaction:${input.order.procurementOrderNumber}:${input.lines.length}:${input.audit.action}`);
+    };
+
+    await createDraftProcurementOrder(transactionalStore, {
+      supplierId: "supplier-1",
+      supplierNameSnapshot: "Acme Ingredients",
+      quickBooksPoNumber: null,
+      dateOrdered: "2026-06-19",
+      expectedDate: null,
+      notes: "Draft from Need to Order",
+      actorUserId: "user-1",
+      rows: [
+        {
+          inventoryItemId: "inv-1",
+          masterItemId: "master-1",
+          name: "Raw Peanuts",
+          supplierId: "supplier-1",
+          onHandQuantity: 20,
+          allocatedQuantity: 0,
+          netAvailableQuantity: 20,
+          reorderPointQuantity: 50,
+          shortageQuantity: 0,
+          suggestedQuantity: 80,
+          unitOfMeasure: "lb",
+          unitCostCents: 250,
+          leadTimeDays: 7,
+          reason: "low_stock",
+          sourcePurchaseOrderLineId: null,
+        },
+      ],
+    });
+
+    expect(calls).toEqual([
+      "createDraftOrderTransaction:PROC-1002:1:procurement_order.created",
+    ]);
+  });
+
+  it("rejects invalid suggested quantities before writing a draft header", async () => {
+    const { store, calls } = createStore();
+
+    await expect(createDraftProcurementOrder(store, {
+      supplierId: "supplier-1",
+      supplierNameSnapshot: "Acme Ingredients",
+      quickBooksPoNumber: null,
+      dateOrdered: "2026-06-19",
+      expectedDate: null,
+      notes: "Bad draft",
+      actorUserId: "user-1",
+      rows: [
+        {
+          inventoryItemId: "inv-1",
+          masterItemId: "master-1",
+          name: "Raw Peanuts",
+          supplierId: "supplier-1",
+          onHandQuantity: 20,
+          allocatedQuantity: 0,
+          netAvailableQuantity: 20,
+          reorderPointQuantity: 50,
+          shortageQuantity: 0,
+          suggestedQuantity: -1,
+          unitOfMeasure: "lb",
+          unitCostCents: 250,
+          leadTimeDays: 7,
+          reason: "low_stock",
+          sourcePurchaseOrderLineId: null,
+        },
+      ],
+    })).rejects.toEqual(
+      new ProcurementError("INVALID_QUANTITY", "Quantity must be greater than zero"),
+    );
+
+    expect(calls).not.toContain("createOrder:PROC-1002:draft");
+  });
+
   it("uses the atomic receive transaction hook when the store supports it", async () => {
     const { store, calls } = createStore();
     const transactionalStore = store as ProcurementStore & {

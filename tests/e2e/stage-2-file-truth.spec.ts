@@ -100,6 +100,13 @@ async function openShipping(page: Page) {
   await expect(page.getByText("Checking backend...")).toHaveCount(0, { timeout: 30_000 });
 }
 
+async function openPurchaseOrdersAndWaitForPo(page: Page, poNumber: string) {
+  await page.getByRole("button", { name: /Purchase Orders/ }).click();
+  await expect(page.getByText("Loading purchase orders...")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText("Purchase orders are unavailable right now.")).toHaveCount(0);
+  await expect(page.getByText(poNumber)).toBeVisible({ timeout: 30_000 });
+}
+
 async function uploadPurchaseOrderFile(
   request: APIRequestContext,
   authHeaders: Record<string, string>,
@@ -268,13 +275,7 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
 
   await loginInBrowser(page);
 
-  const purchaseOrdersLoad = page.waitForResponse((response) =>
-    response.request().method() === "GET" &&
-    response.url().includes("/api/purchase-orders") &&
-    response.ok()
-  );
-  await page.getByRole("button", { name: /Purchase Orders/ }).click();
-  await purchaseOrdersLoad;
+  await openPurchaseOrdersAndWaitForPo(page, po.poNumber);
   await openQualityAssurance(page);
   await expect(page.getByText(po.poNumber)).toBeVisible();
   const postShipmentButton = () => page.getByRole("button", { name: new RegExp(postShipmentFileName) }).first();
@@ -300,13 +301,7 @@ test("Stage 2 file truth survives browser upload, reload, and authenticated down
 
   await page.reload();
   await expect(page.getByRole("button", { name: /Stage 2 E2E Admin/ })).toBeVisible();
-  const reloadedPurchaseOrdersLoad = page.waitForResponse((response) =>
-    response.request().method() === "GET" &&
-    response.url().includes("/api/purchase-orders") &&
-    response.ok()
-  );
-  await page.getByRole("button", { name: /Purchase Orders/ }).click();
-  await reloadedPurchaseOrdersLoad;
+  await openPurchaseOrdersAndWaitForPo(page, po.poNumber);
   await openQualityAssurance(page);
   const reloadedPostShipment = postShipmentButton();
   await expect(reloadedPostShipment).toBeVisible();

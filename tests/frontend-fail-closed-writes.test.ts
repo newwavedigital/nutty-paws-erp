@@ -115,4 +115,30 @@ describe("frontend fail-closed backend writes", () => {
     expect(publicApp).toContain("saveBackendShippingDetails(po)");
     expect(publicApp).toContain("cancelBackendPickPackOrder");
   });
+
+  test("PO-driven modules use loading or unavailable states before showing true-empty business copy", () => {
+    for (const marker of [
+      "purchaseOrdersReadyForEmptyState()",
+      "purchaseOrdersLoadingForDisplay()",
+      "purchaseOrdersUnavailableForDisplay()",
+      "Loading purchase order records",
+      "Purchase order records are unavailable right now.",
+    ]) {
+      expect(publicApp).toContain(marker);
+    }
+
+    for (const emptyCopy of [
+      "No purchase orders awaiting review. New POs will appear here automatically.",
+      "No active production runs. Schedule an approved PO from the calendar or the list below.",
+      "No POs awaiting QA. Newly-completed production runs will appear here.",
+      "No external POs awaiting shipment.",
+      "No production scheduled in the next 7 days.",
+    ]) {
+      const index = publicApp.indexOf(emptyCopy);
+      expect(index).toBeGreaterThan(0);
+      const nearby = publicApp.slice(Math.max(0, index - 700), index + emptyCopy.length + 100);
+      expect(nearby).toMatch(/purchaseOrdersReadyForEmptyState|poReady/);
+      expect(nearby).toContain("Loading purchase order records");
+    }
+  });
 });

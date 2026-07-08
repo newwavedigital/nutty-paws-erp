@@ -156,6 +156,41 @@ describe("quality workflow service", () => {
     expect(store.calls).toContain("audit:purchase_order.qa_released");
   });
 
+  it("uses an atomic release transaction hook when the store supports it", async () => {
+    const store = createStore();
+    const transactionalStore = store as typeof store & {
+      releaseQualityTransaction(input: {
+        purchaseOrderId: string;
+        mode: "release" | "skip";
+        routeStatus: "shipping" | "completed";
+        statusEvent: Parameters<QualityStore["createStatusEvent"]>[0];
+        audit: Parameters<QualityStore["createAuditEvent"]>[0];
+      }): Promise<QualityPurchaseOrderRecord | null>;
+    };
+    transactionalStore.releaseQualityTransaction = async (input) => {
+      store.calls.push(`releaseQualityTransaction:${input.mode}:${input.routeStatus}:${input.audit.action}`);
+      return makePO({
+        status: input.routeStatus,
+        qaReleaseType: "internal_own_brand",
+        qaReleasedAt: "2026-07-08T00:00:00.000Z",
+      });
+    };
+
+    const result = await releaseQualityPurchaseOrder(transactionalStore, {
+      purchaseOrderId: "po-1",
+      coaFileId: "coa-1",
+      notes: "looks good",
+      actorUserId: "user-1",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(store.calls).toEqual([
+      "getPurchaseOrder:po-1",
+      "getActiveCoaFile:po-1:coa-1",
+      "releaseQualityTransaction:release:completed:purchase_order.qa_released",
+    ]);
+  });
+
   it("routes co-pack releases to shipping", async () => {
     const store = createStore({
       async getPurchaseOrder(id) {
@@ -204,6 +239,39 @@ describe("quality workflow service", () => {
     expect(store.calls).toContain("updatePurchaseOrderQualitySkip:completed:CoA pending review");
     expect(store.calls).toContain("releaseInventoryLots:po-1");
     expect(store.calls).toContain("audit:purchase_order.qa_skipped");
+  });
+
+  it("uses the atomic release transaction hook for QA skip when the store supports it", async () => {
+    const store = createStore();
+    const transactionalStore = store as typeof store & {
+      releaseQualityTransaction(input: {
+        purchaseOrderId: string;
+        mode: "release" | "skip";
+        routeStatus: "shipping" | "completed";
+        statusEvent: Parameters<QualityStore["createStatusEvent"]>[0];
+        audit: Parameters<QualityStore["createAuditEvent"]>[0];
+      }): Promise<QualityPurchaseOrderRecord | null>;
+    };
+    transactionalStore.releaseQualityTransaction = async (input) => {
+      store.calls.push(`releaseQualityTransaction:${input.mode}:${input.routeStatus}:${input.audit.action}`);
+      return makePO({
+        status: input.routeStatus,
+        qaSkippedAt: "2026-07-08T00:00:00.000Z",
+        qaSkipReason: "CoA pending review",
+      });
+    };
+
+    const result = await skipQualityPurchaseOrder(transactionalStore, {
+      purchaseOrderId: "po-1",
+      reason: "CoA pending review",
+      actorUserId: "user-1",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(store.calls).toEqual([
+      "getPurchaseOrder:po-1",
+      "releaseQualityTransaction:skip:completed:purchase_order.qa_skipped",
+    ]);
   });
 
   it("allows post-shipment COA attachment only after QA release", async () => {

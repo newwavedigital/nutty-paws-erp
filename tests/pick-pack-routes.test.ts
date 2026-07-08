@@ -201,4 +201,18 @@ describe("pick pack routes", () => {
     expect(cancelled.status).toBe(200);
     await expect(cancelled.json()).resolves.toMatchObject({ ok: true, data: { status: "cancelled" } });
   });
+
+  it("rejects malformed optional JSON before cancelling a Pick & Pack order", async () => {
+    const app = createRouteApp();
+
+    const malformed = await app.request("/api/pick-pack/orders/pp-1/cancel", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    const list = await app.request("/api/pick-pack/orders");
+
+    expect(malformed.status).toBe(400);
+    await expect(list.json()).resolves.toMatchObject({ ok: true, data: [{ status: "open" }] });
+  });
 });

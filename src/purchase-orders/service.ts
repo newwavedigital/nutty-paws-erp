@@ -79,6 +79,33 @@ export type PurchaseOrderStore = {
     productId: string | null;
     masterItemId: string | null;
   }): Promise<void>;
+  createPurchaseOrderTransaction?(input: {
+    purchaseOrder: {
+      id: string;
+      poNumber: string;
+      customerId: string;
+      requestedShipDate: string | null;
+      notes: string | null;
+      createdByUserId?: string;
+    };
+    lines: Array<{
+      id: string;
+      purchaseOrderId: string;
+      lineNumber: number;
+      description: string;
+      quantity: number;
+      unitOfMeasure: string;
+      productId: string | null;
+      masterItemId: string | null;
+    }>;
+    audit: {
+      actorUserId?: string;
+      entityType: string;
+      entityId: string;
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+  }): Promise<void>;
   listPurchaseOrders(): Promise<PurchaseOrderRecord[]>;
   getPurchaseOrder(id: string): Promise<PurchaseOrderRecord | null>;
   updatePurchaseOrderSafeFields(
@@ -178,17 +205,15 @@ export async function createPurchaseOrder(
     };
   });
 
-  await store.createPurchaseOrder({
+  const purchaseOrder = {
     id: purchaseOrderId,
     poNumber: input.poNumber,
     customerId: input.customerId,
     requestedShipDate: input.requestedShipDate ?? null,
     notes: input.notes ?? null,
     createdByUserId: input.actorUserId,
-  });
-
-  for (const line of lines) {
-    await store.createPurchaseOrderLine({
+  };
+  const lineInputs = lines.map((line) => ({
       id: line.id,
       purchaseOrderId: line.purchaseOrderId,
       lineNumber: line.lineNumber,
@@ -197,16 +222,30 @@ export async function createPurchaseOrder(
       unitOfMeasure: line.unitOfMeasure,
       productId: line.productId,
       masterItemId: line.masterItemId,
-    });
-  }
-
-  await store.createAuditEvent({
+  }));
+  const audit = {
     actorUserId: input.actorUserId,
     entityType: "purchase_order",
     entityId: purchaseOrderId,
     action: "purchase_order.created",
     metadata: { poNumber: input.poNumber, lineCount: lines.length },
-  });
+  };
+
+  if (store.createPurchaseOrderTransaction) {
+    await store.createPurchaseOrderTransaction({
+      purchaseOrder,
+      lines: lineInputs,
+      audit,
+    });
+  } else {
+    await store.createPurchaseOrder(purchaseOrder);
+
+    for (const line of lineInputs) {
+      await store.createPurchaseOrderLine(line);
+    }
+
+    await store.createAuditEvent(audit);
+  }
 
   return {
     id: purchaseOrderId,
@@ -324,7 +363,10 @@ export async function updatePurchaseOrderDepositStatus(
     actorUserId?: string;
   },
 ) {
-  await requirePO(store, input.purchaseOrderId);
+  const po = await requirePO(store, input.purchaseOrderId);
+  if (["in_production", "qa_review", "completed", "cancelled"].includes(po.status)) {
+    throw new POError("DEPOSIT_STATUS_LOCKED", "Deposit status can only be changed before production starts");
+  }
   await store.updatePurchaseOrderDepositStatus(input.purchaseOrderId, input.depositStatus);
   await store.createAuditEvent({
     actorUserId: input.actorUserId,

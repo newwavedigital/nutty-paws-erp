@@ -14,10 +14,10 @@ function renderDashboard(el) {
         if (currentPage === 'dashboard') router('dashboard');
       });
   }
-  const pos = state.purchaseOrders;
   const poLoading = purchaseOrdersLoadingForDisplay();
   const poUnavailable = purchaseOrdersUnavailableForDisplay();
   const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
   const open = pos.filter(p => p.status !== 'completed');
   const inSC = pos.filter(p => p.status === 'pending' || p.status === 'in_supply_chain').length;
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
@@ -34,7 +34,7 @@ function renderDashboard(el) {
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
-  const upcoming = pos
+  const upcoming = poReady && !poUnavailable ? pos
     .filter(p => p.productionDate)
     .filter(p => {
       const start = new Date(p.productionDate + 'T00:00:00');
@@ -42,7 +42,12 @@ function renderDashboard(el) {
       // include if range overlaps the next 7 days
       return end >= today && start <= weekEnd;
     })
-    .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
+    .sort((a,b) => a.productionDate.localeCompare(b.productionDate)) : [];
+  const upcomingEmptyMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No production scheduled in the next 7 days.';
 
   const conflicts = inventoryRowsReady ? inventoryConflicts() : [];
   const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
@@ -127,7 +132,7 @@ function renderDashboard(el) {
         <button class="btn btn-secondary btn-sm" onclick="router('production')">View Calendar</button>
       </div>
       ${upcoming.length === 0
-        ? '<div class="empty">No production scheduled in the next 7 days.</div>'
+        ? `<div class="empty">${upcomingEmptyMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Customer</th><th>Date</th><th>Room</th><th>Items</th></tr></thead>
             <tbody>

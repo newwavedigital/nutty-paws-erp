@@ -7,12 +7,27 @@ function renderQualityAssurance(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendQualityState.loaded && !backendQualityState.loading) {
     loadBackendQualityQueue().then(() => { if (currentPage === 'quality-assurance') router('quality-assurance'); }).catch(() => {});
   }
-  const queue = state.purchaseOrders.filter(p => p.status === 'qa_review').slice().sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
-  const recentActions = state.purchaseOrders
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const queue = pos.filter(p => p.status === 'qa_review').slice().sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
+  const recentActions = pos
     .filter(p => p.qaSkippedAt || p.qaReleasedAt || p.coa || p.postShipmentCoa || (p.status === 'shipping' || p.status === 'completed'))
     .slice()
     .sort((a,b)=>(qualityActionTimestamp(b)||'').localeCompare(qualityActionTimestamp(a)||''))
     .slice(0, 10);
+  const emptyQueueMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No POs awaiting QA. Newly-completed production runs will appear here.';
+  const emptyRecentMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No QA release, skip, or post-shipment COA history yet.';
   el.innerHTML = `
     ${renderBackendQualityBanner()}
     <div class="card">
@@ -22,17 +37,17 @@ function renderQualityAssurance(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">After production is finalized, every PO sits here until QA uploads a Certificate of Analysis (COA). Once the COA is on file, the PO can be released. If QA needs to skip the hold, the skip path still requires a reason.</div>
       ${queue.length === 0
-        ? '<div class="empty">No POs awaiting QA. Newly-completed production runs will appear here.</div>'
+        ? `<div class="empty">${emptyQueueMessage}</div>`
         : queue.map(po => qaCardHtml(po)).join('')
       }
     </div>
     <div class="card">
       <div class="card-header">
         <h2>Recent QA Actions</h2>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('qa_released.csv', state.purchaseOrders.filter(p => p.qaReleasedAt || p.qaSkippedAt || p.coa || p.postShipmentCoa).map(p => ({po:p.id,customer:getCustomer(p.customerId)?.name||'',brand:p.brand||'',action:qualityActionLabel(p),coa_file:qualityFileName(p),action_time:qualityActionTimestamp(p),action_by:qualityActionActor(p),skip_reason:p.qaSkipReason||'',release_target:p.qaReleaseType||'',post_shipment_coa:p.postShipmentCoa?.name||''})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('qa_released.csv', backendBackedRowsOnly(state.purchaseOrders).filter(p => p.qaReleasedAt || p.qaSkippedAt || p.coa || p.postShipmentCoa).map(p => ({po:p.id,customer:getCustomer(p.customerId)?.name||'',brand:p.brand||'',action:qualityActionLabel(p),coa_file:qualityFileName(p),action_time:qualityActionTimestamp(p),action_by:qualityActionActor(p),skip_reason:p.qaSkipReason||'',release_target:p.qaReleaseType||'',post_shipment_coa:p.postShipmentCoa?.name||''})))">Export CSV</button>
       </div>
       ${recentActions.length === 0
-        ? '<div class="empty">No QA release, skip, or post-shipment COA history yet.</div>'
+        ? `<div class="empty">${emptyRecentMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO</th><th>Customer</th><th>Action</th><th>COA / Post-shipment</th><th>When</th><th>By</th><th>Notes / Reason</th><th></th></tr></thead>
             <tbody>

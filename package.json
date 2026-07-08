@@ -7,6 +7,7 @@
         "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
         "dev:wrangler": "wrangler dev",
         "test": "vitest run",
+        "test:e2e": "playwright test",
         "test:e2e:inventory": "playwright test tests/e2e/inventory-hardening.spec.ts",
         "test:e2e:truth": "playwright test tests/e2e/truth-hardening.spec.ts",
         "test:watch": "vitest",

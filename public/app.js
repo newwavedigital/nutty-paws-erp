@@ -1265,6 +1265,15 @@ function employeeBackendSessionActive() {
   return !!backendAuthState.token && backendAuthState.user?.userType !== 'customer';
 }
 
+function backendAuthSessionActive() {
+  return !!backendAuthState.token;
+}
+
+function backendBackedRowsOnly(rows) {
+  rows = Array.isArray(rows) ? rows : [];
+  return backendAuthSessionActive() ? rows.filter(row => row._backendId) : rows;
+}
+
 async function attachBackendPostShipmentCoa(purchaseOrderId, file) {
   if (!file) return null;
   const uploaded = await uploadBackendQualityCoa(purchaseOrderId, file, 'coa');
@@ -1578,15 +1587,16 @@ function backendPickPackOrderToLocal(order, existing = {}) {
 }
 
 function mergeBackendPickPackOrders(records) {
+  removeLocalOnlyPickPackOrdersForBackendSession();
   const mapped = (records || []).map(order => backendPickPackOrderToLocal(order, (state.pickPackOrders || []).find(local => local._backendId === order.id || local.id === order.pickPackNumber || local.id === order.id) || {}));
   const backendKeys = new Set();
   mapped.forEach(order => {
     [order._backendId, order.id, order.poNumber].filter(Boolean).forEach(key => backendKeys.add(String(key)));
   });
-  const remainingLocal = (state.pickPackOrders || []).filter(order => {
+  const remainingLocal = backendAuthSessionActive() ? [] : (state.pickPackOrders || []).filter(order => {
     const keys = [order._backendId, order.id, order.poNumber].filter(Boolean).map(String);
     return !keys.some(key => backendKeys.has(key));
-  }).map(order => employeeBackendSessionActive() ? { ...order, _localOnlyBackendStale: true } : order);
+  });
   state.pickPackOrders = [...mapped, ...remainingLocal];
   backendPickPackState.orders = mapped;
   try { saveState(); } catch (err) {}
@@ -2823,22 +2833,26 @@ function backendPurchaseOrderId(po) {
   return po?._backendId || po?.id || '';
 }
 
-function markLocalOnlyPurchaseOrdersForBackendSession() {
-  if (!employeeBackendSessionActive()) return;
-  state.purchaseOrders = (state.purchaseOrders || []).map(po =>
-    !po._backendId ? { ...po, _localOnlyBackendStale: true } : po
-  );
+function removeLocalOnlyPurchaseOrdersForBackendSession() {
+  if (!backendAuthSessionActive()) return;
+  state.purchaseOrders = backendBackedRowsOnly(state.purchaseOrders);
 }
 
-function mergeBackendPurchaseOrders(records) {
+function removeLocalOnlyPickPackOrdersForBackendSession() {
+  if (!backendAuthSessionActive()) return;
+  state.pickPackOrders = backendBackedRowsOnly(state.pickPackOrders);
+}
+
+function mergeBackendPurchaseOrders(records, options = {}) {
+  removeLocalOnlyPurchaseOrdersForBackendSession();
   const backendPos = (records || []).map(mapBackendPurchaseOrderToPrototype);
   const backendIds = new Set(backendPos.map(po => po._backendId));
-  markLocalOnlyPurchaseOrdersForBackendSession();
+  const existingRows = backendBackedRowsOnly(state.purchaseOrders);
   state.purchaseOrders = [
     ...backendPos,
-    ...state.purchaseOrders
+    ...(options.replaceAll ? [] : existingRows
       .filter(po => !po._backendId || !backendIds.has(po._backendId))
-      .map(po => employeeBackendSessionActive() && !po._backendId ? { ...po, _localOnlyBackendStale: true } : po)
+    )
   ];
   try { saveState(); } catch (err) {}
   return backendPos;
@@ -2849,14 +2863,15 @@ function mapBackendPurchaseOrderToPrototype(po) {
   const existing = (state.purchaseOrders || []).find(local => local._backendId === po.id || local.id === po.poNumber || local.id === po.id) || {};
   const shippingDetails = po.shippingDetails || {};
   const shippingPalletList = parseJsonFallback(shippingDetails.palletListJson, []);
+  const existingShipping = backendAuthSessionActive() ? {} : (existing.shipping || {});
   const backendShipping = {
-    ...(existing.shipping || {}),
-    bol: shippingDetails.bolNumber || existing.shipping?.bol || '',
-    proNumber: shippingDetails.proNumber || existing.shipping?.proNumber || '',
-    carrier: shippingDetails.carrier || existing.shipping?.carrier || '',
-    freightClass: shippingDetails.freightClass || existing.shipping?.freightClass || '',
-    notes: shippingDetails.notes || po.shippingNotes || existing.shipping?.notes || '',
-    palletList: shippingPalletList.length ? shippingPalletList : existing.shipping?.palletList,
+    ...existingShipping,
+    bol: shippingDetails.bolNumber || existingShipping.bol || '',
+    proNumber: shippingDetails.proNumber || existingShipping.proNumber || '',
+    carrier: shippingDetails.carrier || existingShipping.carrier || '',
+    freightClass: shippingDetails.freightClass || existingShipping.freightClass || '',
+    notes: shippingDetails.notes || po.shippingNotes || existingShipping.notes || '',
+    palletList: shippingPalletList.length ? shippingPalletList : existingShipping.palletList,
     documents: null,
     shipmentDocumentFileId: po.shipmentDocumentFileId || shippingDetails.shipmentDocumentFileId || ''
   };
@@ -2967,6 +2982,15 @@ async function attachBackendFilesToPurchaseOrder(localPo) {
   localPo._backendFiles = files || [];
   const firstPoFile = (files || []).find(file => file.fileCategory === 'po_file') || files?.[0] || null;
   localPo.poFile = firstPoFile ? mapBackendFileToPrototype(firstPoFile) : localPo.poFile || null;
+  const shipmentDocumentFileId = shippingShipmentDocumentFileId(localPo);
+  const shipmentDocument = shipmentDocumentFileId
+    ? (files || []).find(file => file.id === shipmentDocumentFileId && file.fileCategory === 'shipment_document') || null
+    : null;
+  if (shipmentDocument) {
+    localPo.shipping = localPo.shipping || {};
+    localPo.shipping.documents = mapBackendFileToPrototype(shipmentDocument);
+    localPo.shipping.shipmentDocumentFileId = shipmentDocument.id;
+  }
   return localPo;
 }
 
@@ -3036,7 +3060,7 @@ async function loadBackendPurchaseOrderRecords(requestId) {
   try {
     const records = await apiRequest('/api/purchase-orders');
     if (requestId !== backendApiState.purchaseOrderLoadRequestId) return state.purchaseOrders;
-    const backendPos = mergeBackendPurchaseOrders(records);
+    const backendPos = mergeBackendPurchaseOrders(records, { replaceAll: true });
     backendApiState.loadedPurchaseOrders = true;
     backendApiState.loadingPurchaseOrders = false;
     backendApiState.status = 'connected';
@@ -3830,12 +3854,13 @@ function ensureFinishedGoodForProduct(product, brand) {
     candidateNames.includes(i.name) &&
     (!brandCustId || !i.customerId || i.customerId === brandCustId)
   );
+  const signedIn = !!backendAuthState.token;
   if (fg) {
     product.finishedGoodId = fg.id;
-    // make sure it's properly tagged to the brand customer
-    if (brandCustId && !fg.customerId) fg.customerId = brandCustId;
+    if (brandCustId && !fg.customerId && !signedIn) fg.customerId = brandCustId;
     return fg;
   }
+  if (signedIn) return null;
   // Auto-create a new Finished Good row
   fg = {
     id: uid('i'),
@@ -4247,10 +4272,10 @@ function renderDashboard(el) {
         if (currentPage === 'dashboard') router('dashboard');
       });
   }
-  const pos = state.purchaseOrders;
   const poLoading = purchaseOrdersLoadingForDisplay();
   const poUnavailable = purchaseOrdersUnavailableForDisplay();
   const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
   const open = pos.filter(p => p.status !== 'completed');
   const inSC = pos.filter(p => p.status === 'pending' || p.status === 'in_supply_chain').length;
   const inProd = pos.filter(p => p.status === 'approved_for_production' || p.status === 'in_production').length;
@@ -4267,7 +4292,7 @@ function renderDashboard(el) {
   // upcoming production this week
   const today = new Date(); today.setHours(0,0,0,0);
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
-  const upcoming = pos
+  const upcoming = poReady && !poUnavailable ? pos
     .filter(p => p.productionDate)
     .filter(p => {
       const start = new Date(p.productionDate + 'T00:00:00');
@@ -4275,7 +4300,12 @@ function renderDashboard(el) {
       // include if range overlaps the next 7 days
       return end >= today && start <= weekEnd;
     })
-    .sort((a,b) => a.productionDate.localeCompare(b.productionDate));
+    .sort((a,b) => a.productionDate.localeCompare(b.productionDate)) : [];
+  const upcomingEmptyMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No production scheduled in the next 7 days.';
 
   const conflicts = inventoryRowsReady ? inventoryConflicts() : [];
   const backendOverAllocationCount = backendSignals ? backendSignals.overAllocationCount : protectedInventoryUnavailable ? 0 : conflicts.length;
@@ -4360,7 +4390,7 @@ function renderDashboard(el) {
         <button class="btn btn-secondary btn-sm" onclick="router('production')">View Calendar</button>
       </div>
       ${upcoming.length === 0
-        ? '<div class="empty">No production scheduled in the next 7 days.</div>'
+        ? `<div class="empty">${upcomingEmptyMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Customer</th><th>Date</th><th>Room</th><th>Items</th></tr></thead>
             <tbody>
@@ -4454,7 +4484,7 @@ function setPoTab(t) { poTab = t; renderPurchaseOrders(document.getElementById('
 
 function renderPurchaseOrders(el) {
   ensureBackendPurchaseOrdersLoaded();
-  const all = state.purchaseOrders.slice().sort((a,b)=>(b.poDate || '').localeCompare(a.poDate || ''));
+  const all = backendBackedRowsOnly(state.purchaseOrders).slice().sort((a,b)=>(b.poDate || '').localeCompare(a.poDate || ''));
   const open = all.filter(p => p.status !== 'completed');
   const completed = all.filter(p => p.status === 'completed');
   const pos = poTab === 'completed' ? completed : open;
@@ -4495,7 +4525,6 @@ function renderPurchaseOrders(el) {
         <tbody>
           ${pos.length === 0 ? `<tr><td colspan="10" class="empty">${emptyMessage}</td></tr>` :
             pos.map(p => {
-            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               return `
               <tr>
                 <td><strong>${p.id}</strong></td>
@@ -4506,13 +4535,12 @@ function renderPurchaseOrders(el) {
                 <td>${p.lines.length}</td>
                 <td>${fmtMoney(p.lines.reduce((s,l)=>s+l.qty*l.price,0))}</td>
                 <td>${poFileLinkHtml(p)}</td>
-                <td>${statusBadge(p.status)}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
+                <td>${statusBadge(p.status)}</td>
                 <td class="row-actions">
                   <button class="btn btn-icon btn-sm" onclick="viewPO('${p.id}')">View</button>
                   <button class="btn btn-icon btn-sm" onclick="printPO('${p.id}')">Print</button>
-                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited or cancelled">Backend required</span>' : ''}
-                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
-                  ${!localOnly && (p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
+                  ${(p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" onclick="editPO('${p.id}')">Edit</button>` : ''}
+                  ${(p.status === 'pending' || p.status === 'in_supply_chain') ? `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePO('${p.id}')">Delete</button>` : ''}
                 </td>
               </tr>
             `}).join('')
@@ -4524,7 +4552,7 @@ function renderPurchaseOrders(el) {
 }
 
 function exportPOs() {
-  const rows = state.purchaseOrders.map(p => ({
+  const rows = backendBackedRowsOnly(state.purchaseOrders).map(p => ({
     PO: p.id,
     Brand: p.brand || '',
     Customer: getCustomer(p.customerId)?.name || '',
@@ -5142,6 +5170,10 @@ function lineStatus(po, ingId, need, stock) {
 function setLineStatus(poId, ingId, status) {
   const po = state.purchaseOrders.find(p => p.id === poId);
   if (!po) return;
+  if (backendAuthSessionActive()) {
+    failBackendRequiredWrite(null, backendApiState, 'Supply Chain line holds require backend confirmation. Nothing was saved locally.');
+    return;
+  }
   po.scOverrides = po.scOverrides || {};
   // can only manually set to 'on_hold' or 'ok'; 'short' is automatic
   if (status === 'ok') {
@@ -5171,7 +5203,17 @@ async function setDepositStatus(poId, status) {
 
 function renderSupplyChain(el) {
   ensureBackendPurchaseOrdersLoaded();
-  const queue = state.purchaseOrders.filter(p => p.status === 'pending' || p.status === 'in_supply_chain' || p.status === 'submitted' || p.status === 'supply_chain_review');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const queue = poReady && !poUnavailable
+    ? backendBackedRowsOnly(state.purchaseOrders).filter(p => p.status === 'pending' || p.status === 'in_supply_chain' || p.status === 'submitted' || p.status === 'supply_chain_review')
+    : [];
+  const emptyMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No purchase orders awaiting review. New POs will appear here automatically.';
   el.innerHTML = `
     <div class="card">
       ${renderBackendStatusBanner('supply-chain')}
@@ -5179,7 +5221,7 @@ function renderSupplyChain(el) {
         <h2>POs Awaiting Review</h2>
         <span style="font-size:13px;color:var(--brown-light)">${queue.length} order(s)</span>
       </div>
-      ${queue.length === 0 ? '<div class="empty">No purchase orders awaiting review. New POs will appear here automatically.</div>' :
+      ${queue.length === 0 ? `<div class="empty">${emptyMessage}</div>` :
         queue.map(po => {
           const cust = getCustomer(po.customerId);
           const req = poRequirements(po, false, true); // needed amount includes 5% waste buffer
@@ -5303,6 +5345,10 @@ async function approveForProduction(id) {
     return lineStatus(po, ingId, req[ingId], net) === 'ok';
   });
   if (!allOk) { toast('Cannot approve ? every item must be set to OK.'); return; }
+  if (!po._backendId && backendAuthSessionActive()) {
+    failBackendRequiredWrite(null, backendApiState, 'Supply Chain approval requires a backend purchase order. Nothing was saved locally.');
+    return;
+  }
   if (po._backendId && backendApiState.status !== 'local') {
     try {
       await reviewBackendSupplyChainLines(po, 'available');
@@ -5829,14 +5875,15 @@ function procFormHtml(id, prefill) {
         </div>
         <div class="form-row"><label>Date Ordered</label><input type="date" id="prc_date" value="${p.dateOrdered||''}" /></div>
         <div class="form-row"><label>Expected Delivery</label><input type="date" id="prc_exp" value="${p.expectedDate||''}" /></div>
-        <div class="form-row"><label>Status</label>
+        ${isNew ? `<div class="form-row"><label>Status</label>
           <select id="prc_status">
             <option ${p.status==='Draft'?'selected':''}>Draft</option>
             <option ${p.status==='In Order'?'selected':''}>In Order</option>
-            <option ${p.status==='Partial Receipt'?'selected':''}>Partial Receipt</option>
-            <option ${p.status==='Received'?'selected':''}>Received</option>
           </select>
-        </div>
+        </div>` : `<div class="form-row"><label>Status</label>
+          <input value="${escapeHtml(p.status || '')}" readonly title="Use Submit, Receive, or Cancel actions to change procurement status." />
+          <div class="help-text">Use Submit, Receive, or Cancel actions to change status.</div>
+        </div>`}
       </div>
       <div style="margin-top:18px">
         <label style="font-weight:600;color:var(--brown);font-size:13px">Items</label>
@@ -5936,7 +5983,7 @@ async function saveProc(id, isNew) {
     supplierId: document.getElementById('prc_sup').value,
     dateOrdered: document.getElementById('prc_date').value,
     expectedDate: document.getElementById('prc_exp').value,
-    status: document.getElementById('prc_status').value,
+    status: document.getElementById('prc_status')?.value || state.procurementOrders.find(p => p.id === id)?.status || 'Draft',
     notes: document.getElementById('prc_notes').value,
     items
   };
@@ -6047,8 +6094,23 @@ function renderProduction(el) {
     loadBackendProduction().then(() => { if (currentPage === 'production') router('production'); });
   }
   if (prodTab === 'Production Log') { el.innerHTML = productionTabsHtml() + renderBackendProductionBanner() + productionLogInnerHtml(); return; }
-  const unscheduled = state.purchaseOrders.filter(p => p.status === 'approved_for_production' && !p.productionDate);
-  const active = state.purchaseOrders.filter(p => p.productionDate && p.status !== 'qa_review' && p.status !== 'shipping' && p.status !== 'completed');
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const unscheduled = pos.filter(p => p.status === 'approved_for_production' && !p.productionDate);
+  const active = pos.filter(p => p.productionDate && p.status !== 'qa_review' && p.status !== 'shipping' && p.status !== 'completed');
+  const emptyProductionMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No active production runs. Schedule an approved PO from the calendar or the list below.';
+  const emptyScheduleMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No approved POs are waiting to be scheduled.';
   el.innerHTML = `
     ${productionTabsHtml()}
     ${renderBackendProductionBanner()}
@@ -6069,7 +6131,7 @@ function renderProduction(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">All POs currently scheduled on the calendar. Click <strong>Mark Complete</strong> to deduct inventory and send the PO to Quality Assurance for COA upload before shipping.</div>
       ${active.length === 0
-        ? '<div class="empty">No active production runs. Schedule an approved PO from the calendar or the list below.</div>'
+        ? `<div class="empty">${emptyProductionMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Brand / Customer</th><th>Room</th><th>Dates</th><th>Units</th><th></th></tr></thead>
             <tbody>
@@ -6101,7 +6163,7 @@ function renderProduction(el) {
         <span style="font-size:13px;color:var(--brown-light)">${unscheduled.length} approved order(s)</span>
       </div>
       ${unscheduled.length === 0
-        ? '<div class="empty">No approved POs are waiting to be scheduled.</div>'
+        ? `<div class="empty">${emptyScheduleMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO #</th><th>Customer</th><th>Items</th><th>Suggested Room</th><th></th></tr></thead>
             <tbody>
@@ -6326,7 +6388,7 @@ function drawCalendar() {
 
   // build a map of date -> events; multi-day POs appear on every day in their range
   const events = {};
-  state.purchaseOrders.forEach(p => {
+  backendBackedRowsOnly(state.purchaseOrders).forEach(p => {
     if (!p.productionDate) return;
     const start = new Date(p.productionDate + 'T00:00:00');
     const endStr = p.productionEndDate || p.productionDate;
@@ -6388,7 +6450,15 @@ function drawCalendar() {
   cal.innerHTML = html;
 }
 function dayClick(dStr) {
-  const unsched = state.purchaseOrders.filter(p => p.status === 'approved_for_production');
+  if (!purchaseOrdersReadyForEmptyState()) {
+    toast('Loading purchase order records. Try scheduling again once data has loaded.');
+    return;
+  }
+  if (purchaseOrdersUnavailableForDisplay()) {
+    toast('Purchase order records are unavailable right now.');
+    return;
+  }
+  const unsched = backendBackedRowsOnly(state.purchaseOrders).filter(p => p.status === 'approved_for_production');
   if (unsched.length === 0) {
     toast('No approved POs to schedule. Approve some in Supply Chain.');
     return;
@@ -6917,30 +6987,31 @@ async function finalizeMarkComplete(id) {
     }
   }
 
-  // auto-create lot records on Food Safety Lot Tracking
-  state.lots = state.lots || [];
-  po.lines.forEach(l => {
-    if (!l.lotNumber) return;
-    const existing = state.lots.find(x => x.lotNumber === l.lotNumber);
-    if (existing) {
-      // update existing
-      existing.productId = l.productId;
-      existing.poId = po.id;
-      existing.productionDate = po.productionDate;
-      existing.quantity = l.actualQty;
-      existing.status = existing.status || 'Released';
-    } else {
-      state.lots.push({
-        id: uid('lt'),
-        lotNumber: l.lotNumber,
-        productId: l.productId,
-        poId: po.id,
-        productionDate: po.productionDate,
-        quantity: l.actualQty,
-        status: 'Released'
-      });
-    }
-  });
+  // Signed-in lot tracking must come from backend records; keep legacy local lots signed-out only.
+  if (!backendAuthSessionActive()) {
+    state.lots = state.lots || [];
+    po.lines.forEach(l => {
+      if (!l.lotNumber) return;
+      const existing = state.lots.find(x => x.lotNumber === l.lotNumber);
+      if (existing) {
+        existing.productId = l.productId;
+        existing.poId = po.id;
+        existing.productionDate = po.productionDate;
+        existing.quantity = l.actualQty;
+        existing.status = existing.status || 'Released';
+      } else {
+        state.lots.push({
+          id: uid('lt'),
+          lotNumber: l.lotNumber,
+          productId: l.productId,
+          poId: po.id,
+          productionDate: po.productionDate,
+          quantity: l.actualQty,
+          status: 'Released'
+        });
+      }
+    });
+  }
 
   // Production finalized -> goes to QA Review (not directly to Shipping). Already-shipped/completed POs stay where they are.
   if (po.status !== 'shipping' && po.status !== 'completed') po.status = 'qa_review';
@@ -7088,11 +7159,31 @@ function renderShipping(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendShippingState.loaded && !backendShippingState.loading) {
     loadBackendShipping().then(() => { if (currentPage === 'shipping') router('shipping'); });
   }
-  const ship = state.purchaseOrders.filter(p => p.status === 'shipping' || p.status === 'completed');
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const ship = pos.filter(p => p.status === 'shipping' || p.status === 'completed');
   const open = ship.filter(p => p.status === 'shipping');
   const done = ship.filter(p => p.status === 'completed');
   const openExternal = open.filter(p => !isInternalBrand(p));
   const openInternal = open.filter(p => isInternalBrand(p));
+  const emptyExternalMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No external POs awaiting shipment.';
+  const emptyInternalMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No internal-brand runs to stock.';
+  const emptyDoneMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No completed orders yet.';
   el.innerHTML = `
     ${renderBackendShippingBanner()}
     <div class="card">
@@ -7101,7 +7192,7 @@ function renderShipping(el) {
         <span style="font-size:13px;color:var(--brown-light)">${openExternal.length} order(s) for external customers</span>
       </div>
       ${openExternal.length === 0
-        ? '<div class="empty">No external POs awaiting shipment.</div>'
+        ? `<div class="empty">${emptyExternalMessage}</div>`
         : openExternal.map(p => shippingCardHtml(p)).join('')
       }
     </div>
@@ -7113,7 +7204,7 @@ function renderShipping(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">Internal-brand POs (Bnutty, Dilly's, Poochie Butter) don't ship &mdash; they go to the warehouse to stock the shelves. Confirm to mark complete.</div>
       ${openInternal.length === 0
-        ? '<div class="empty">No internal-brand runs to stock.</div>'
+        ? `<div class="empty">${emptyInternalMessage}</div>`
         : openInternal.map(p => warehouseStockCardHtml(p)).join('')
       }
     </div>
@@ -7124,7 +7215,7 @@ function renderShipping(el) {
         <button class="btn btn-secondary btn-sm" onclick="exportShipments()">Export CSV</button>
       </div>
       ${done.length === 0
-        ? '<div class="empty">No completed orders yet.</div>'
+        ? `<div class="empty">${emptyDoneMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO</th><th>Type</th><th>Customer / Brand</th><th>Units</th><th>Cases</th><th>BOL #</th><th>Carrier</th><th>Pallets</th><th></th></tr></thead>
             <tbody>
@@ -7225,11 +7316,10 @@ function shippingCardHtml(p) {
           <h3 style="margin:0">${p.id} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">${p.brand ? '<span class="pill">'+escapeHtml(p.brand)+'</span> ' : ''}Produced ${fmtDate(p.productionDate)}${p.productionEndDate && p.productionEndDate !== p.productionDate ? ' &rarr; ' + fmtDate(p.productionEndDate) : ''}</div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${docState.localOnly ? '<span class="badge badge-low">Local only</span>' : ''}${statusBadge(p.status)}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${statusBadge(p.status)}</div>
       </div>
       ${productionTotalsHtml(p)}
-      ${docState.localOnly ? '<div class="inv-check" style="margin-top:10px"><strong>Local-only row.</strong> This shipment is not attached to a backend PO, so live save and ship actions stay disabled.</div>' : ''}
-      <fieldset ${docState.localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+      <fieldset style="border:0;padding:0;margin:0">
         <div class="form-grid" style="margin-top:12px">
           <div class="form-row"><label>BOL #</label><input id="sh_bol_${p.id}" value="${escapeHtml(s.bol||'')}" /></div>
           <div class="form-row"><label>Pro #</label><input id="sh_pro_${p.id}" value="${escapeHtml(s.proNumber||'')}" /></div>
@@ -7242,7 +7332,7 @@ function shippingCardHtml(p) {
           ${shipPalletRowsHtml(p)}
         </div>
         <div class="form-row" style="margin-top:14px">
-          <label>Shipment Documents <span class="badge ${docState.confirmedId ? 'badge-prod' : 'badge-low'}">${docState.confirmedId ? 'Uploaded' : docState.pending ? 'Pending upload' : docState.localOnly ? 'Local only' : 'Required to ship'}</span></label>
+          <label>Shipment Documents <span class="badge ${docState.confirmedId ? 'badge-prod' : 'badge-low'}">${docState.confirmedId ? 'Uploaded' : docState.pending ? 'Pending upload' : 'Required to ship'}</span></label>
           <div class="file-upload">
             <input type="file" id="sh_docs_input_${p.id}" accept=".pdf,.doc,.docx,image/*" onchange="shipDocsSelected(event,'${p.id}')" />
             <div class="file-info ${hasDocs?'has':''}" id="sh_docs_info_${p.id}">
@@ -7250,9 +7340,7 @@ function shippingCardHtml(p) {
                 ? `&#128206; ${escapeHtml(s.documents?.name || 'shipment-document')} (${Math.round((s.documents?.size||0)/1024)} KB)`
                 : docState.pending
                   ? `&#128206; ${escapeHtml(docState.pending.name)} (${Math.round((docState.pending.size||0)/1024)} KB) pending upload`
-                  : docState.localOnly
-                    ? 'This copy is local only and is not attached to the backend.'
-                    : 'No backend shipment document uploaded. Required before marking shipped.'}
+                  : 'No backend shipment document uploaded. Required before marking shipped.'}
             </div>
             ${docState.confirmedId && s.documents ? shippingFileDownloadHtml(s.documents) : ''}
             ${docState.pending ? `<button type="button" class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="clearShipDocs('${p.id}')">Remove</button>` : ''}
@@ -7267,8 +7355,8 @@ function shippingCardHtml(p) {
         <button class="btn btn-icon" onclick="viewPO('${p.id}')">View PO</button>
         <button class="btn btn-icon" onclick="printPackingSlip('${p.id}')">Print Packing Slip</button>
         <button class="btn btn-dark" onclick="printDocuments('${p.id}')">Print Documents</button>
-        <button class="btn btn-secondary" ${docState.localOnly ? 'disabled title="This shipment is local-only and cannot be saved back to the backend"' : ''} onclick="saveShipping('${p.id}')">Save</button>
-        <button class="btn" ${hasDocs && !docState.localOnly ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
+        <button class="btn btn-secondary" onclick="saveShipping('${p.id}')">Save</button>
+        <button class="btn" ${hasDocs ? '' : 'disabled title="Upload shipment documents before marking shipped"'} onclick="completeShipment('${p.id}')">Mark Shipped &rarr; Complete</button>
       </div>
     </div>
   `;
@@ -7278,7 +7366,7 @@ function addShippingPallet(id) {
   if (!po) return;
   captureShippingForm(po);          // preserve current input
   shipPalletList(po).push({ length:0, width:0, height:0, weight:0 });
-  saveState();
+  if (!backendAuthSessionActive()) saveState();
   router('shipping');
 }
 function removeShippingPallet(id, idx) {
@@ -7287,7 +7375,7 @@ function removeShippingPallet(id, idx) {
   captureShippingForm(po);
   const list = shipPalletList(po);
   if (list.length > 1) list.splice(idx, 1);
-  saveState();
+  if (!backendAuthSessionActive()) saveState();
   router('shipping');
 }
 function readShippingForm(po) {
@@ -7393,11 +7481,9 @@ function shippingFileDownloadHtml(file) {
 function shippingDocumentState(po) {
   const confirmedId = shippingShipmentDocumentFileId(po);
   const pending = pendingShipmentDocumentFiles.get(po?.id || '') || null;
-  const localOnly = !!po?.shipping?.documents && !confirmedId && !pending;
   return {
     confirmedId,
     pending,
-    localOnly,
     ready: !!confirmedId || !!pending
   };
 }
@@ -7531,7 +7617,7 @@ async function completeShipment(id) {
 function shipTotalWeight(s) { return (s?.palletList||[]).reduce((sum,pl)=>sum+(parseFloat(pl.weight)||0),0); }
 function shipPalletCount(s) { return (s?.palletList||[]).length; }
 function exportShipments() {
-  const rows = state.purchaseOrders
+  const rows = backendBackedRowsOnly(state.purchaseOrders)
     .filter(p => p.status === 'completed' || p.status === 'shipping')
     .map(p => ({
       PO: p.id,
@@ -12787,11 +12873,15 @@ function foodSafetyLotsNoticeHtml() {
 
 function renderFsLots(el) {
   const signedInLocked = foodSafetyLotsAreBackendLocked();
+  const lots = signedInLocked ? [] : (state.lots || []);
+  const emptyMessage = signedInLocked
+    ? 'Backend lot tracking is not connected yet. No local lot rows are shown in signed-in sessions.'
+    : 'No lots logged.';
   el.innerHTML = `
     <div class="card-header">
       <h2>Lot Tracking</h2>
       <div>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('lots.csv', ${signedInLocked ? '[]' : "state.lots.map(l=>({...l,product:getProduct(l.productId)?.name||''}))"})">Export CSV</button>
         <button class="btn" onclick="editLot()" ${signedInLocked ? 'disabled title="Backend lot tracking workflow not connected yet"' : ''}>+ New Lot</button>
       </div>
     </div>
@@ -12800,8 +12890,8 @@ function renderFsLots(el) {
     <div class="table-wrap"><table>
       <thead><tr><th>Lot #</th><th>Product</th><th>PO</th><th>Production Date</th><th>Qty</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${state.lots.length === 0 ? `<tr><td colspan="7" class="empty">No lots logged.</td></tr>` :
-          state.lots.slice().sort((a,b)=>b.productionDate.localeCompare(a.productionDate)).map(l => `
+        ${lots.length === 0 ? `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>` :
+          lots.slice().sort((a,b)=>b.productionDate.localeCompare(a.productionDate)).map(l => `
             <tr>
               <td><strong>${escapeHtml(l.lotNumber)}</strong></td>
               <td>${escapeHtml(getProduct(l.productId)?.name || '-')}</td>
@@ -13666,12 +13756,27 @@ function renderQualityAssurance(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendQualityState.loaded && !backendQualityState.loading) {
     loadBackendQualityQueue().then(() => { if (currentPage === 'quality-assurance') router('quality-assurance'); }).catch(() => {});
   }
-  const queue = state.purchaseOrders.filter(p => p.status === 'qa_review').slice().sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
-  const recentActions = state.purchaseOrders
+  ensureBackendPurchaseOrdersLoaded();
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const pos = poReady && !poUnavailable ? backendBackedRowsOnly(state.purchaseOrders) : [];
+  const queue = pos.filter(p => p.status === 'qa_review').slice().sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
+  const recentActions = pos
     .filter(p => p.qaSkippedAt || p.qaReleasedAt || p.coa || p.postShipmentCoa || (p.status === 'shipping' || p.status === 'completed'))
     .slice()
     .sort((a,b)=>(qualityActionTimestamp(b)||'').localeCompare(qualityActionTimestamp(a)||''))
     .slice(0, 10);
+  const emptyQueueMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No POs awaiting QA. Newly-completed production runs will appear here.';
+  const emptyRecentMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No QA release, skip, or post-shipment COA history yet.';
   el.innerHTML = `
     ${renderBackendQualityBanner()}
     <div class="card">
@@ -13681,17 +13786,17 @@ function renderQualityAssurance(el) {
       </div>
       <div class="help-text" style="margin-bottom:8px">After production is finalized, every PO sits here until QA uploads a Certificate of Analysis (COA). Once the COA is on file, the PO can be released. If QA needs to skip the hold, the skip path still requires a reason.</div>
       ${queue.length === 0
-        ? '<div class="empty">No POs awaiting QA. Newly-completed production runs will appear here.</div>'
+        ? `<div class="empty">${emptyQueueMessage}</div>`
         : queue.map(po => qaCardHtml(po)).join('')
       }
     </div>
     <div class="card">
       <div class="card-header">
         <h2>Recent QA Actions</h2>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('qa_released.csv', state.purchaseOrders.filter(p => p.qaReleasedAt || p.qaSkippedAt || p.coa || p.postShipmentCoa).map(p => ({po:p.id,customer:getCustomer(p.customerId)?.name||'',brand:p.brand||'',action:qualityActionLabel(p),coa_file:qualityFileName(p),action_time:qualityActionTimestamp(p),action_by:qualityActionActor(p),skip_reason:p.qaSkipReason||'',release_target:p.qaReleaseType||'',post_shipment_coa:p.postShipmentCoa?.name||''})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('qa_released.csv', backendBackedRowsOnly(state.purchaseOrders).filter(p => p.qaReleasedAt || p.qaSkippedAt || p.coa || p.postShipmentCoa).map(p => ({po:p.id,customer:getCustomer(p.customerId)?.name||'',brand:p.brand||'',action:qualityActionLabel(p),coa_file:qualityFileName(p),action_time:qualityActionTimestamp(p),action_by:qualityActionActor(p),skip_reason:p.qaSkipReason||'',release_target:p.qaReleaseType||'',post_shipment_coa:p.postShipmentCoa?.name||''})))">Export CSV</button>
       </div>
       ${recentActions.length === 0
-        ? '<div class="empty">No QA release, skip, or post-shipment COA history yet.</div>'
+        ? `<div class="empty">${emptyRecentMessage}</div>`
         : `<div class="table-wrap"><table>
             <thead><tr><th>PO</th><th>Customer</th><th>Action</th><th>COA / Post-shipment</th><th>When</th><th>By</th><th>Notes / Reason</th><th></th></tr></thead>
             <tbody>
@@ -13941,10 +14046,13 @@ function renderPickPack(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendPickPackState.loaded && !backendPickPackState.loading) {
     loadBackendPickPack().then(() => { if (currentPage === 'pick-pack') router('pick-pack'); }).catch(() => {});
   }
-  const open = (state.pickPackOrders || []).filter(p => p.status === 'open');
-  const ship = (state.pickPackOrders || []).filter(p => p.status === 'picked');
-  const done = (state.pickPackOrders || []).filter(p => p.status === 'shipped');
-  const openReqs = (state.productionRequests||[]).filter(r => r.status !== 'Fulfilled' && r.status !== 'Declined').length;
+  const visiblePickPackOrders = backendBackedRowsOnly(state.pickPackOrders);
+  const open = visiblePickPackOrders.filter(p => p.status === 'open');
+  const ship = visiblePickPackOrders.filter(p => p.status === 'picked');
+  const done = visiblePickPackOrders.filter(p => p.status === 'shipped');
+  const openReqs = productionRequestActionsDisabled()
+    ? 0
+    : (state.productionRequests||[]).filter(r => r.status !== 'Fulfilled' && r.status !== 'Declined').length;
   el.innerHTML = `
     ${renderBackendPickPackBanner()}
     <div class="card">
@@ -13977,13 +14085,18 @@ function prodReqStatusClass(s) {
   }
 }
 function renderProductionRequests(el) {
-  const reqs = (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const actionsDisabled = productionRequestActionsDisabled();
+  const reqs = actionsDisabled
+    ? []
+    : (state.productionRequests||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const emptyMessage = actionsDisabled
+    ? "Backend replenishment requests are not connected yet. No local request rows are shown in signed-in sessions."
+    : "No production requests yet.";
   el.innerHTML = `
     <div class="card-header">
       <h2>Requested Production Orders</h2>
       <div>
-        <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes})))">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCsv('production_requests.csv', ${actionsDisabled ? '[]' : "state.productionRequests.map(r=>({id:r.id,date:r.date,distributor:getCustomer(r.customerId)?.name||'',product:state.ingredients.find(i=>i.id===r.ingredientId)?.name||'',qty_requested:r.qtyRequested,on_hand:state.ingredients.find(i=>i.id===r.ingredientId)?.stock||0,needed_by:r.neededBy,requested_by:r.requestedBy,status:r.status,notes:r.notes}))"})">Export CSV</button>
         <button class="btn" ${actionsDisabled ? 'disabled title="Backend automation not confirmed yet"' : 'onclick="editProductionRequest()"'}>+ Request Production</button>
       </div>
     </div>
@@ -13992,7 +14105,7 @@ function renderProductionRequests(el) {
     <div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>Distributor</th><th>Product</th><th>Qty Requested</th><th>On Hand</th><th>Needed By</th><th>Requested By</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${reqs.length === 0 ? `<tr><td colspan="9" class="empty">No production requests yet.</td></tr>` :
+        ${reqs.length === 0 ? `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>` :
           reqs.map(r => {
             const fg = state.ingredients.find(i=>i.id===r.ingredientId);
             const onHand = fg?.stock || 0;
@@ -14030,7 +14143,7 @@ function productionRequestsUnsupportedHtml() {
   return `
     <div class="inv-check" style="margin-bottom:10px">
       <strong>Requested PO's are not included in the backend automations yet.</strong>
-      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. Signed-in users can view existing rows only; request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
+      <div class="help-text">This Pick &amp; Pack replenishment request workflow is unsupported as of now and needs confirmation before we add it to the automation scope. No local request rows are shown in signed-in sessions, and request, status, edit, and delete actions are disabled so nothing appears saved when it is not backend-backed.</div>
     </div>
   `;
 }
@@ -14162,7 +14275,6 @@ function renderPickPackPOs(el, pos) {
           <tbody>
           ${pos.map(p => {
               const cust = getCustomer(p.customerId);
-              const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
               const stockOk = pickPackStockCheck(p);
               const stockBadge = stockOk.ok
                 ? '<span class="badge badge-prod">Available</span>'
@@ -14174,7 +14286,7 @@ function renderPickPackPOs(el, pos) {
                 <td>${fmtDate(p.dateSubmitted)}</td>
                 <td>${fmtDate(p.dateNeededToShip)}</td>
                 <td>${p.lines.length}</td>
-                <td>${stockBadge}${localOnly ? '<div><span class="pill" title="Not saved to backend">Local draft</span></div>' : ''}</td>
+                <td>${stockBadge}</td>
                 <td>${p.poFile
                   ? `<div style="display:flex;gap:4px"><button class="btn btn-icon btn-sm" onclick="viewPickPackPoFile('${p.id}')" title="View PO">&#128065;</button>${backendFileActionHtml(p.poFile, {
                       className: 'btn btn-icon btn-sm',
@@ -14186,9 +14298,9 @@ function renderPickPackPOs(el, pos) {
                   : '<span style="color:var(--brown-light);font-size:12px">-</span>'
                 }</td>
                 <td class="row-actions">
-                  ${localOnly ? '<span class="pill" title="Backend session active; local-only rows cannot be edited, picked, or cancelled">Backend required</span>' : `<button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>`}
-                  ${localOnly ? '' : `<button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>`}
-                  ${localOnly ? '' : `<button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>`}
+                  <button class="btn btn-icon btn-sm" onclick="editPickPackPO('${p.id}')">Edit</button>
+                  <button class="btn btn-sm" style="background:var(--success)" ${stockOk.ok?'':''} onclick="markPickPackPicked('${p.id}')">&#10003; Mark Picked</button>
+                  <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deletePickPackPO('${p.id}')">Delete</button>
                 </td>
               </tr>`;
             }).join('')}
@@ -14215,7 +14327,6 @@ function renderPickPackShipping(el, list) {
 function pickPackShippingCardHtml(p) {
   const cust = getCustomer(p.customerId);
   const mode = p.shippingMode || 'pallet';
-  const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
   return `
     <div class="card" style="background:var(--beige-light);border-left:4px solid var(--orange);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
@@ -14223,7 +14334,6 @@ function pickPackShippingCardHtml(p) {
           <h3 style="margin:0">${escapeHtml(p.id)} - ${escapeHtml(cust?.name||'')}</h3>
           <div style="font-size:12px;color:var(--brown-light)">PO# ${escapeHtml(p.poNumber||'-')} &middot; Picked ${fmtDate(p.pickedAt?.slice(0,10)||'')} &middot; Need by ${fmtDate(p.dateNeededToShip)}</div>
         </div>
-        ${localOnly ? '<span class="badge badge-low" title="Not saved to backend">Local draft</span>' : ''}
       </div>
       <div style="display:flex;gap:14px;margin:12px 0;flex-wrap:wrap">
         <div style="background:var(--white);border:1px solid var(--grey-light);border-radius:6px;padding:8px 14px;min-width:130px">
@@ -14239,15 +14349,14 @@ function pickPackShippingCardHtml(p) {
         <strong style="color:var(--brown);font-size:13px">Shipping Mode</strong>
         <div style="display:flex;gap:14px;margin-top:6px">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
+            <input type="radio" name="pp_mode_${p.id}" value="pallet" ${mode==='pallet'?'checked':''} onchange="togglePickPackMode('${p.id}','pallet')" /> Pallet (LTL)
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} ${localOnly ? 'disabled' : ''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
+            <input type="radio" name="pp_mode_${p.id}" value="parcel" ${mode==='parcel'?'checked':''} onchange="togglePickPackMode('${p.id}','parcel')" /> Parcel (UPS / FedEx / USPS)
           </label>
         </div>
       </div>
-      ${localOnly ? '<div class="inv-check" style="margin:10px 0 0"><strong>Local draft.</strong> Not saved to backend. This shipping draft is not attached to a backend Pick &amp; Pack order, so save and ship actions are disabled.</div>' : ''}
-      <fieldset ${localOnly ? 'disabled' : ''} style="border:0;padding:0;margin:0">
+      <fieldset style="border:0;padding:0;margin:0">
         <div id="pp_mode_fields_${p.id}">${pickPackModeFieldsHtml(p, mode)}</div>
         <div class="form-row" style="margin-top:10px">
           <label>Notes</label>
@@ -14255,8 +14364,8 @@ function pickPackShippingCardHtml(p) {
         </div>
       </fieldset>
       <div class="form-actions">
-        <button class="btn btn-secondary" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be saved to the backend"' : ''} onclick="savePickPackShippingForm('${p.id}')">Save</button>
-        <button class="btn" style="background:var(--success)" ${localOnly ? 'disabled title="This shipping draft is local-only and cannot be marked shipped"' : ''} onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
+        <button class="btn btn-secondary" onclick="savePickPackShippingForm('${p.id}')">Save</button>
+        <button class="btn" style="background:var(--success)" onclick="markPickPackShipped('${p.id}')">&#10003; Mark Shipped</button>
       </div>
     </div>
   `;
@@ -14313,9 +14422,8 @@ function renderPickPackShipped(el, list) {
           ${list.map(p => {
             const cust = getCustomer(p.customerId);
             const ref = p.shippingMode==='parcel' ? (p.trackingNumber||'-') : (p.bol||'-');
-            const localOnly = !!p._localOnlyBackendStale || (employeeBackendSessionActive() && !p._backendId);
             return `<tr>
-              <td><strong>${escapeHtml(p.id)}</strong>${localOnly ? '<div><span class="pill" title="This row is local browser data and is not connected to the backend">Local-only</span></div>' : ''}</td>
+              <td><strong>${escapeHtml(p.id)}</strong></td>
               <td>${escapeHtml(cust?.name||'')}</td>
               <td><span class="pill">${escapeHtml(p.poNumber||'-')}</span></td>
               <td>${fmtDate(p.shippedAt?.slice(0,10)||'')}</td>
@@ -14435,6 +14543,10 @@ function rerenderPickPackLines() {
 }
 // Quick-create a Finished Good for a pick-pack distributor without leaving the flow
 function quickAddFinishedGood(customerId) {
+  if (employeeBackendSessionActive()) {
+    failBackendRequiredWrite(null, backendPickPackState, 'Finished Goods must be created through backend Inventory records. Nothing was saved locally.');
+    return;
+  }
   const cust = getCustomer(customerId);
   const name = prompt(`New Finished Good name for ${cust?.name||'distributor'}:`);
   if (!name || !name.trim()) return;

@@ -10,6 +10,10 @@ function lineStatus(po, ingId, need, stock) {
 function setLineStatus(poId, ingId, status) {
   const po = state.purchaseOrders.find(p => p.id === poId);
   if (!po) return;
+  if (backendAuthSessionActive()) {
+    failBackendRequiredWrite(null, backendApiState, 'Supply Chain line holds require backend confirmation. Nothing was saved locally.');
+    return;
+  }
   po.scOverrides = po.scOverrides || {};
   // can only manually set to 'on_hold' or 'ok'; 'short' is automatic
   if (status === 'ok') {
@@ -39,7 +43,17 @@ async function setDepositStatus(poId, status) {
 
 function renderSupplyChain(el) {
   ensureBackendPurchaseOrdersLoaded();
-  const queue = state.purchaseOrders.filter(p => p.status === 'pending' || p.status === 'in_supply_chain' || p.status === 'submitted' || p.status === 'supply_chain_review');
+  const poLoading = purchaseOrdersLoadingForDisplay();
+  const poUnavailable = purchaseOrdersUnavailableForDisplay();
+  const poReady = purchaseOrdersReadyForEmptyState();
+  const queue = poReady && !poUnavailable
+    ? backendBackedRowsOnly(state.purchaseOrders).filter(p => p.status === 'pending' || p.status === 'in_supply_chain' || p.status === 'submitted' || p.status === 'supply_chain_review')
+    : [];
+  const emptyMessage = poLoading
+    ? 'Loading purchase order records...'
+    : poUnavailable
+      ? 'Purchase order records are unavailable right now.'
+      : 'No purchase orders awaiting review. New POs will appear here automatically.';
   el.innerHTML = `
     <div class="card">
       ${renderBackendStatusBanner('supply-chain')}
@@ -47,7 +61,7 @@ function renderSupplyChain(el) {
         <h2>POs Awaiting Review</h2>
         <span style="font-size:13px;color:var(--brown-light)">${queue.length} order(s)</span>
       </div>
-      ${queue.length === 0 ? '<div class="empty">No purchase orders awaiting review. New POs will appear here automatically.</div>' :
+      ${queue.length === 0 ? `<div class="empty">${emptyMessage}</div>` :
         queue.map(po => {
           const cust = getCustomer(po.customerId);
           const req = poRequirements(po, false, true); // needed amount includes 5% waste buffer
@@ -171,6 +185,10 @@ async function approveForProduction(id) {
     return lineStatus(po, ingId, req[ingId], net) === 'ok';
   });
   if (!allOk) { toast('Cannot approve ? every item must be set to OK.'); return; }
+  if (!po._backendId && backendAuthSessionActive()) {
+    failBackendRequiredWrite(null, backendApiState, 'Supply Chain approval requires a backend purchase order. Nothing was saved locally.');
+    return;
+  }
   if (po._backendId && backendApiState.status !== 'local') {
     try {
       await reviewBackendSupplyChainLines(po, 'available');

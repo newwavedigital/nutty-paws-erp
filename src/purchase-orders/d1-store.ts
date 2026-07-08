@@ -130,6 +130,120 @@ export class D1PurchaseOrderStore implements PurchaseOrderStore {
       .run();
   }
 
+  async createPurchaseOrderTransaction(input: {
+    purchaseOrder: {
+      id: string;
+      poNumber: string;
+      customerId: string;
+      requestedShipDate: string | null;
+      notes: string | null;
+      createdByUserId?: string;
+    };
+    lines: Array<{
+      id: string;
+      purchaseOrderId: string;
+      lineNumber: number;
+      description: string;
+      quantity: number;
+      unitOfMeasure: string;
+      productId: string | null;
+      masterItemId: string | null;
+    }>;
+    audit: {
+      actorUserId?: string;
+      entityType: string;
+      entityId: string;
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+  }): Promise<void> {
+    const statements = [
+      this.db
+        .prepare(
+          `
+            INSERT INTO purchase_orders (
+              id,
+              po_number,
+              customer_id,
+              status,
+              deposit_status,
+              requested_ship_date,
+              notes,
+              created_by_user_id
+            )
+            VALUES (?, ?, ?, 'draft', 'not_required', ?, ?, ?)
+          `,
+        )
+        .bind(
+          input.purchaseOrder.id,
+          input.purchaseOrder.poNumber,
+          input.purchaseOrder.customerId,
+          input.purchaseOrder.requestedShipDate,
+          input.purchaseOrder.notes,
+          input.purchaseOrder.createdByUserId ?? null,
+        ),
+    ];
+
+    for (const line of input.lines) {
+      statements.push(
+        this.db
+          .prepare(
+            `
+              INSERT INTO purchase_order_lines (
+                id,
+                purchase_order_id,
+                line_number,
+                description,
+                quantity,
+                unit_of_measure,
+                product_id,
+                master_item_id,
+                supply_chain_status
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            `,
+          )
+          .bind(
+            line.id,
+            line.purchaseOrderId,
+            line.lineNumber,
+            line.description,
+            line.quantity,
+            line.unitOfMeasure,
+            line.productId,
+            line.masterItemId,
+          ),
+      );
+    }
+
+    statements.push(
+      this.db
+        .prepare(
+          `
+            INSERT INTO audit_events (
+              id,
+              actor_user_id,
+              entity_type,
+              entity_id,
+              action,
+              metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          `audit_${crypto.randomUUID()}`,
+          input.audit.actorUserId ?? null,
+          input.audit.entityType,
+          input.audit.entityId,
+          input.audit.action,
+          JSON.stringify(input.audit.metadata),
+        ),
+    );
+
+    await this.db.batch(statements);
+  }
+
   async listPurchaseOrders(): Promise<PurchaseOrderRecord[]> {
     const rows = await this.db
       .prepare(

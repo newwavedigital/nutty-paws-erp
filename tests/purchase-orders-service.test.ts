@@ -276,6 +276,41 @@ describe("purchase order workflow service", () => {
     ]);
   });
 
+  it("uses an atomic create transaction hook when available", async () => {
+    const store = createPOStore();
+    const transactionalStore = store as typeof store & {
+      createPurchaseOrderTransaction(input: {
+        purchaseOrder: Parameters<PurchaseOrderStore["createPurchaseOrder"]>[0];
+        lines: Array<Parameters<PurchaseOrderStore["createPurchaseOrderLine"]>[0]>;
+        audit: Parameters<PurchaseOrderStore["createAuditEvent"]>[0];
+      }): Promise<void>;
+    };
+    transactionalStore.createPurchaseOrderTransaction = async (input) => {
+      store.calls.push(`createPurchaseOrderTransaction:${input.purchaseOrder.poNumber}:${input.lines.length}:${input.audit.action}`);
+    };
+
+    const result = await createPurchaseOrder(transactionalStore, {
+      poNumber: "PO-1001",
+      customerId: "customer-1",
+      requestedShipDate: "2026-07-01",
+      notes: "rush",
+      actorUserId: "user-1",
+      lines: [
+        {
+          description: "Almond butter",
+          quantity: 25,
+          unitOfMeasure: "lb",
+          masterItemId: "master-1",
+        },
+      ],
+    });
+
+    expect(result.lines).toHaveLength(1);
+    expect(store.calls).toEqual([
+      "createPurchaseOrderTransaction:PO-1001:1:purchase_order.created",
+    ]);
+  });
+
   it("updates only safe purchase order fields", async () => {
     const store = createPOStore();
 
@@ -373,6 +408,23 @@ describe("purchase order workflow service", () => {
     expect(result.depositStatus).toBe("received");
     expect(store.calls).toContain("updatePurchaseOrderDepositStatus:po-1:received");
     expect(store.calls).toContain("createAuditEvent:purchase_order.deposit_status_updated");
+  });
+
+  it("blocks deposit status updates after the active supply-chain review window", async () => {
+    const store = createPOStore();
+    store.setPO(makePurchaseOrder({ status: "completed", depositStatus: "received" }));
+
+    await expect(
+      updatePurchaseOrderDepositStatus(store, {
+        purchaseOrderId: "po-1",
+        depositStatus: "waived",
+        actorUserId: "user-1",
+      }),
+    ).rejects.toEqual(
+      new POError("DEPOSIT_STATUS_LOCKED", "Deposit status can only be changed before production starts"),
+    );
+
+    expect(store.calls).not.toContain("updatePurchaseOrderDepositStatus:po-1:waived");
   });
 
   it("approves for production, reserves linked inventory, and writes status and audit events", async () => {

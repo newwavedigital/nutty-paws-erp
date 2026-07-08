@@ -156,4 +156,25 @@ describe("Sprint 6 procurement routes", () => {
       "audit:procurement_order.cancelled",
     ]));
   });
+
+  it("rejects malformed submit and cancel JSON instead of mutating with an empty body", async () => {
+    const { store, calls } = createStore();
+    const app = createRouteApp(store);
+
+    const submit = await app.request("/api/procurement/orders/proc-1/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    const cancel = await app.request("/api/procurement/orders/proc-1/cancel", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+
+    expect(submit.status).toBe(400);
+    expect(cancel.status).toBe(400);
+    expect(calls).not.toContain("updateOrder:proc-1:ordered");
+    expect(calls).not.toContain("updateOrder:proc-1:cancelled");
+  });
 });
