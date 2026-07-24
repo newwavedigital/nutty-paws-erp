@@ -164,6 +164,10 @@ test("Stage 3 stale local rows cannot impersonate backend records in signed-in m
   await ensureAdmin(request);
   await page.goto("/");
   await loginInBrowser(page);
+  await expect.poll(async () => page.evaluate(() => {
+    const poBackendState = eval("backendApiState") as { loadedPurchaseOrders: boolean; loadingPurchaseOrders: boolean };
+    return poBackendState.loadedPurchaseOrders && !poBackendState.loadingPurchaseOrders;
+  })).toBe(true);
   await seedStaleLocalState(page);
   await expect.poll(async () =>
     page.evaluate(() => (eval("state") as { purchaseOrders: Array<{ id: string }> }).purchaseOrders.map((po) => po.id))

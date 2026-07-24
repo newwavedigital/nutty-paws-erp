@@ -108,6 +108,7 @@ function renderSuppliers(el) {
         <h2>Suppliers</h2>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="exportCsv('suppliers.csv', state.suppliers)">Export CSV</button>
+          ${bulkImportButtonHtml('suppliers')}
           <button class="btn" onclick="editSupplier()">+ Add Supplier</button>
         </div>
       </div>

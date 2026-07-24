@@ -7,7 +7,7 @@ const backendBridge = readFileSync(resolve(repoRoot, "public", "js", "api", "bac
 const qualityModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "quality", "index.js"), "utf8");
 const shippingModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "shipping", "index.js"), "utf8");
 const procurementModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "procurement", "index.js"), "utf8");
-const contentLibraryModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "content-library", "index.js"), "utf8");
+const contentLibraryModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "content-library", "index.js"), "utf8").replace(/\r\n/g, "\n");
 const pickPackModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "pick-pack", "index.js"), "utf8");
 const purchaseOrdersModule = readFileSync(resolve(repoRoot, "public", "js", "modules", "purchase-orders", "index.js"), "utf8");
 

@@ -20,6 +20,7 @@ import { registerTeamChatRoutes } from "./team-chat/routes";
 import { registerFoodSafetyRoutes } from "./food-safety/routes";
 import { registerMachineryRoutes } from "./machinery/routes";
 import { registerFeedbackRoutes } from "./feedback/routes";
+import { registerImportRoutes } from "./imports/routes";
 import { assertSafeAuthConfig, assertSafeHostEnvironment } from "./auth/guards";
 import type { AuthContext } from "./auth/service";
 
@@ -83,6 +84,7 @@ export function createApp(configure?: (app: Hono<AppBindings>) => void, testEnv:
   registerFoodSafetyRoutes(app);
   registerMachineryRoutes(app);
   registerFeedbackRoutes(app);
+  registerImportRoutes(app);
 
   app.notFound((c) => {
     return fail(c, new ApiError("NOT_FOUND", "Route not found", 404));

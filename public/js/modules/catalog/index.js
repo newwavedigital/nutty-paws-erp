@@ -49,6 +49,7 @@ function renderCustomers(el) {
         <h2>Customers</h2>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="exportCsv('customers.csv', state.customers)">Export CSV</button>
+          ${bulkImportButtonHtml('customers')}
           <button class="btn" onclick="editCustomer()">+ Add Customer</button>
         </div>
       </div>
@@ -835,6 +836,7 @@ function renderProductList(el) {
   const filters = `${opsSelect('Customer filter', ['All customers', ...state.customers.map(c=>c.name).slice(0,8)])}${opsSelect('Production room filter', ['All rooms','Squeeze Pack','Bnutty','Main','Dog House'])}${opsSelect('Status filter', ['All statuses','Active','Archived'])}`;
   const actions = `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('products.csv', state.products.map(p=>({sku:p.sku,name:p.name,customer:getCustomer(p.customerId)?.name||'',room:p.room,size:p.size?p.size+(p.sizeUnit||'oz'):'',case_qty:p.caseQty||0,case_sticker:p.caseSticker||'',daily_production_rate:p.dailyProductionRate||0,kosher:p.kosher?'Yes':'No',allergen:p.allergen?'Yes':'No',allergen_details:p.allergenDetails||'',price:p.price,notes:p.notes||''})))">Export CSV</button>
+    ${bulkImportButtonHtml('products')}
     <button class="btn btn-sm" onclick="editProduct()">+ Add Product</button>`;
   el.innerHTML = `
     <div class="ops-header">

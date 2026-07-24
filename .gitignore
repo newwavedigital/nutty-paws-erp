@@ -4,6 +4,10 @@ dist/
 !public/dist/
 !public/dist/**
 coverage/
+.tmp/
+test-results/
+output/playwright/
+.playwright-cli/
 .dev.vars
 .env
 .env.*

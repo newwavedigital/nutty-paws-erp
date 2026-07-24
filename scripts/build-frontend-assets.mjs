@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,7 @@ const jsChunks = [
   "js/ui/utilities.js",
   "js/state/inventory-helpers.js",
   "js/ui/csv.js",
+  "js/ui/imports.js",
   "js/ui/shell.js",
   "js/ui/modal.js",
   "js/modules/dashboard/index.js",
@@ -103,6 +104,12 @@ const jsFile = `dist/app.${assetHash(bundledJs)}.js`;
 const cssFile = `dist/styles.${assetHash(bundledCss)}.css`;
 
 rmSync(resolve(publicRoot, "dist"), { recursive: true, force: true });
+rmSync(resolve(publicRoot, "vendor"), { recursive: true, force: true });
+mkdirSync(resolve(publicRoot, "vendor"), { recursive: true });
+copyFileSync(resolve(repoRoot, "node_modules/csv-parse/dist/iife/sync.js"), resolve(publicRoot, "vendor/csv-parse-sync.js"));
+copyFileSync(resolve(repoRoot, "node_modules/jszip/dist/jszip.min.js"), resolve(publicRoot, "vendor/jszip.min.js"));
+copyFileSync(resolve(repoRoot, "node_modules/read-excel-file/bundle/read-excel-file.min.js"), resolve(publicRoot, "vendor/read-excel-file.min.js"));
+copyFileSync(resolve(repoRoot, "node_modules/write-excel-file/bundle/write-excel-file.min.js"), resolve(publicRoot, "vendor/write-excel-file.min.js"));
 writeAsset(jsFile, bundledJs);
 writeAsset(cssFile, bundledCss);
 writeAsset("app.js", bundledJs);

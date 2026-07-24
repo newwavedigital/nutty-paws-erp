@@ -7,7 +7,9 @@ function exportCsv(filename, rows) {
   const csv = [
     cols.join(','),
     ...rows.map(r => cols.map(c => {
-      const v = r[c] == null ? '' : String(r[c]).replace(/"/g, '""');
+      let v = r[c] == null ? '' : String(r[c]);
+      if (/^[\s\uFEFF]*[=+\-@]/.test(v)) v = "'" + v;
+      v = v.replace(/"/g, '""');
       return /[",\n]/.test(v) ? `"${v}"` : v;
     }).join(','))
   ].join('\n');

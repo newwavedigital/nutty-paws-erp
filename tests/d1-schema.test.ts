@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ const migrationPaths = [
   "migrations/0014_inventory_receiving_move_corrections.sql",
   "migrations/0015_inventory_archive_adjustment_hardening.sql",
   "migrations/0016_supplier_product_line_inventory_link.sql",
+  "migrations/0017_supplier_import_title_guard.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 const stagingDatabaseName = "nut-house-portal-staging-db";
@@ -61,9 +62,13 @@ describe("Phase 2A D1 baseline schema migration", () => {
     const persistDir = mkdtempSync(join(tmpdir(), "nut-house-d1-"));
 
     try {
-      for (const migrationPath of migrationPaths) {
-        d1Execute(persistDir, ["--file", migrationPath]);
-      }
+      const combinedMigrationPath = join(persistDir, "ordered-migrations.sql");
+      writeFileSync(
+        combinedMigrationPath,
+        migrationPaths.map((migrationPath) => readFileSync(join(process.cwd(), migrationPath), "utf8")).join("\n\n"),
+        "utf8",
+      );
+      d1Execute(persistDir, ["--file", combinedMigrationPath]);
 
       const tableResult = d1Execute(persistDir, [
         "--command",
@@ -610,6 +615,54 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "idx_supplier_product_lines_inventory_item_id" }),
         ]),
       );
+
+      const supplierIndexes = d1Execute(persistDir, [
+        "--command",
+        "PRAGMA index_list('suppliers');",
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(supplierIndexes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "idx_suppliers_title_trim_lower_unique", unique: 1, partial: 1 }),
+        ]),
+      );
+
+      d1Execute(persistDir, [
+        "--command",
+        "INSERT INTO suppliers (id, title, status) VALUES ('supplier-archived-1', ' Acme Inc ', 'archived');",
+      ]);
+      d1Execute(persistDir, [
+        "--command",
+        "INSERT INTO suppliers (id, title, status) VALUES ('supplier-archived-2', 'acme inc', 'archived');",
+      ]);
+      d1Execute(persistDir, [
+        "--command",
+        "INSERT INTO suppliers (id, title, status) VALUES ('supplier-normalized-1', ' ACME INC ', 'active');",
+      ]);
+      expect(() =>
+        d1Execute(persistDir, [
+          "--command",
+          "INSERT INTO suppliers (id, title, status) VALUES ('supplier-normalized-2', 'acme inc', 'active');",
+        ]),
+      ).toThrow();
+      expect(() =>
+        d1Execute(persistDir, [
+          "--command",
+          "UPDATE suppliers SET status = 'active' WHERE id = 'supplier-archived-1';",
+        ]),
+      ).toThrow();
+      d1Execute(persistDir, [
+        "--command",
+        "UPDATE suppliers SET status = 'archived' WHERE id = 'supplier-normalized-1';",
+      ]);
+      d1Execute(persistDir, [
+        "--command",
+        "UPDATE suppliers SET status = 'active' WHERE id = 'supplier-archived-1';",
+      ]);
+      d1Execute(persistDir, [
+        "--command",
+        "INSERT INTO suppliers (id, title) VALUES ('supplier-punctuation-distinct', 'Acme Inc.');",
+      ]);
 
       const feedbackIndexes = d1Execute(persistDir, [
         "--command",

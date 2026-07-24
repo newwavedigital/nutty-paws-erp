@@ -128,6 +128,7 @@ function renderInventory(el) {
   const filters = `${opsSelect('Status filter', ['All statuses','OK','Reorder','Over-allocated'])}${opsSelect('Scope filter', ['All scopes','General','Customer-specific'])}`;
   const actions = inventoryReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('inventory_${invTab.toLowerCase().replace(/\\s+/g,'_')}.csv', state.ingredients.filter(i=>(i.category||'Ingredient')==='${invTab}').map(i=>({...i,supplier:getSupplier(i.supplierId)?.name||'',customer:i.customerId?(getCustomer(i.customerId)?.name||''):''})))">Export CSV</button>
+    ${bulkImportButtonHtml('inventory')}
     <a class="btn btn-dark btn-sm" href="${SHAREPOINT_INVENTORY_URL}" target="_blank" rel="noopener" style="text-decoration:none">View Sheet</a>
     <button class="btn btn-sm" onclick="editIngredient()">+ Add Item</button>` : backendRequiredActions('inventory records');
   el.innerHTML = `

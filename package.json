@@ -14,6 +14,9 @@
         "coverage": "vitest run --coverage",
         "frontend:build": "node scripts/build-frontend-assets.mjs",
         "frontend:check": "npm run frontend:build && node scripts/check-frontend-modules.mjs",
+        "review:bulk-import": "node scripts/show-bulk-import-review.mjs",
+        "review:bulk-import-visible-fixes": "node scripts/show-bulk-import-review.mjs --smoke --visible-fixes",
+        "review:bulk-import-conflicts": "node scripts/show-bulk-import-conflict-review.mjs",
         "typecheck": "tsc --noEmit",
         "check:deploy-config": "node scripts/validate-deploy-config.mjs wrangler.jsonc",
         "sample:accounts": "node scripts/sample-accounts.mjs",
@@ -36,15 +39,19 @@
     },
     "homepage": "https://github.com/newwavedigital/nutty-paws-erp#readme",
     "dependencies": {
-        "hono": "^4.12.25"
+        "csv-parse": "^7.0.1",
+        "hono": "^4.12.31",
+        "jszip": "^3.10.1",
+        "read-excel-file": "^9.3.2",
+        "write-excel-file": "^4.1.1"
     },
     "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260609.1",
+        "@cloudflare/workers-types": "^5.20260723.1",
         "@playwright/test": "^1.61.1",
         "@types/node": "^25.9.2",
         "@vitest/coverage-v8": "^4.1.8",
         "typescript": "^6.0.3",
         "vitest": "^4.1.8",
-        "wrangler": "^4.98.0"
+        "wrangler": "^4.114.0"
     }
 }
