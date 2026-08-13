@@ -2109,12 +2109,15 @@ async function archiveBackendMasterItem(id) {
   return item;
 }
 
-function masterItemForInventoryName(itemName) {
-  return (state.masterItems || []).find(m => m.name === itemName || m.id === itemName);
+function masterItemForInventoryId(masterItemId) {
+  return (state.masterItems || []).find(m => m.id === masterItemId || m._backendId === masterItemId);
 }
 
 async function saveBackendInventoryItem(id, isNew, data) {
-  const master = masterItemForInventoryName(data.name);
+  const requestedMasterItemId = data.masterItemId || '';
+  const master = masterItemForInventoryId(requestedMasterItemId);
+  const masterItemId = master?._backendId || master?.id || requestedMasterItemId;
+  if (!masterItemId) throw new Error('Pick a Master List item before saving Inventory.');
   const backendId = data._backendId || id;
   const lots = Array.isArray(data.lots)
     ? data.lots.map(lot => {
@@ -2126,7 +2129,7 @@ async function saveBackendInventoryItem(id, isNew, data) {
     ? lots.reduce((sum, lot) => sum + (Number(lot.qty ?? lot.quantity ?? 0) || 0), 0)
     : (Number(data.stock) || 0);
   const payload = {
-    masterItemId: data.masterItemId || master?.id,
+    masterItemId,
     category: data.category,
     supplierId: data.supplierId || null,
     customerId: data.customerId || 'general',

@@ -1,5 +1,18 @@
+import { ApiError } from "../api/errors";
+
 export type ProductStatus = "active" | "inactive";
 export type MasterItemType = "raw_material" | "packaging" | "finished_good" | "other";
+
+export class CatalogError extends ApiError {
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(code, message, catalogStatusFor(code), details);
+    this.name = "CatalogError";
+  }
+}
+
+function catalogStatusFor(code: string) {
+  return code === "MASTER_ITEM_TYPE_CONFLICT" ? 409 : 400;
+}
 
 export type ProductRecord = {
   id: string;

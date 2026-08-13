@@ -22,6 +22,7 @@ const migrationPaths = [
   "migrations/0015_inventory_archive_adjustment_hardening.sql",
   "migrations/0016_supplier_product_line_inventory_link.sql",
   "migrations/0017_supplier_import_title_guard.sql",
+  "migrations/0018_inventory_category_master_item_sync.sql",
 ];
 const wranglerCliPath = join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
 const stagingDatabaseName = "nut-house-portal-staging-db";
@@ -675,6 +676,131 @@ describe("Phase 2A D1 baseline schema migration", () => {
           expect.objectContaining({ name: "idx_feedback_items_status" }),
         ]),
       );
+    } finally {
+      rmSync(persistDir, { force: true, recursive: true });
+    }
+  }, 120000);
+
+  it("repairs Master List types from active, unambiguous Inventory categories only", () => {
+    const persistDir = mkdtempSync(join(tmpdir(), "nut-house-d1-category-sync-"));
+
+    try {
+      const priorMigrationsPath = join(persistDir, "prior-migrations.sql");
+      writeFileSync(
+        priorMigrationsPath,
+        migrationPaths
+          .slice(0, -1)
+          .map((migrationPath) => readFileSync(join(process.cwd(), migrationPath), "utf8"))
+          .join("\n\n"),
+        "utf8",
+      );
+      d1Execute(persistDir, ["--file", priorMigrationsPath]);
+
+      d1Execute(persistDir, [
+        "--command",
+        `
+          INSERT INTO master_items (id, sku, name, item_type, unit_of_measure) VALUES
+            ('category-sync-finished', 'CATEGORY-SYNC-FINISHED', 'Finished', 'other', 'ea'),
+            ('category-sync-ingredient', 'CATEGORY-SYNC-INGREDIENT', 'Ingredient', 'other', 'lb'),
+            ('category-sync-packaging', 'CATEGORY-SYNC-PACKAGING', 'Packaging', 'raw_material', 'ea'),
+            ('category-sync-unlinked', 'CATEGORY-SYNC-UNLINKED', 'Unlinked', 'other', 'ea'),
+            ('category-sync-archived-only', 'CATEGORY-SYNC-ARCHIVED-ONLY', 'Archived only', 'other', 'ea'),
+            ('category-sync-unsupported-active', 'CATEGORY-SYNC-UNSUPPORTED-ACTIVE', 'Unsupported', 'other', 'ea');
+          INSERT INTO inventory_items (id, master_item_id, on_hand_quantity, allocated_quantity, reorder_point_quantity, unit_of_measure, category, status) VALUES
+            ('category-sync-inv-finished', 'category-sync-finished', 0, 0, 0, 'ea', 'Finished Good', 'active'),
+            ('category-sync-inv-ingredient', 'category-sync-ingredient', 0, 0, 0, 'lb', 'Ingredient', 'active'),
+            ('category-sync-inv-packaging', 'category-sync-packaging', 0, 0, 0, 'ea', 'Packaging', 'active'),
+            ('category-sync-inv-archived-only', 'category-sync-archived-only', 0, 0, 0, 'ea', 'Packaging', 'archived'),
+            ('category-sync-inv-unsupported-active', 'category-sync-unsupported-active', 0, 0, 0, 'ea', 'Legacy category', 'active');
+        `,
+      ]);
+
+      const categoryMigrationPath = migrationPaths[migrationPaths.length - 1];
+      d1Execute(persistDir, ["--file", join(process.cwd(), categoryMigrationPath)]);
+      // The migration must safely rerun without changing the final type map.
+      d1Execute(persistDir, ["--file", join(process.cwd(), categoryMigrationPath)]);
+
+      const rows = d1Execute(persistDir, [
+        "--command",
+        `
+          SELECT id, item_type
+          FROM master_items
+          WHERE id LIKE 'category-sync-%'
+          ORDER BY id;
+        `,
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(rows).toEqual([
+        { id: "category-sync-archived-only", item_type: "other" },
+        { id: "category-sync-finished", item_type: "finished_good" },
+        { id: "category-sync-ingredient", item_type: "raw_material" },
+        { id: "category-sync-packaging", item_type: "packaging" },
+        { id: "category-sync-unlinked", item_type: "other" },
+        { id: "category-sync-unsupported-active", item_type: "other" },
+      ]);
+
+      const migrationSql = readFileSync(join(process.cwd(), categoryMigrationPath), "utf8");
+      expect(migrationSql).toMatch(/COUNT\(\*\)\s*=\s*COUNT\(inv\.category\)/i);
+      expect(migrationSql).toMatch(/COUNT\(DISTINCT\s+inv\.category\)\s*=\s*1/i);
+      expect(migrationSql).toMatch(/WHERE\s+inv\.status\s*=\s*'active'/i);
+      expect(migrationSql).toMatch(/AND\s+item_type\s+IS\s+NOT/i);
+
+      // Production schema has a one-row-per-Master-Item constraint. Exercise
+      // the migration's defensive aggregate branch against a fixture that can
+      // contain historical duplicate rows, proving archived rows are ignored
+      // while active conflicts and unsupported categories still stay untouched.
+      const fixtureTable = "inventory_items_category_sync_fixture";
+      d1Execute(persistDir, [
+        "--command",
+        `
+          CREATE TABLE ${fixtureTable} (
+            id TEXT PRIMARY KEY,
+            master_item_id TEXT NOT NULL,
+            category TEXT,
+            status TEXT NOT NULL
+          );
+          INSERT INTO master_items (id, sku, name, item_type, unit_of_measure) VALUES
+            ('category-sync-mixed-active-wins', 'CATEGORY-SYNC-MIXED-ACTIVE-WINS', 'Mixed active wins', 'other', 'ea'),
+            ('category-sync-mixed-archived-ignored', 'CATEGORY-SYNC-MIXED-ARCHIVED-IGNORED', 'Mixed archived ignored', 'finished_good', 'ea'),
+            ('category-sync-conflicting-active', 'CATEGORY-SYNC-CONFLICTING-ACTIVE', 'Conflicting active', 'other', 'ea'),
+            ('category-sync-unsupported-mixed', 'CATEGORY-SYNC-UNSUPPORTED-MIXED', 'Unsupported mixed', 'other', 'ea');
+          INSERT INTO ${fixtureTable} (id, master_item_id, category, status) VALUES
+            ('fixture-active-packaging', 'category-sync-mixed-active-wins', 'Packaging', 'active'),
+            ('fixture-archived-ingredient', 'category-sync-mixed-active-wins', 'Ingredient', 'archived'),
+            ('fixture-active-ingredient', 'category-sync-mixed-archived-ignored', 'Ingredient', 'active'),
+            ('fixture-archived-finished', 'category-sync-mixed-archived-ignored', 'Finished Good', 'archived'),
+            ('fixture-conflict-ingredient', 'category-sync-conflicting-active', 'Ingredient', 'active'),
+            ('fixture-conflict-packaging', 'category-sync-conflicting-active', 'Packaging', 'active'),
+            ('fixture-conflict-archived-finished', 'category-sync-conflicting-active', 'Finished Good', 'archived'),
+            ('fixture-unsupported-active', 'category-sync-unsupported-mixed', 'Legacy category', 'active'),
+            ('fixture-unsupported-archived-packaging', 'category-sync-unsupported-mixed', 'Packaging', 'archived');
+        `,
+      ]);
+      const fixtureMigrationPath = join(persistDir, "category-sync-active-only-fixture.sql");
+      writeFileSync(fixtureMigrationPath, migrationSql.replaceAll("inventory_items", fixtureTable), "utf8");
+      d1Execute(persistDir, ["--file", fixtureMigrationPath]);
+
+      const fixtureRows = d1Execute(persistDir, [
+        "--command",
+        `
+          SELECT id, item_type
+          FROM master_items
+          WHERE id IN (
+            'category-sync-mixed-active-wins',
+            'category-sync-mixed-archived-ignored',
+            'category-sync-conflicting-active',
+            'category-sync-unsupported-mixed'
+          )
+          ORDER BY id;
+        `,
+      ]).flatMap((result) => result.results ?? []);
+
+      expect(fixtureRows).toEqual([
+        { id: "category-sync-conflicting-active", item_type: "other" },
+        { id: "category-sync-mixed-active-wins", item_type: "packaging" },
+        { id: "category-sync-mixed-archived-ignored", item_type: "raw_material" },
+        { id: "category-sync-unsupported-mixed", item_type: "other" },
+      ]);
     } finally {
       rmSync(persistDir, { force: true, recursive: true });
     }

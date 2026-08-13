@@ -1,3 +1,4 @@
+import { itemTypeForInventoryCategory } from "./service";
 import type {
   InventoryAuditInput,
   InventoryAdjustmentInput,
@@ -337,78 +338,123 @@ export class D1InventoryStore implements InventoryStore {
   }
 
   async createInventoryItem(input: InventoryItemInput): Promise<InventoryItemSetupRecord> {
-    await this.db
-      .prepare(
-        `
-          INSERT INTO inventory_items (
-            id, master_item_id, category, supplier_id, customer_id,
-            on_hand_quantity, allocated_quantity, reorder_point_quantity,
-            unit_of_measure, unit_cost_cents, lead_time_days, location,
-            lot_number, lots_json
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      )
-      .bind(
-        input.id,
-        input.masterItemId,
-        input.category,
-        input.supplierId,
-        input.customerId,
-        input.onHandQuantity,
-        input.allocatedQuantity ?? 0,
-        input.reorderPointQuantity,
-        input.unitOfMeasure,
-        input.unitCostCents,
-        input.leadTimeDays,
-        input.location,
-        input.lotNumber,
-        input.lotsJson,
-      )
-      .run();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            INSERT INTO inventory_items (
+              id, master_item_id, category, supplier_id, customer_id,
+              on_hand_quantity, allocated_quantity, reorder_point_quantity,
+              unit_of_measure, unit_cost_cents, lead_time_days, location,
+              lot_number, lots_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .bind(
+          input.id,
+          input.masterItemId,
+          input.category,
+          input.supplierId,
+          input.customerId,
+          input.onHandQuantity,
+          input.allocatedQuantity ?? 0,
+          input.reorderPointQuantity,
+          input.unitOfMeasure,
+          input.unitCostCents,
+          input.leadTimeDays,
+          input.location,
+          input.lotNumber,
+          input.lotsJson,
+        ),
+      this.db
+        .prepare(
+          `
+            UPDATE master_items
+            SET item_type = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND EXISTS (
+                SELECT 1
+                FROM inventory_items
+                WHERE id = ?
+                  AND master_item_id = ?
+              )
+          `,
+        )
+        .bind(
+          itemTypeForInventoryCategory(input.category),
+          input.masterItemId,
+          input.id,
+          input.masterItemId,
+        ),
+    ]);
     return (await this.listInventoryItems()).find((item) => item.id === input.id) as InventoryItemSetupRecord;
   }
 
   async updateInventoryItem(id: string, input: InventoryItemInput): Promise<InventoryItemSetupRecord | null> {
-    await this.db
-      .prepare(
-        `
-          UPDATE inventory_items
-          SET master_item_id = ?,
-              category = ?,
-              supplier_id = ?,
-              customer_id = ?,
-              on_hand_quantity = ?,
-              allocated_quantity = ?,
-              reorder_point_quantity = ?,
-              unit_of_measure = ?,
-              unit_cost_cents = ?,
-              lead_time_days = ?,
-              location = ?,
-              lot_number = ?,
-              lots_json = ?,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-            AND status = 'active'
-        `,
-      )
-      .bind(
-        input.masterItemId,
-        input.category,
-        input.supplierId,
-        input.customerId,
-        input.onHandQuantity,
-        input.allocatedQuantity ?? 0,
-        input.reorderPointQuantity,
-        input.unitOfMeasure,
-        input.unitCostCents,
-        input.leadTimeDays,
-        input.location,
-        input.lotNumber,
-        input.lotsJson,
-        id,
-      )
-      .run();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `
+            UPDATE inventory_items
+            SET master_item_id = ?,
+                category = ?,
+                supplier_id = ?,
+                customer_id = ?,
+                on_hand_quantity = ?,
+                allocated_quantity = ?,
+                reorder_point_quantity = ?,
+                unit_of_measure = ?,
+                unit_cost_cents = ?,
+                lead_time_days = ?,
+                location = ?,
+                lot_number = ?,
+                lots_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND status = 'active'
+          `,
+        )
+        .bind(
+          input.masterItemId,
+          input.category,
+          input.supplierId,
+          input.customerId,
+          input.onHandQuantity,
+          input.allocatedQuantity ?? 0,
+          input.reorderPointQuantity,
+          input.unitOfMeasure,
+          input.unitCostCents,
+          input.leadTimeDays,
+          input.location,
+          input.lotNumber,
+          input.lotsJson,
+          id,
+        ),
+      this.db
+        .prepare(
+          `
+            UPDATE master_items
+            SET item_type = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND EXISTS (
+                SELECT 1
+                FROM inventory_items
+                WHERE id = ?
+                  AND master_item_id = ?
+                  AND status = 'active'
+              )
+          `,
+        )
+        .bind(
+          itemTypeForInventoryCategory(input.category),
+          input.masterItemId,
+          id,
+          input.masterItemId,
+        ),
+    ]);
     return (await this.listInventoryItems()).find((item) => item.id === id) ?? null;
   }
 

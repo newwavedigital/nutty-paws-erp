@@ -2633,12 +2633,15 @@ async function archiveBackendMasterItem(id) {
   return item;
 }
 
-function masterItemForInventoryName(itemName) {
-  return (state.masterItems || []).find(m => m.name === itemName || m.id === itemName);
+function masterItemForInventoryId(masterItemId) {
+  return (state.masterItems || []).find(m => m.id === masterItemId || m._backendId === masterItemId);
 }
 
 async function saveBackendInventoryItem(id, isNew, data) {
-  const master = masterItemForInventoryName(data.name);
+  const requestedMasterItemId = data.masterItemId || '';
+  const master = masterItemForInventoryId(requestedMasterItemId);
+  const masterItemId = master?._backendId || master?.id || requestedMasterItemId;
+  if (!masterItemId) throw new Error('Pick a Master List item before saving Inventory.');
   const backendId = data._backendId || id;
   const lots = Array.isArray(data.lots)
     ? data.lots.map(lot => {
@@ -2650,7 +2653,7 @@ async function saveBackendInventoryItem(id, isNew, data) {
     ? lots.reduce((sum, lot) => sum + (Number(lot.qty ?? lot.quantity ?? 0) || 0), 0)
     : (Number(data.stock) || 0);
   const payload = {
-    masterItemId: data.masterItemId || master?.id,
+    masterItemId,
     category: data.category,
     supplierId: data.supplierId || null,
     customerId: data.customerId || 'general',
@@ -11464,6 +11467,27 @@ async function deleteUser(id) {
    ========================================================================= */
 let invTab = 'Finished Good';
 function setInvTab(t) { invTab = t; renderInventory(document.getElementById('content')); }
+const MASTER_ITEM_TYPES = [
+  { value: 'raw_material', label: 'Raw Material' },
+  { value: 'packaging', label: 'Packaging' },
+  { value: 'finished_good', label: 'Finished Good' },
+  { value: 'other', label: 'Other' }
+];
+const INVENTORY_CATEGORY_BY_MASTER_ITEM_TYPE = Object.freeze({
+  raw_material: 'Ingredient',
+  packaging: 'Packaging',
+  finished_good: 'Finished Good'
+});
+
+function normalizeMasterItemType(value) {
+  return MASTER_ITEM_TYPES.some(option => option.value === value) ? value : 'other';
+}
+function masterItemTypeLabel(value) {
+  return MASTER_ITEM_TYPES.find(option => option.value === value)?.label || 'Other';
+}
+function inventoryCategoryForMasterItemType(value) {
+  return INVENTORY_CATEGORY_BY_MASTER_ITEM_TYPE[value] || '';
+}
 
 // derive linked customer for an inventory item:
 // - if item has customerId set, use that
@@ -11679,8 +11703,7 @@ function masterCustomerName(m) {
   return escapeHtml(getCustomer(m.customerId)?.name || '-');
 }
 function masterTypeLabel(m) {
-  const raw = (m.itemType || '').replace(/_/g, ' ').trim();
-  if (raw) return raw.replace(/\b\w/g, c => c.toUpperCase());
+  if (MASTER_ITEM_TYPES.some(option => option.value === m.itemType)) return masterItemTypeLabel(m.itemType);
   const inv = (state.ingredients || []).find(i => i.name === m.name || i.masterItemId === m.id);
   return inv ? (inv.category || 'Ingredient') : 'Other';
 }
@@ -11697,7 +11720,7 @@ function renderMasterList(el) {
   }
   const masterReady = backendRowsReady(backendMasterItemState);
   const items = masterReady ? (state.masterItems || []).slice().sort((a,b) => (a.name||'').localeCompare(b.name||'')) : [];
-  const filters = `${opsSelect('Item type filter', ['All types','Ingredient','Packaging','Finished Good','Other'])}${opsSelect('Customer scope filter', ['All scopes','General','Customer-specific'])}${opsSelect('Allergen filter', ['All allergens','None','Peanut','Tree Nut','Milk','Soy','Wheat'])}`;
+  const filters = `${opsSelect('Item type filter', ['All types','Raw Material','Packaging','Finished Good','Other'])}${opsSelect('Customer scope filter', ['All scopes','General','Customer-specific'])}${opsSelect('Allergen filter', ['All allergens','None','Peanut','Tree Nut','Milk','Soy','Wheat'])}`;
   const actions = masterReady ? `
     <button class="btn btn-secondary btn-sm" onclick="exportCsv('master_list.csv', (state.masterItems||[]).map(m=>({name:m.name,type:masterTypeLabel(m),uom:m.uom,allergens:(m.allergens||[]).join('; '),customer:(!m.customerId||m.customerId==='general')?'General':(getCustomer(m.customerId)?.name||'')})))">Export CSV</button>
     <button class="btn btn-sm" onclick="editMasterItem()">+ Add Master Item</button>` : backendRequiredActions('Master List records');
@@ -11744,13 +11767,19 @@ function renderMasterList(el) {
     failBackendRequiredWrite(null, backendMasterItemState, 'Master List requires backend records. Nothing was saved locally.');
     return;
   }
-  const m = (state.masterItems || []).find(x => x.id === id) || { id: uid('m'), name:'', uom:'LBS', allergens:[], customerId:'general' };
+  const m = (state.masterItems || []).find(x => x.id === id) || { id: uid('m'), name:'', itemType:'other', uom:'LBS', allergens:[], customerId:'general' };
   const isNew = !id;
   const allergens = Array.isArray(m.allergens) ? m.allergens : [];
+  const itemType = normalizeMasterItemType(m.itemType);
   openModal((isNew?'Add':'Edit')+' Master Item', `
     <form onsubmit="event.preventDefault();saveMasterItem('${m.id}', ${isNew})">
       <div class="form-grid">
         <div class="form-row"><label>Item Name</label><input id="mi_name" value="${escapeHtml(m.name)}" required placeholder="e.g. Raw peanuts, 16oz jars, Bnutty Classic 16oz" /></div>
+        <div class="form-row"><label>Master List Type</label>
+          <select id="mi_item_type" required>
+            ${MASTER_ITEM_TYPES.map(option => `<option value="${option.value}" ${itemType===option.value?'selected':''}>${escapeHtml(option.label)}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-row"><label>Unit of Measurement</label>
           <select id="mi_uom">
             ${MASTER_UOMS.map(u => `<option ${m.uom===u?'selected':''}>${escapeHtml(u)}</option>`).join('')}
@@ -11784,10 +11813,12 @@ async function saveMasterItem(id, isNew) {
   const name = (document.getElementById('mi_name').value || '').trim();
   if (!name) { toast('Item Name is required.'); return; }
   const allergens = Array.from(document.querySelectorAll('.mi_allergen')).filter(c => c.checked).map(c => c.value);
+  const selectedItemType = document.getElementById('mi_item_type').value;
+  const itemType = normalizeMasterItemType(selectedItemType);
   const data = {
     id,
     sku: name,
-    itemType: 'other',
+    itemType,
     name,
     uom: document.getElementById('mi_uom').value || 'LBS',
     allergens,
@@ -11798,6 +11829,7 @@ async function saveMasterItem(id, isNew) {
   const dup = state.masterItems.find(x => x.id !== id && (x.name||'').toLowerCase() === name.toLowerCase());
   if (dup) { toast('A master item with that name already exists.'); return; }
   const existing = state.masterItems.find(x => x.id === id);
+  const masterItemTypeChanged = !isNew && normalizeMasterItemType(existing?.itemType) !== itemType;
   if (!requireEmployeeBackendWrite(backendMasterItemState)) return;
   try {
     const saved = await saveBackendMasterItem(id, isNew, { ...data, _backendId: existing?._backendId });
@@ -11810,6 +11842,14 @@ async function saveMasterItem(id, isNew) {
   } catch (error) {
     failBackendRequiredWrite(error, backendMasterItemState);
     return;
+  }
+  if (masterItemTypeChanged) {
+    // The backend changes an active linked Inventory category in the same
+    // transaction as this Master List edit. Invalidate and reload Inventory
+    // before it can render with the old category or summary signals.
+    backendInventoryState.loaded = false;
+    backendInventoryState.signals = null;
+    await loadBackendInventory();
   }
   if (isNew) state.masterItems.push(data);
   else Object.assign(state.masterItems.find(x => x.id === id), data);
@@ -12493,20 +12533,30 @@ function editIngredient(id) {
     ? i.lots.map(l => ({ ...l }))
     : [{ lotNumber: i.lotNumber||'', building: i.building||'', location: i.location||'', qty: i.stock||0 }];
   const masterOpts = (state.masterItems || []).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  const nameInMaster = i.name && masterOpts.some(m => m.name === i.name);
+  const selectedMasterItemId = i.masterItemId || '';
+  const selectedMasterItem = masterOpts.find(m => m.id === selectedMasterItemId || m._backendId === selectedMasterItemId);
+  const unresolvedMasterItemOption = !selectedMasterItem && i.name
+    ? `<option value="${escapeHtml(selectedMasterItemId)}" data-name="${escapeHtml(i.name)}" data-uom="${escapeHtml(i.unit||'')}" data-customer="${escapeHtml(i.customerId||'general')}" data-legacy-master-link="unresolved" selected>${escapeHtml(i.name)} (${selectedMasterItemId ? 'linked Master List item unavailable' : 'Master List link unavailable'})</option>`
+    : '';
   openModal((isNew?'Add':'Edit')+' Inventory Item', `
     <form onsubmit="event.preventDefault();saveIngredient('${i.id}', ${isNew})">
       <div class="form-grid">
         <div class="form-row"><label>Item</label>
           ${masterOpts.length ? `
-            <select id="ing_name" required onchange="masterItemSelected()">
+            <select id="ing_master_item_id" required onchange="masterItemSelected()">
               <option value="">- Select from Master List -</option>
-              ${masterOpts.map(m=>`<option value="${escapeHtml(m.name)}" data-uom="${escapeHtml(m.uom||'')}" data-customer="${escapeHtml(m.customerId||'general')}" ${i.name===m.name?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
-              ${(i.name && !nameInMaster) ? `<option value="${escapeHtml(i.name)}" selected>${escapeHtml(i.name)} (not in Master List)</option>` : ''}
+              ${masterOpts.map(m=>{
+                const itemType = normalizeMasterItemType(m.itemType);
+                const category = inventoryCategoryForMasterItemType(itemType);
+                const masterItemId = m._backendId || m.id;
+                const isSelected = masterItemId === selectedMasterItemId || m.id === selectedMasterItemId;
+                return `<option value="${escapeHtml(masterItemId)}" data-name="${escapeHtml(m.name)}" data-uom="${escapeHtml(m.uom||'')}" data-customer="${escapeHtml(m.customerId||'general')}" data-item-type="${escapeHtml(itemType)}"${category ? ` data-category="${escapeHtml(category)}"` : ''} ${isSelected?'selected':''}>${escapeHtml(m.name)}</option>`;
+              }).join('')}
+              ${unresolvedMasterItemOption}
             </select>
-            <div class="help-text">Item names come from the <strong>Master List</strong> tab. Picking one fills in its unit &amp; customer.</div>
+            <div class="help-text">Item names come from the <strong>Master List</strong> tab. Picking one fills in its unit, customer, and matching category when available; category remains editable.</div>
           ` : `
-            <input type="hidden" id="ing_name" value="${escapeHtml(i.name)}" />
+            <input type="hidden" id="ing_master_item_id" value="${escapeHtml(selectedMasterItemId)}" data-name="${escapeHtml(i.name)}" />
             <div class="help-text" style="color:#a0470c">No items in the <strong>Master List</strong> yet. Add the item there first, then come back to stock it.</div>
           `}
         </div>
@@ -12625,9 +12675,12 @@ function clearIngredientCoa() {
   info.textContent = 'No CoA uploaded.';
   info.classList.remove('has');
 }
-// When an item is picked from the Master List, fill in its unit & customer.
+// When an item is picked from the Master List, fill in its unit, customer, and
+// the matching category when the Master List type has one. Category remains a
+// user-editable field after this suggestion and the backend response is the
+// authoritative value after save.
 function masterItemSelected() {
-  const sel = document.getElementById('ing_name');
+  const sel = document.getElementById('ing_master_item_id');
   if (!sel || !sel.options) return;
   const opt = sel.options[sel.selectedIndex];
   if (!opt) return;
@@ -12637,6 +12690,12 @@ function masterItemSelected() {
   if (unitEl && uom) unitEl.value = uom === 'LBS' ? 'lb' : (uom === 'Each' ? 'ea' : unitEl.value);
   const custEl = document.getElementById('ing_customer');
   if (custEl && cust) custEl.value = cust;
+  const category = opt.getAttribute('data-category') || inventoryCategoryForMasterItemType(opt.getAttribute('data-item-type'));
+  const categoryEl = document.getElementById('ing_category');
+  if (categoryEl && category) {
+    categoryEl.value = category;
+    toggleIngredientFields();
+  }
 }
 function toggleIngredientFields() {
   const cat = document.getElementById('ing_category')?.value || 'Ingredient';
@@ -12652,8 +12711,11 @@ function toggleIngredientFields() {
 }
 async function saveIngredient(id, isNew) {
   const cat = document.getElementById('ing_category').value;
-  const itemName = (document.getElementById('ing_name').value || '').trim();
-  if (!itemName) { toast('Pick an Item from the Master List. Add it on the Master List tab first if it isn\'t there.'); return; }
+  const masterItemInput = document.getElementById('ing_master_item_id');
+  const masterItemId = (masterItemInput?.value || '').trim();
+  const selectedMasterOption = masterItemInput?.selectedOptions?.[0];
+  const itemName = (selectedMasterOption?.getAttribute('data-name') || masterItemInput?.getAttribute('data-name') || '').trim();
+  if (!masterItemId || !itemName) { toast('Pick an Item from the Master List. Add it on the Master List tab first if it isn\'t there.'); return; }
   // collect lots & locations (drop fully-empty rows)
   const lots = ingEditingLots
     .map(l => ({ lotNumber:(l.lotNumber||'').trim(), building:l.building||'', location:(l.location||'').trim(), qty: parseFloat(l.qty)||0 }))
@@ -12661,6 +12723,7 @@ async function saveIngredient(id, isNew) {
   if (lots.length === 0) lots.push({ lotNumber:'', building:'', location:'', qty:0 });
   const data = {
     id,
+    masterItemId,
     name: itemName,
     category: cat,
     supplierId: document.getElementById('ing_supplier').value,
@@ -12688,6 +12751,12 @@ async function saveIngredient(id, isNew) {
     data.id = saved.id;
     data._backendId = saved.id;
     data.masterItemId = saved.masterItemId;
+    // Keep the local form/state aligned with the category accepted by the
+    // backend. The selected category is only a request; the API response is
+    // authoritative for what was persisted.
+    data.category = saved.category || cat;
+    const linkedMasterItem = (state.masterItems || []).find(item => item.id === saved.masterItemId || item._backendId === saved.masterItemId);
+    if (linkedMasterItem && saved.itemType) linkedMasterItem.itemType = normalizeMasterItemType(saved.itemType);
     if (pendingInventoryCoaFile) data.coa = await uploadBackendInventoryCoa(saved.id, pendingInventoryCoaFile).then(mapBackendFileToPrototype);
     pendingInventoryCoaFile = null;
     backendInventoryState.status = 'connected';
@@ -12702,7 +12771,7 @@ async function saveIngredient(id, isNew) {
   try { saveState(); }
   catch(err) { toast('Storage full - try a smaller CoA file.'); return; }
   closeModal();
-  invTab = cat;
+  invTab = data.category;
   router('inventory');
   toast('Inventory item saved.');
 }

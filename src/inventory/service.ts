@@ -9,6 +9,25 @@ export type InventoryItemRecord = {
 
 export type InventoryCategory = "Ingredient" | "Packaging" | "Finished Good";
 
+export type InventoryMasterItemType = "raw_material" | "packaging" | "finished_good";
+
+/**
+ * Inventory is the source of truth for the item type of any linked Master
+ * List row. Keep this mapping in the inventory domain so every persistence
+ * path uses the same category semantics.
+ */
+export function itemTypeForInventoryCategory(category: InventoryCategory): InventoryMasterItemType {
+  if (category === "Packaging") return "packaging";
+  if (category === "Finished Good") return "finished_good";
+  return "raw_material";
+}
+
+export function inventoryCategoryForMasterItemType(itemType: InventoryMasterItemType): InventoryCategory {
+  if (itemType === "packaging") return "Packaging";
+  if (itemType === "finished_good") return "Finished Good";
+  return "Ingredient";
+}
+
 export type InventoryItemSetupRecord = InventoryItemRecord & {
   masterItemId: string;
   masterItemName?: string | null;

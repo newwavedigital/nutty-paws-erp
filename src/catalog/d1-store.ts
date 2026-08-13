@@ -1,3 +1,5 @@
+import { inventoryCategoryForMasterItemType } from "../inventory/service";
+import { CatalogError } from "./service";
 import type {
   CatalogStore,
   MasterItemInput,
@@ -272,7 +274,10 @@ export class D1CatalogStore implements CatalogStore {
   }
 
   async updateMasterItem(id: string, input: MasterItemInput): Promise<MasterItemRecord | null> {
-    await this.db
+    const inventoryCategory = input.itemType === "other"
+      ? null
+      : inventoryCategoryForMasterItemType(input.itemType);
+    const masterUpdate = this.db
       .prepare(
         `
           UPDATE master_items
@@ -284,6 +289,15 @@ export class D1CatalogStore implements CatalogStore {
               allergens_json = ?,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
+            AND (
+              ? <> 'other'
+              OR NOT EXISTS (
+                SELECT 1
+                FROM inventory_items
+                WHERE master_item_id = ?
+                  AND status = 'active'
+              )
+            )
         `,
       )
       .bind(
@@ -294,9 +308,55 @@ export class D1CatalogStore implements CatalogStore {
         input.customerId,
         JSON.stringify(input.allergens),
         id,
-      )
-      .run();
+        input.itemType,
+        id,
+      );
+    const statements = [masterUpdate];
+    if (inventoryCategory) {
+      statements.push(
+        this.db
+          .prepare(
+            `
+              UPDATE inventory_items
+              SET category = ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE master_item_id = ?
+                AND status = 'active'
+            `,
+          )
+          .bind(inventoryCategory, id),
+      );
+    }
+    const results = await this.db.batch(statements);
+    const masterResult = results[0];
+    if (input.itemType === "other" && masterResult?.meta?.changes === 0) {
+      const existing = await this.getMasterItem(id);
+      if (existing && await this.hasActiveInventoryLink(id)) {
+        throw new CatalogError(
+          "MASTER_ITEM_TYPE_CONFLICT",
+          "Master List item type cannot be other while an active Inventory item is linked; change the Inventory category or archive the Inventory item first",
+          { masterItemId: id },
+        );
+      }
+      return existing;
+    }
     return this.getMasterItem(id);
+  }
+
+  private async hasActiveInventoryLink(masterItemId: string) {
+    const row = await this.db
+      .prepare(
+        `
+          SELECT 1 AS linked
+          FROM inventory_items
+          WHERE master_item_id = ?
+            AND status = 'active'
+          LIMIT 1
+        `,
+      )
+      .bind(masterItemId)
+      .first<{ linked: number }>();
+    return Boolean(row);
   }
 
   async archiveMasterItem(id: string, input: { archivedAt: string; actorUserId?: string }): Promise<MasterItemRecord | null> {
