@@ -71,4 +71,17 @@ describe("frontend Inventory and Master List type wiring", () => {
     expect(saveBody).toContain("backendInventoryState.signals = null;");
     expect(saveBody).toContain("await loadBackendInventory();");
   });
+
+  test("loads the Master List when Inventory opens and never shows a false zero while it is unavailable", () => {
+    const countStart = inventoryModule.indexOf("function inventoryTabCount(t)");
+    const tabsStart = inventoryModule.indexOf("function inventoryTabsHtml()", countStart);
+    const countBody = inventoryModule.slice(countStart, tabsStart);
+    expect(countBody).toContain("if (t === 'Master List') return backendRowsReady(backendMasterItemState) ? (state.masterItems || []).length : '…';");
+
+    const renderStart = inventoryModule.indexOf("function renderInventory(el)");
+    const nextFunction = inventoryModule.indexOf("function ", renderStart + 1);
+    const renderBody = inventoryModule.slice(renderStart, nextFunction);
+    expect(renderBody).toContain("!backendMasterItemState.loaded && !backendMasterItemState.loading");
+    expect(renderBody).toContain("loadBackendMasterItems().then(() => { if (currentPage === 'inventory') router('inventory'); });");
+  });
 });

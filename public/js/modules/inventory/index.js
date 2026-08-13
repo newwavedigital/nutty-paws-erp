@@ -91,7 +91,10 @@ function backendRequiredActions(label) {
 }
 
 function inventoryTabCount(t) {
-  if (t === 'Master List') return backendRowsReady(backendMasterItemState) ? (state.masterItems || []).length : 0;
+  // Master List records load independently from Inventory records. Until that
+  // protected backend read finishes, show an unknown/loading count rather than
+  // a false zero that makes populated records look absent.
+  if (t === 'Master List') return backendRowsReady(backendMasterItemState) ? (state.masterItems || []).length : '…';
   if (t === 'Receiving Log') return backendRowsReady(backendInventoryState) ? (state.receivingLog || []).length : 0;
   if (t === 'Move Log') return backendRowsReady(backendInventoryState) ? (state.moveLog || []).length : 0;
   if (t === 'Shipping Log') return shippingBackendIsConnected() ? (backendShippingState.logs || []).length : 0;
@@ -110,6 +113,12 @@ function inventoryTabsHtml() {
 function renderInventory(el) {
   if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendInventoryState.loaded && !backendInventoryState.loading) {
     loadBackendInventory().then(() => { if (currentPage === 'inventory') router('inventory'); });
+  }
+  if (backendAuthState.token && backendAuthState.user?.userType !== 'customer' && !backendMasterItemState.loaded && !backendMasterItemState.loading) {
+    // The Master List badge is visible on every Inventory sub-tab, so fetch it
+    // when the Inventory page opens instead of waiting for its tab to be
+    // clicked. This prevents a populated Master List from briefly displaying 0.
+    loadBackendMasterItems().then(() => { if (currentPage === 'inventory') router('inventory'); });
   }
   if (invTab === 'Master List') { renderMasterList(el); return; }
   if (invTab === 'Receiving Log') { renderReceivingLog(el); return; }
